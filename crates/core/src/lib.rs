@@ -12,6 +12,9 @@ pub mod workflow;
 pub mod orchestrator;
 pub mod api;
 
+#[cfg(test)]
+mod integration_tests;
+
 // Re-exports for convenience
 pub use actor::*;
 pub use bus::EventBus;
