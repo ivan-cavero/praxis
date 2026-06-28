@@ -1,0 +1,90 @@
+# ============================
+# PROJECT-X — .gitignore
+# ============================
+
+# --- Rust ---
+target/
+Cargo.lock
+
+# --- Node.js / Dashboard ---
+node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# --- Tauri ---
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+*.vsix
+
+# --- SQLite databases ---
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Qdrant (embedded storage) ---
+.forge/memory/
+.forge/sessions/
+
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.cert
+
+# --- Configuration (local) ---
+.forge/config.local.toml
+
+# --- IDE / Editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+
+# --- Diagnostic files ---
+diagnostics/
+*.diag
+
+# --- Python virtual env (for scripts) ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- Generated documentation ---
+docs/out/
+docs/_site/
+
+# --- Backups ---
+*.backup
+*.bak
+
+# --- Docker ---
+.docker/
+docker-compose.override.yml
+
+# --- Release artifacts ---
+release/
+artifacts/
+*.tar.gz
+*.zip
+*.dmg
+*.deb
+*.rpm
+*.AppImage
+
+# --- Misc ---
+tmp/
+temp/
+scratch/
