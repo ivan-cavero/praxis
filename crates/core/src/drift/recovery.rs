@@ -153,14 +153,19 @@ impl Default for RecoveryOrchestrator {
 
 // ─── DriftGuard ───────────────────────────────────────────────
 
-/// Combines MetricsCollector + ASICalculator + RecoveryOrchestrator
-/// into a single guard that monitors and recovers from drift.
+/// DriftGuard with per-agent tracking and context integration.
 pub struct DriftGuard {
     pub metrics: MetricsCollector,
     pub asi_calculator: ASICalculator,
     pub recovery: RecoveryOrchestrator,
     /// Threshold for triggering recovery (ASI score).
     pub recovery_threshold: f32,
+    /// Per-agent metrics tracking.
+    agent_metrics: std::collections::HashMap<String, MetricsCollector>,
+    /// Per-agent ASI scores.
+    agent_asi: std::collections::HashMap<String, f32>,
+    /// History of all drift reports.
+    history: Vec<DriftReport>,
 }
 
 impl DriftGuard {
@@ -171,12 +176,25 @@ impl DriftGuard {
             asi_calculator: ASICalculator::new(),
             recovery: RecoveryOrchestrator::new(),
             recovery_threshold: 60.0,
+            agent_metrics: std::collections::HashMap::new(),
+            agent_asi: std::collections::HashMap::new(),
+            history: Vec::new(),
         }
     }
 
     /// Record a metric sample and evaluate for drift.
     pub fn record_and_evaluate(&mut self, sample: crate::drift::metrics::MetricSample, agent_id: Option<&str>) -> Option<DriftReport> {
+        // Clone for per-agent tracking before moving to global
+        let agent_sample = sample.clone();
         self.metrics.record(sample);
+
+        // Track per-agent metrics
+        if let Some(agent_id) = agent_id {
+            let agent_collector = self.agent_metrics
+                .entry(agent_id.to_string())
+                .or_insert_with(|| MetricsCollector::with_baseline_size(5));
+            agent_collector.record(agent_sample);
+        }
 
         if !self.metrics.has_baseline() {
             return None;
@@ -193,13 +211,31 @@ impl DriftGuard {
             None
         };
 
-        Some(DriftReport {
+        let report = DriftReport {
             asi_score,
             status,
             breakdown,
             recovery_action,
             timestamp: chrono::Utc::now().to_rfc3339(),
-        })
+        };
+
+        self.history.push(report.clone());
+        Some(report)
+    }
+
+    /// Get ASI score for a specific agent.
+    pub fn agent_asi(&self, agent_id: &str) -> Option<f32> {
+        self.agent_asi.get(agent_id).copied()
+    }
+
+    /// Get all agent ASI scores.
+    pub fn all_agent_asi(&self) -> &std::collections::HashMap<String, f32> {
+        &self.agent_asi
+    }
+
+    /// Get drift report history.
+    pub fn history(&self) -> &[DriftReport] {
+        &self.history
     }
 
     /// Force a drift evaluation (e.g., on phase transition).
@@ -219,6 +255,28 @@ impl DriftGuard {
             timestamp: chrono::Utc::now().to_rfc3339(),
         })
     }
+
+    /// Get overall health summary.
+    pub fn health_summary(&self) -> DriftHealthSummary {
+        let overall_asi = if !self.metrics.has_baseline() {
+            100.0
+        } else {
+            let (score, _) = self.asi_calculator.from_collector(&self.metrics);
+            score
+        };
+
+        let agent_count = self.agent_metrics.len();
+        let recovery_count = self.recovery.history().len();
+
+        DriftHealthSummary {
+            overall_asi,
+            overall_status: ASICalculator::status(overall_asi),
+            agent_count,
+            agent_asi: self.agent_asi.clone(),
+            recovery_count,
+            history_count: self.history.len(),
+        }
+    }
 }
 
 impl Default for DriftGuard {
@@ -235,6 +293,17 @@ pub struct DriftReport {
     pub breakdown: Vec<crate::drift::asi::DimensionBreakdown>,
     pub recovery_action: Option<RecoveryAction>,
     pub timestamp: String,
+}
+
+/// Health summary for the entire system.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DriftHealthSummary {
+    pub overall_asi: f32,
+    pub overall_status: ASIStatus,
+    pub agent_count: usize,
+    pub agent_asi: std::collections::HashMap<String, f32>,
+    pub recovery_count: usize,
+    pub history_count: usize,
 }
 
 // ─── Tests ────────────────────────────────────────────────────
