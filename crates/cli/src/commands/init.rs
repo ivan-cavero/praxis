@@ -129,26 +129,22 @@ mod tests {
 
     #[test]
     fn test_init_project() {
-        let dir = std::env::temp_dir().join(format!("test-init-{}", uuid::Uuid::new_v4()));
-        let name = dir.file_name().unwrap().to_str().unwrap().to_string();
+        let proj_name = format!("test-init-{}", uuid::Uuid::new_v4());
 
-        // We need to be in the temp dir for the relative path to work
-        let original = std::env::current_dir().ok();
-        std::env::set_current_dir(std::env::temp_dir()).ok();
+        // Create a temp directory to work in
+        let work_dir = std::env::temp_dir().join("project-x-tests");
+        std::fs::create_dir_all(&work_dir).ok();
+        std::env::set_current_dir(&work_dir).ok();
 
-        init_project(&name).expect("init failed");
+        init_project(&proj_name).expect("init failed");
 
+        let dir = work_dir.join(&proj_name);
         assert!(dir.join("forge.toml").exists());
         assert!(dir.join(".forge").exists());
         assert!(dir.join(".gitignore").exists());
 
         let content = std::fs::read_to_string(dir.join("forge.toml")).unwrap();
-        assert!(content.contains(&format!("name = \"{}\"", name)));
-
-        // Restore working directory
-        if let Some(orig) = original {
-            std::env::set_current_dir(&orig).ok();
-        }
+        assert!(content.contains(&format!("name = \"{}\"", proj_name)));
 
         std::fs::remove_dir_all(&dir).ok();
     }

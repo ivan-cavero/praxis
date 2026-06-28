@@ -6,6 +6,6 @@ pub mod transport;
 pub mod protocol;
 pub mod registry;
 
-pub use transport::*;
-pub use protocol::*;
-pub use registry::*;
+pub use registry::{McpHost, McpTool};
+pub use transport::stdio::StdioTransport;
+pub use protocol::messages::{JsonRpcMessage, JsonRpcRequest, JsonRpcResponse};

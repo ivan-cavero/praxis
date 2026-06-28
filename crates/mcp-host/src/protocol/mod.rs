@@ -3,5 +3,8 @@
 pub mod messages;
 pub mod initialize;
 
-pub use messages::JsonRpcMessage;
-pub use initialize::Initialize;
+pub use messages::{JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, JsonRpcNotification};
+pub use initialize::{
+    build_initialize_request, build_initialized_notification,
+    parse_server_capabilities, ClientInfo, ServerCapabilities,
+};
