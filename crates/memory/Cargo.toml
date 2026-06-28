@@ -1,0 +1,17 @@
+[package]
+name = "project-x-memory"
+version = "0.1.0"
+edition = "2024"
+license = "Proprietary"
+
+[dependencies]
+project-x-shared = { path = "../shared" }
+project-x-agent-traits = { path = "../agent-traits" }
+
+dashmap.workspace = true
+moka.workspace = true
+qdrant-client.workspace = true
+tokio.workspace = true
+serde.workspace = true
+tracing.workspace = true
+thiserror.workspace = true

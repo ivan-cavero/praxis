@@ -1,0 +1,26 @@
+[package]
+name = "project-x-cli"
+version = "0.1.0"
+edition = "2024"
+license = "Proprietary"
+
+[dependencies]
+project-x-core = { path = "../core" }
+project-x-shared = { path = "../shared" }
+
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+colored.workspace = true
+indicatif.workspace = true
+self_update.workspace = true
+ratatui.workspace = true
+uuid.workspace = true
+
+[[bin]]
+name = "project-x"
+path = "src/main.rs"

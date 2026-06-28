@@ -1,0 +1,14 @@
+[package]
+name = "project-x-shared"
+version = "0.1.0"
+edition = "2024"
+license = "Proprietary"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true

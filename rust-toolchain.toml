@@ -1,0 +1,17 @@
+[toolchain]
+channel = "nightly-2026-06-01"
+components = ["rustc", "cargo", "clippy", "rustfmt", "rust-analyzer"]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+# Nightly features used by project-x:
+# - async_fn_in_trait: Async methods in Agent, Tool, Provider traits
+# - return_type_notation: Precise async return types
+# - type_alias_impl_trait: Complex nested types for actor mailboxes
+# - adt_const_params: Compile-time phase enum validation
+# - never_type: Infallible error paths in supervisors
