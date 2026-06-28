@@ -10,7 +10,7 @@ pub mod r#loop;
 pub mod machine;
 pub mod workflow;
 pub mod orchestrator;
-pub mod api;
+pub mod rbac;
 
 #[cfg(test)]
 mod integration_tests;
