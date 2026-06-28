@@ -19,6 +19,16 @@ pub struct RecoveryAction {
     pub agent_id: Option<String>,
 }
 
+/// Result of a recovery action execution.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RecoveryResult {
+    pub action: RecoveryAction,
+    pub context_cleared: bool,
+    pub memory_injected: bool,
+    pub summary_length: usize,
+    pub session_id: String,
+}
+
 /// Type of recovery action.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RecoveryKind {
@@ -46,6 +56,38 @@ pub struct RecoveryOrchestrator {
     max_consecutive_resets: u32,
     /// Counter for consecutive context resets.
     consecutive_resets: u32,
+    /// Model tier for upgrade/downgrade.
+    current_tier: ModelTier,
+    /// Current model name.
+    current_model: String,
+}
+
+/// Model tier for switching.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ModelTier {
+    Fast,
+    Balanced,
+    Capable,
+}
+
+impl ModelTier {
+    /// Get the next tier up (for upgrade).
+    pub fn upgrade(&self) -> Self {
+        match self {
+            ModelTier::Fast => ModelTier::Balanced,
+            ModelTier::Balanced => ModelTier::Capable,
+            ModelTier::Capable => ModelTier::Capable, // Already at max
+        }
+    }
+
+    /// Get the next tier down (for downgrade).
+    pub fn downgrade(&self) -> Self {
+        match self {
+            ModelTier::Fast => ModelTier::Fast, // Already at min
+            ModelTier::Balanced => ModelTier::Fast,
+            ModelTier::Capable => ModelTier::Balanced,
+        }
+    }
 }
 
 impl RecoveryOrchestrator {
@@ -55,6 +97,8 @@ impl RecoveryOrchestrator {
             history: Vec::new(),
             max_consecutive_resets: 3,
             consecutive_resets: 0,
+            current_tier: ModelTier::Balanced,
+            current_model: "gpt-5".to_string(),
         }
     }
 
@@ -129,6 +173,118 @@ impl RecoveryOrchestrator {
         action
     }
 
+    /// Execute a context reset: clear context and inject consolidated memory.
+    pub fn execute_context_reset(
+        &mut self,
+        session_id: &str,
+        consolidated_memory: &str,
+        goal: &str,
+    ) -> RecoveryResult {
+        self.consecutive_resets += 1;
+
+        let action = RecoveryAction {
+            kind: RecoveryKind::ContextReset,
+            reason: format!(
+                "Context reset for session {} (consecutive resets: {})",
+                session_id, self.consecutive_resets
+            ),
+            severity: ASIStatus::Drift,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            agent_id: None,
+        };
+
+        self.history.push(action.clone());
+
+        RecoveryResult {
+            action,
+            context_cleared: true,
+            memory_injected: !consolidated_memory.is_empty(),
+            summary_length: consolidated_memory.len(),
+            session_id: session_id.to_string(),
+        }
+    }
+
+    /// Execute model upgrade/downgrade.
+    pub fn execute_model_switch(&mut self, direction: &str) -> RecoveryResult {
+        let old_tier = self.current_tier.clone();
+        let old_model = self.current_model.clone();
+
+        match direction {
+            "upgrade" => {
+                self.current_tier = self.current_tier.upgrade();
+                self.current_model = Self::model_for_tier(&self.current_tier);
+            }
+            "downgrade" => {
+                self.current_tier = self.current_tier.downgrade();
+                self.current_model = Self::model_for_tier(&self.current_tier);
+            }
+            _ => {}
+        }
+
+        let action = RecoveryAction {
+            kind: if direction == "upgrade" {
+                RecoveryKind::ModelUpgrade
+            } else {
+                RecoveryKind::ForceConsolidation // Downgrade is a form of consolidation
+            },
+            reason: format!(
+                "Model switched: {} → {} ({})",
+                old_model, self.current_model, direction
+            ),
+            severity: ASIStatus::Drift,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            agent_id: None,
+        };
+
+        self.history.push(action.clone());
+
+        RecoveryResult {
+            action,
+            context_cleared: false,
+            memory_injected: false,
+            summary_length: 0,
+            session_id: String::new(),
+        }
+    }
+
+    /// Execute session handoff.
+    pub fn execute_session_handoff(
+        &mut self,
+        old_session_id: &str,
+        goal: &str,
+    ) -> RecoveryResult {
+        let action = RecoveryAction {
+            kind: RecoveryKind::SessionHandoff,
+            reason: format!(
+                "Session handoff from {} (max resets reached)",
+                old_session_id
+            ),
+            severity: ASIStatus::Critical,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            agent_id: None,
+        };
+
+        self.history.push(action.clone());
+
+        RecoveryResult {
+            action,
+            context_cleared: true,
+            memory_injected: false,
+            summary_length: 0,
+            session_id: old_session_id.to_string(),
+        }
+    }
+
+    /// Get the current model tier.
+    pub fn current_tier(&self) -> &ModelTier {
+        &self.current_tier
+    }
+
+    /// Get the current model name.
+    pub fn current_model(&self) -> &str {
+        &self.current_model
+    }
+
     /// Reset the consecutive reset counter (call after successful recovery).
     pub fn reset_counter(&mut self) {
         self.consecutive_resets = 0;
@@ -142,6 +298,15 @@ impl RecoveryOrchestrator {
     /// Get the last recovery action.
     pub fn last_action(&self) -> Option<&RecoveryAction> {
         self.history.last()
+    }
+
+    /// Get the model name for a tier.
+    fn model_for_tier(tier: &ModelTier) -> String {
+        match tier {
+            ModelTier::Fast => "gpt-4o-mini".to_string(),
+            ModelTier::Balanced => "gpt-5".to_string(),
+            ModelTier::Capable => "claude-4-opus".to_string(),
+        }
     }
 }
 
