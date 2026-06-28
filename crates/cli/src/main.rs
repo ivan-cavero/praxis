@@ -681,16 +681,21 @@ async fn main() -> anyhow::Result<()> {
         Commands::Provider(cmd) => match cmd {
             ProviderCommands::List => {
                 println!("{} Configured providers:", "→".cyan());
-                println!("  {} openai (gpt-5)", "•".dimmed());
-                println!("  {} anthropic (claude-4-opus)", "•".dimmed());
-                println!("  {} gemini (gemini-2.5-pro)", "•".dimmed());
-                println!("  {} custom (OpenAI-compatible)", "•".dimmed());
+                println!("  Use {} to add a custom provider", "project-x provider add".yellow());
                 println!();
-                println!("  {} Nan models:", "→".cyan());
-                println!("    {} deepseek-v4-flash (284B MoE, 1M context)", "•".dimmed());
-                println!("    {} mimo-v2.5 (310B MoE, 1M context, omnimodal)", "•".dimmed());
-                println!("    {} qwen3.6 (35B MoE, 256K context)", "•".dimmed());
-                println!("    {} gemma4 (26B MoE, 256K context)", "•".dimmed());
+                println!("  Supported APIs:");
+                println!("    {} OpenAI (api.openai.com)", "•".dimmed());
+                println!("    {} Anthropic (api.anthropic.com)", "•".dimmed());
+                println!("    {} Google AI (generativelanguage.googleapis.com)", "•".dimmed());
+                println!("    {} DeepSeek (api.deepseek.com)", "•".dimmed());
+                println!("    {} GitHub Copilot (api.githubcopilot.com)", "•".dimmed());
+                println!("    {} Any OpenAI-compatible API (custom base_url)", "•".dimmed());
+                println!();
+                println!("  Examples:");
+                println!("    {} provider add openai https://api.openai.com/v1 sk-xxx", "project-x".yellow());
+                println!("    {} provider add nan https://api.nan.builders/v1 sk-xxx", "project-x".yellow());
+                println!("    {} provider add deepseek https://api.deepseek.com/v1 sk-xxx", "project-x".yellow());
+                println!("    {} provider add my-api http://localhost:8080/v1 my-key", "project-x".yellow());
             }
             ProviderCommands::Test { name } => {
                 println!("{} Testing provider: {}...", "→".cyan(), name);
@@ -699,10 +704,19 @@ async fn main() -> anyhow::Result<()> {
             ProviderCommands::Add { name, base_url, api_key } => {
                 println!("{} Adding provider: {}", "→".cyan(), name);
                 println!("  Base URL: {}", base_url);
-                println!("  API Key: {}***{}", &api_key[..4.min(api_key.len())], &api_key[api_key.len().saturating_sub(4)..]);
+                let masked = if api_key.len() > 8 {
+                    format!("{}***{}", &api_key[..4], &api_key[api_key.len()-4..])
+                } else {
+                    "****".to_string()
+                };
+                println!("  API Key: {}", masked);
                 println!();
                 println!("  {} Saved to config", "✓".green());
-                println!("  {} Use: project-x run --goal \"...\" --agent coder.model=<model>", "→".dimmed());
+                println!();
+                println!("  {} Usage:", "→".cyan());
+                println!("    {} run --goal \"...\" --agent coder.model=<model-name>", "project-x".yellow());
+                println!("    {} config set roles.coder.model <model-name>", "project-x".yellow());
+                println!("    {} config set providers.{}.base_url \"{}\"", "project-x".yellow(), name, base_url);
             }
         },
 
