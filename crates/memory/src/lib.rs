@@ -21,3 +21,7 @@ pub use episodic::{
     EpisodicMemory, MemoryChunk, ChunkMetadata, ChunkType,
     SearchResult as EpisodicSearchResult, EpisodicStats, cosine_similarity,
 };
+pub use consolidated::{
+    ConsolidatedMemory, MemorySummary, KeyDecision, ErrorLearned,
+    Summarizer, InteractionSummary, InteractionKind, ConsolidatedStats,
+};
