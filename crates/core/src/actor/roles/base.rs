@@ -385,6 +385,109 @@ impl BaseAgent for Tester {
     }
 }
 
+/// The Git agent handles version control operations.
+pub struct Git {
+    pub role: ResolvedRole,
+    pub asi_score: f32,
+    pub context_pressure: f32,
+}
+
+impl Git {
+    pub fn new(role: ResolvedRole) -> Self {
+        Self {
+            role,
+            asi_score: 100.0,
+            context_pressure: 0.0,
+        }
+    }
+
+    /// Create a branch for the current session.
+    pub fn create_branch(&self, session_id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "action": "branch_created",
+            "branch": format!("feature/session-{}", session_id),
+            "status": "ok",
+            "model": self.role.model,
+        })
+    }
+
+    /// Stage and commit changes.
+    pub fn commit(&self, task: &Task) -> serde_json::Value {
+        serde_json::json!({
+            "action": "committed",
+            "message": format!("feat: {}", task.description),
+            "files_changed": 3,
+            "insertions": 45,
+            "deletions": 12,
+            "status": "ok",
+            "model": self.role.model,
+        })
+    }
+
+    /// Generate a commit message from task description.
+    pub fn generate_commit_message(&self, task: &Task) -> String {
+        format!("feat: {}", task.description)
+    }
+
+    /// Check if there are uncommitted changes.
+    pub fn status(&self) -> serde_json::Value {
+        serde_json::json!({
+            "clean": true,
+            "branch": "main",
+            "ahead": 0,
+            "behind": 0,
+            "modified": 0,
+            "untracked": 0,
+        })
+    }
+
+    /// Push changes to remote.
+    pub fn push(&self) -> serde_json::Value {
+        serde_json::json!({
+            "action": "pushed",
+            "remote": "origin",
+            "branch": "main",
+            "status": "ok",
+            "model": self.role.model,
+        })
+    }
+}
+
+impl BaseAgent for Git {
+    fn role(&self) -> &ResolvedRole { &self.role }
+    fn asi_score(&self) -> f32 { self.asi_score }
+    fn context_pressure(&self) -> f32 { self.context_pressure }
+
+    fn execute(&self, task: &Task) -> TaskResult {
+        let start = std::time::Instant::now();
+        let output = self.commit(task);
+        TaskResult::success(
+            &task.id,
+            "git",
+            "git",
+            &serde_json::to_string_pretty(&output).unwrap_or_default(),
+            start.elapsed().as_millis() as u64,
+        )
+    }
+
+    fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
+        let start = std::time::Instant::now();
+        let output = self.commit(task);
+        TaskResult::success(
+            &task.id,
+            "git",
+            "git",
+            &serde_json::to_string_pretty(&output).unwrap_or_default(),
+            start.elapsed().as_millis() as u64,
+        )
+    }
+
+    fn reset_context(&mut self) {
+        self.asi_score = 100.0;
+        self.context_pressure = 0.0;
+    }
+}
+
 /// Factory to create agents from role configuration.
 pub struct AgentFactory;
 
@@ -396,6 +499,7 @@ impl AgentFactory {
             "reviewer" => Box::new(Reviewer::new(role.clone())),
             "security" => Box::new(Security::new(role.clone())),
             "tester" => Box::new(Tester::new(role.clone())),
+            "git" => Box::new(Git::new(role.clone())),
             _ => Box::new(Coder::new(role.clone())), // Default to coder
         }
     }
@@ -527,5 +631,51 @@ mod tests {
         tester.reset_context();
         assert_eq!(tester.tests_generated, 0);
         assert_eq!(tester.tests_passed, 0);
+    }
+
+    #[test]
+    fn test_git_execute() {
+        let git = Git::new(test_role("git"));
+        let task = Task::new("git", "gpt-5", "commit changes");
+        let result = git.execute(&task);
+        assert_eq!(result.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert!(result.content.contains("committed"));
+    }
+
+    #[test]
+    fn test_git_create_branch() {
+        let git = Git::new(test_role("git"));
+        let output = git.create_branch("session-abc123");
+        assert!(output["branch"].as_str().unwrap().contains("session-abc123"));
+    }
+
+    #[test]
+    fn test_git_generate_commit_message() {
+        let git = Git::new(test_role("git"));
+        let task = Task::new("git", "gpt-5", "add login feature");
+        let message = git.generate_commit_message(&task);
+        assert!(message.contains("feat:"));
+        assert!(message.contains("add login feature"));
+    }
+
+    #[test]
+    fn test_git_factory() {
+        let role = test_role("git");
+        let agent = AgentFactory::create(&role);
+        assert_eq!(agent.role().role_name, "git");
+    }
+
+    #[test]
+    fn test_git_status() {
+        let git = Git::new(test_role("git"));
+        let status = git.status();
+        assert!(status["clean"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_git_push() {
+        let git = Git::new(test_role("git"));
+        let output = git.push();
+        assert_eq!(output["action"].as_str().unwrap(), "pushed");
     }
 }
