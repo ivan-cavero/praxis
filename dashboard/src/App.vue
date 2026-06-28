@@ -422,12 +422,110 @@ watch(messages, () => {
           </div>
         </div>
 
-        <!-- ═══ OTHER VIEWS (placeholder) ═══ -->
-        <div v-else class="h-full flex items-center justify-center">
-          <div class="text-center">
-            <div class="text-4xl mb-4 text-gray-700">{{ navItems.find(n => n.id === currentView)?.icon }}</div>
-            <div class="text-lg text-gray-400">{{ navItems.find(n => n.id === currentView)?.label }}</div>
-            <div class="text-sm text-gray-600 mt-2">Coming soon</div>
+        <!-- ═══ AGENTS VIEW ═══ -->
+        <div v-else-if="currentView === 'agents'" class="p-6 overflow-y-auto h-full">
+          <div class="max-w-3xl mx-auto space-y-6">
+            <h2 class="text-lg font-semibold">Agent Roles</h2>
+            <div class="bg-[#111111] border border-[#1f1f1f] rounded-2xl p-6 space-y-4">
+              <div class="grid grid-cols-3 gap-3 text-xs">
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="font-medium text-white mb-1">Architect</div>
+                  <div class="text-gray-500">System design, ADRs</div>
+                  <div class="text-green-400 mt-1">{{ activeModel }}</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="font-medium text-white mb-1">Coder</div>
+                  <div class="text-gray-500">Code generation</div>
+                  <div class="text-green-400 mt-1">{{ activeModel }}</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="font-medium text-white mb-1">Reviewer</div>
+                  <div class="text-gray-500">Code review</div>
+                  <div class="text-green-400 mt-1">{{ activeModel }}</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="font-medium text-white mb-1">Security</div>
+                  <div class="text-gray-500">Vulnerability scan</div>
+                  <div class="text-green-400 mt-1">{{ activeModel }}</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="font-medium text-white mb-1">Tester</div>
+                  <div class="text-gray-500">Test generation</div>
+                  <div class="text-green-400 mt-1">{{ activeModel }}</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="font-medium text-white mb-1">Researcher</div>
+                  <div class="text-gray-500">Web research</div>
+                  <div class="text-green-400 mt-1">{{ activeModel }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ SESSIONS VIEW ═══ -->
+        <div v-else-if="currentView === 'sessions'" class="p-6 overflow-y-auto h-full">
+          <div class="max-w-3xl mx-auto space-y-6">
+            <h2 class="text-lg font-semibold">Sessions</h2>
+            <div v-if="messages.length === 0" class="bg-[#111111] border border-[#1f1f1f] rounded-2xl p-12 text-center text-gray-500">
+              <div class="text-3xl mb-3">📋</div>
+              <div class="text-sm">No sessions yet</div>
+              <div class="text-xs text-gray-600 mt-1">Start a chat to create a session</div>
+            </div>
+            <div v-else class="bg-[#111111] border border-[#1f1f1f] rounded-2xl p-5">
+              <div class="text-sm text-gray-400">{{ messages.length }} messages in current session</div>
+              <div class="text-xs text-gray-600 mt-2">Session data persists in browser localStorage</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ CONTEXT VIEW ═══ -->
+        <div v-else-if="currentView === 'context'" class="p-6 overflow-y-auto h-full">
+          <div class="max-w-3xl mx-auto space-y-6">
+            <h2 class="text-lg font-semibold">Context Management</h2>
+            <div class="bg-[#111111] border border-[#1f1f1f] rounded-2xl p-6 space-y-4">
+              <div class="text-sm text-white mb-2">Context Budget</div>
+              <div class="flex justify-between text-xs text-gray-500">
+                <span>Used</span>
+                <span class="text-white font-mono">0 / 128,000 tokens</span>
+              </div>
+              <div class="w-full bg-[#1a1a1a] rounded-full h-2">
+                <div class="bg-green-500 h-2 rounded-full" style="width: 0%"></div>
+              </div>
+              <div class="grid grid-cols-3 gap-3 text-xs mt-4">
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="text-gray-500">Compressions</div>
+                  <div class="text-white font-mono">0</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="text-gray-500">ASI Score</div>
+                  <div class="text-white font-mono">100.0</div>
+                </div>
+                <div class="bg-[#1a1a1a] rounded-lg p-3">
+                  <div class="text-gray-500">Health</div>
+                  <div class="text-green-400 font-mono">Healthy</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ LOGS VIEW ═══ -->
+        <div v-else-if="currentView === 'logs'" class="p-6 overflow-y-auto h-full">
+          <div class="max-w-3xl mx-auto space-y-6">
+            <h2 class="text-lg font-semibold">Event Log</h2>
+            <div class="bg-[#111111] border border-[#1f1f1f] rounded-2xl p-5 font-mono text-xs">
+              <div v-if="messages.length === 0" class="text-center py-8 text-gray-600">
+                No events yet. Send a message to see events here.
+              </div>
+              <div v-for="(msg, i) in messages" :key="i" class="flex gap-3 py-1.5 border-b border-[#1f1f1f] last:border-0">
+                <span class="text-gray-600 w-20 shrink-0">{{ msg.timestamp.toLocaleTimeString() }}</span>
+                <span :class="msg.role === 'user' ? 'text-blue-400' : msg.role === 'system' ? 'text-red-400' : 'text-green-400'">
+                  [{{ msg.role.toUpperCase() }}]
+                </span>
+                <span class="text-gray-400 truncate">{{ msg.content.substring(0, 80) }}{{ msg.content.length > 80 ? '...' : '' }}</span>
+              </div>
+            </div>
           </div>
         </div>
 

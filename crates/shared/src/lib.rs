@@ -1,12 +1,13 @@
 //! # Project-X Shared Types
 //!
-//! Core type definitions, protocol messages, and configuration structs
+//! Core type definitions, protocol messages, configuration structs
 //! shared across all crates in the workspace.
 
 pub mod types;
 pub mod protocol;
 pub mod config;
 pub mod error;
+pub mod tenant;
 
 /// Prelude module: re-exports the most commonly used types.
 pub mod prelude {
@@ -14,4 +15,5 @@ pub mod prelude {
     pub use crate::error::*;
     pub use crate::protocol::*;
     pub use crate::types::*;
+    pub use crate::tenant::*;
 }
