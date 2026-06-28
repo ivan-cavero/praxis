@@ -10,10 +10,15 @@
 pub mod roles;
 pub mod task;
 pub mod verification;
+pub mod injection;
 
 pub use roles::{RoleConfig, RoleOverride, GoalConfig, ResolvedRole};
 pub use task::{Task, TaskResult, TaskStatus};
 pub use verification::{
     ParallelExecutor, ConsensusConsolidator, ConsensusStrategy, ConsensusVerdict,
     CrossModelFeedbackLoop, PerAgentContextTracker, AgentContextInfo,
+};
+pub use injection::{
+    Injection, InjectionType, InjectionPriority, InjectionSource,
+    InjectionChannel, InjectionError, InjectionStats,
 };
