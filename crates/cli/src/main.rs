@@ -120,6 +120,9 @@ enum Commands {
     /// Billing (Enterprise)
     #[command(subcommand)]
     Billing(BillingCommands),
+
+    /// Run a simple test (Sprint 0.1 demo)
+    Test,
 }
 
 #[derive(Subcommand)]
@@ -201,19 +204,33 @@ async fn main() -> anyhow::Result<()> {
             println!("   Project '{name}' created at ./{name}");
         }
 
-        Commands::Run { goal, file, resume, dry_run, .. } => {
+        Commands::Run { goal, file, resume, .. } => {
             if let Some(g) = goal {
-                if dry_run {
-                    println!("📋 Dry run for goal: {}", g);
-                    println!("   Estimated agents: coder, reviewer");
-                    println!("   Estimated tokens: ~15,000");
-                    println!("   Estimated cost: $0.03");
-                } else if resume {
-                    println!("📌 Resuming session...");
-                } else {
-                    println!("🚀 Running goal: {}", g);
-                    println!("   Press Ctrl+C to stop");
+                println!("🚀 Running goal: {}", g);
+                println!("   Press Ctrl+C to stop");
+                println!();
+
+                // Sprint 0.1: Start core runtime, spawn an agent, echo back
+                println!("📦 Starting core runtime...");
+                let runtime = project_x_core::CoreRuntime::new().await?;
+
+                println!("🤖 Spawning EchoAgent...");
+                let handle = runtime.spawn_echo_agent("test-agent").await?;
+                println!("   Agent '{}' spawned", handle.name);
+
+                println!("💬 Sending test message...");
+                let response = runtime.echo_to(&handle.name, &g).await?;
+                println!("   Response: {}", response);
+
+                println!("📋 Listing agents...");
+                let agents = runtime.list_agents().await?;
+                for agent in &agents {
+                    println!("   - {} ({})", agent.name, agent.role);
                 }
+
+                println!("🔌 Shutting down...");
+                runtime.shutdown().await?;
+                println!("✅ Done");
             } else if let Some(f) = file {
                 println!("📄 Reading goal from: {}", f.display());
             } else if resume {
@@ -253,7 +270,55 @@ async fn main() -> anyhow::Result<()> {
             println!("   Message: {}", message);
         }
 
-        // ─── Subcommands with default behavior ─────────────
+        Commands::Test => {
+            println!("🧪 Sprint 0.1 Test");
+            println!("===================");
+            println!();
+
+            // 1. Create EventBus
+            println!("1️⃣  Creating EventBus...");
+            let bus = project_x_core::EventBus::new();
+            println!("   ✅ EventBus created (capacity: {})", bus.capacity());
+
+            // 2. Create CoreRuntime (spawns Supervisor internally)
+            println!("2️⃣  Creating CoreRuntime (spawns Supervisor)...");
+            let runtime = project_x_core::CoreRuntime::new().await?;
+            println!("   ✅ CoreRuntime created");
+
+            // 3. Spawn EchoAgents
+            println!("3️⃣  Spawning 3 EchoAgents...");
+            for i in 0..3 {
+                let name = format!("agent-{}", i);
+                let handle = runtime.spawn_echo_agent(&name).await?;
+                println!("   ✅ Spawned: {} (role: {})", handle.name, handle.role);
+            }
+
+            // 4. Send messages
+            println!("4️⃣  Sending echo messages...");
+            for i in 0..3 {
+                let name = format!("agent-{}", i);
+                let response = runtime.echo_to(&name, &format!("Hello from test! Message #{}", i)).await?;
+                println!("   ✅ {}: {}", name, response);
+            }
+
+            // 5. List agents
+            println!("5️⃣  Listing agents...");
+            let agents = runtime.list_agents().await?;
+            println!("   {} agents running", agents.len());
+            for agent in &agents {
+                println!("   - {} ({})", agent.name, agent.role);
+            }
+
+            // 6. Shutdown
+            println!("6️⃣  Shutting down...");
+            let _ = runtime.shutdown().await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            println!("   ✅ Shutdown complete");
+            println!();
+            println!("🎉 Sprint 0.1 test PASSED");
+        }
+
+        // ─── Subcommands ─────────────────────────────────────
 
         Commands::Project(cmd) => match cmd {
             ProjectCommands::List => println!("📁 Projects:\n   (no projects yet)"),
