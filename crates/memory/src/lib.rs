@@ -17,3 +17,7 @@ pub use context::{
     CompressionPipeline, CompressionResult, ContextHealth, HealthStatus,
     ContextWindow, Message, Section,
 };
+pub use episodic::{
+    EpisodicMemory, MemoryChunk, ChunkMetadata, ChunkType,
+    SearchResult as EpisodicSearchResult, EpisodicStats, cosine_similarity,
+};
