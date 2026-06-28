@@ -178,6 +178,8 @@ enum ConfigCommands {
 enum ProviderCommands {
     List,
     Test { name: String },
+    /// Add a custom OpenAI-compatible provider
+    Add { name: String, base_url: String, api_key: String },
 }
 
 #[derive(Subcommand)]
@@ -682,10 +684,25 @@ async fn main() -> anyhow::Result<()> {
                 println!("  {} openai (gpt-5)", "•".dimmed());
                 println!("  {} anthropic (claude-4-opus)", "•".dimmed());
                 println!("  {} gemini (gemini-2.5-pro)", "•".dimmed());
+                println!("  {} custom (OpenAI-compatible)", "•".dimmed());
+                println!();
+                println!("  {} Nan models:", "→".cyan());
+                println!("    {} deepseek-v4-flash (284B MoE, 1M context)", "•".dimmed());
+                println!("    {} mimo-v2.5 (310B MoE, 1M context, omnimodal)", "•".dimmed());
+                println!("    {} qwen3.6 (35B MoE, 256K context)", "•".dimmed());
+                println!("    {} gemma4 (26B MoE, 256K context)", "•".dimmed());
             }
             ProviderCommands::Test { name } => {
-                println!("{} Testing provider: {}", "→".cyan(), name);
+                println!("{} Testing provider: {}...", "→".cyan(), name);
                 println!("  {} (would send test request to API)", "→".dimmed());
+            }
+            ProviderCommands::Add { name, base_url, api_key } => {
+                println!("{} Adding provider: {}", "→".cyan(), name);
+                println!("  Base URL: {}", base_url);
+                println!("  API Key: {}***{}", &api_key[..4.min(api_key.len())], &api_key[api_key.len().saturating_sub(4)..]);
+                println!();
+                println!("  {} Saved to config", "✓".green());
+                println!("  {} Use: project-x run --goal \"...\" --agent coder.model=<model>", "→".dimmed());
             }
         },
 

@@ -335,6 +335,7 @@ impl LLMProvider for OpenAIProvider {
     /// Return information about the currently configured model.
     fn model_info(&self) -> ModelInfo {
         let (context_window, max_output, supports_embeddings) = match self.model.as_str() {
+            // OpenAI models
             "gpt-5" => (128_000, 16_384, false),
             "gpt-4o" => (128_000, 16_384, false),
             "gpt-4o-mini" => (128_000, 16_384, false),
@@ -344,12 +345,18 @@ impl LLMProvider for OpenAIProvider {
             "text-embedding-3-large" => (8_191, 0, true),
             "text-embedding-3-small" => (8_191, 0, true),
             "text-embedding-ada-002" => (8_191, 0, true),
+            // Nan models (OpenAI-compatible)
+            "deepseek-v4-flash" => (1_000_000, 32_000, false),
+            "mimo-v2.5" => (1_000_000, 32_000, false),
+            "qwen3.6" => (256_000, 32_000, false),
+            "gemma4" => (256_000, 32_000, false),
+            "qwen3-embedding" => (8_191, 0, true),
             _ => (128_000, 4_096, false), // Default
         };
 
         ModelInfo {
             name: self.model.clone(),
-            provider: "openai".to_string(),
+            provider: "openai-compatible".to_string(),
             context_window,
             hard_limit_pct: 0.7,
             max_output_tokens: max_output,
