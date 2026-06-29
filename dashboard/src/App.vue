@@ -8,6 +8,7 @@ import MetricCard from './components/ui/MetricCard.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import Icon from './components/ui/Icon.vue'
 import LoginView from './views/LoginView.vue'
+import SettingsView from './views/SettingsView.vue'
 
 const store = useAppStore()
 const ws = useWebSocket()
@@ -53,7 +54,7 @@ const navItems = [
   { id: 'agents', label: 'Agents', icon: 'robot' },
   { id: 'context', label: 'Context', icon: 'brain' },
   { id: 'events', label: 'Events', icon: 'terminal' },
-  { id: 'config', label: 'Config', icon: 'settings' },
+  { id: 'config', label: 'Settings', icon: 'settings' },
 ]
 
 const recentEvents = computed(() => ws.events.value.slice().reverse().slice(0, 20))
@@ -359,39 +360,8 @@ function formatRelative(iso: string) {
         </div>
       </div>
 
-      <!-- ═══ CONFIG ═══ -->
-      <div v-else-if="currentView === 'config'" class="flex-1 overflow-y-auto px-6 py-5">
-        <div class="max-w-2xl space-y-4 stagger">
-          <h2 class="text-sm font-semibold tracking-wide mb-2">CONFIGURATION</h2>
-
-          <Card title="BACKEND API" glow="cyan" class="anim-slide-up">
-            <div class="font-mono text-xs text-[var(--cyan)]">http://localhost:8080</div>
-            <div class="text-[10px] text-[var(--text-muted)] mt-1">Configure providers via forge.toml in your project</div>
-          </Card>
-
-          <Card title="PROVIDERS" subtitle="env vars" class="anim-slide-up" style="animation-delay: 60ms">
-            <div class="space-y-1.5 font-mono text-[10px]">
-              <div v-for="env in ['NAN_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY']" :key="env"
-                class="flex items-center gap-2">
-                <Icon name="dot" :size="8" class="text-[var(--text-ghost)]" />
-                <span class="text-[var(--text-muted)]">{{ env }}</span>
-                <span class="text-[var(--text-ghost)]">=</span>
-                <span class="text-[var(--text-muted)]">env:{{ env }}</span>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="WEBSOCKET" class="anim-slide-up" style="animation-delay: 120ms">
-            <div class="flex items-center gap-2">
-              <Icon :name="ws.connected.value ? 'wifi' : 'wifi-off'" :size="14"
-                :color="ws.connected.value ? 'var(--emerald)' : 'var(--crimson)'" />
-              <span class="text-xs font-mono" :class="ws.connected.value ? 'text-[var(--emerald)]' : 'text-[var(--crimson)]'">
-                {{ ws.connected.value ? 'Connected to EventBus' : 'Disconnected' }}
-              </span>
-            </div>
-          </Card>
-        </div>
-      </div>
+      <!-- ═══ SETTINGS ═══ -->
+      <SettingsView v-if="currentView === 'config'" />
 
     </div>
   </div>

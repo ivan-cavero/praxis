@@ -67,6 +67,11 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json()
 }
 
+async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
+}
+
 export function useApi() {
   const getHealth = () => apiGet<HealthStatus>('/health')
   const getProjects = () => apiGet<Project[]>('/projects')
@@ -75,6 +80,9 @@ export function useApi() {
   const getTokenMetrics = () => apiGet<TokenMetrics>('/metrics/tokens')
   const getContextMetrics = () => apiGet<ContextMetrics>('/metrics/context')
   const getMetricsSummary = () => apiGet<MetricsSummary>('/metrics/summary')
+  const get = apiGet
+  const post = apiPost
+  const del = apiDelete
 
   return {
     getHealth,
@@ -84,5 +92,8 @@ export function useApi() {
     getTokenMetrics,
     getContextMetrics,
     getMetricsSummary,
+    get,
+    post,
+    del,
   }
 }

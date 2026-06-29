@@ -16,6 +16,10 @@ path = "api_e2e.rs"
 name = "pipeline_e2e"
 path = "pipeline_e2e.rs"
 
+[[test]]
+name = "vault_e2e"
+path = "vault_e2e.rs"
+
 [dev-dependencies]
 project-x-core = { path = "../crates/core" }
 project-x-shared = { path = "../crates/shared" }
@@ -23,6 +27,7 @@ project-x-memory = { path = "../crates/memory" }
 project-x-persistence = { path = "../crates/persistence" }
 project-x-providers = { path = "../crates/providers" }
 project-x-agent-traits = { path = "../crates/agent-traits" }
+project-x-vault = { path = "../crates/vault" }
 
 tokio.workspace = true
 serde.workspace = true

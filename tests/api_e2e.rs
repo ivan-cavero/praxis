@@ -17,6 +17,10 @@ async fn start_test_server() -> u16 {
         started_at: chrono::Utc::now(),
         bus,
         auth,
+        vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
+            std::env::temp_dir().join("test-vault.json"),
+            None,
+        )),
     };
 
     let app = Router::new()

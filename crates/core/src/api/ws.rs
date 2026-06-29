@@ -121,6 +121,10 @@ mod tests {
             started_at: chrono::Utc::now(),
             bus: EventBus::new(),
             auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
+            vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
+                std::env::temp_dir().join("test-vault-ws.json"),
+                None,
+            )),
         };
         handle_client_message(r#"{"type": "ping"}"#, &state);
     }
@@ -132,6 +136,10 @@ mod tests {
             started_at: chrono::Utc::now(),
             bus: EventBus::new(),
             auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
+            vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
+                std::env::temp_dir().join("test-vault-ws2.json"),
+                None,
+            )),
         };
         handle_client_message(
             r#"{"type": "inject", "target": "coder", "message": "use thiserror"}"#,
@@ -146,6 +154,10 @@ mod tests {
             started_at: chrono::Utc::now(),
             bus: EventBus::new(),
             auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
+            vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
+                std::env::temp_dir().join("test-vault-ws3.json"),
+                None,
+            )),
         };
         handle_client_message("not json", &state);
     }

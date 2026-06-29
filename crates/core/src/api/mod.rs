@@ -4,5 +4,5 @@ pub mod routes;
 pub mod ws;
 pub mod auth;
 
-pub use routes::{ApiServer, AppState};
+pub use routes::{ApiServer, ApiServerConfig, AppState};
 pub use ws::ws_handler;

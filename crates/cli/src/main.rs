@@ -119,6 +119,9 @@ enum Commands {
     /// Open web dashboard
     Dashboard,
 
+    /// Start the API server (REST + WebSocket)
+    Server,
+
     /// Open terminal UI monitor
     Monitor,
 
@@ -786,6 +789,40 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Desktop => println!("{} Opening desktop app...", "→".cyan()),
         Commands::Dashboard => println!("{} Opening dashboard...", "→".cyan()),
+        Commands::Server => {
+            // Read vault password from env if set
+            let vault_password = std::env::var("VAULT_PASSWORD").ok();
+
+            println!("{} Starting API server...", "→".cyan());
+
+            // Ensure .forge directory exists for JWT secret and vault
+            let forge_dir = std::path::PathBuf::from(".forge");
+            if !forge_dir.exists() {
+                std::fs::create_dir_all(&forge_dir)?;
+            }
+
+            let server = project_x_core::api::ApiServer::new(
+                project_x_core::api::ApiServerConfig {
+                    port: 8080,
+                    cors_origins: vec!["*".to_string()],
+                    vault_password,
+                }
+            );
+
+            println!("{} REST: http://localhost:8080", "✓".green());
+            println!("{} WebSocket: ws://localhost:8080/ws", "✓".green());
+            println!("{} Vault: .forge/credentials.vault.json", "✓".green());
+            println!("{0}\n{} Press Ctrl+C to stop\n{0}", "─".repeat(50).dimmed());
+
+            tokio::spawn(async move {
+                let _ = server.start().await;
+            });
+
+            // Wait forever (Ctrl+C will shutdown)
+            tokio::signal::ctrl_c().await?;
+            println!();
+            println!("{} Server shutting down...", "→".dimmed());
+        }
         Commands::Monitor => println!("{} Opening monitor...", "→".cyan()),
 
         Commands::Update { channel } => {
