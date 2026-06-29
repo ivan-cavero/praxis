@@ -254,7 +254,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // ─── Run ───────────────────────────────────────────
-        Commands::Run { goal, file, resume, session: _, dry_run, headless, agents, agent: agent_overrides, parallel_reviewers } => {
+        Commands::Run { goal, file, resume, session: _, dry_run, headless, agents, agent: agent_overrides, parallel_reviewers: _ } => {
             if let Some(g) = goal {
                 // Parse agent overrides
                 let mut overrides = std::collections::HashMap::new();
@@ -265,7 +265,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 // Parse agents list
-                let agents_list: Vec<String> = agents
+                let _agents_list: Vec<String> = agents
                     .as_ref()
                     .map(|a| a.split(',').map(|s| s.trim().to_string()).collect())
                     .unwrap_or_default();
@@ -277,62 +277,34 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", "📋 Workflow Plan (dry-run)".cyan().bold());
                     println!("{}", "─".repeat(50).dimmed());
 
-                    // Create runtime to show what would happen
-                    let runtime = project_x_core::CoreRuntime::new().await?;
+                    // Load config to show real plan
+                    let config = match commands::config::find_config() {
+                        Some(path) => project_x_core::load_forge_config(&path).unwrap_or_default(),
+                        None => project_x_core::ForgeConfig::default(),
+                    };
 
                     println!();
                     println!("  {} Agents that would be spawned:", "1.".cyan());
-
-                    // Show configured agents or defaults
-                    let agent_names = if !agents_list.is_empty() {
-                        agents_list.clone()
-                    } else {
-                        vec![
-                            "architect".to_string(),
-                            "coder".to_string(),
-                            "reviewer".to_string(),
-                            "security".to_string(),
-                            "tester".to_string(),
-                        ]
-                    };
-
-                    for agent_name in &agent_names {
-                        let override_info = overrides.get(&format!("{}.model", agent_name))
-                            .map(|m| format!(" (override: {})", m))
-                            .unwrap_or_default();
-                        println!("    {} {}{}", "•".dimmed(), agent_name.cyan(), override_info.dimmed());
+                    for (name, role) in &config.roles {
+                        println!("    {} {} ({})", "•".dimmed(), name.cyan(), role.model.dimmed());
                     }
-
-                    // Show parallel reviewers if set
-                    if let Some(pr) = parallel_reviewers {
-                        println!();
-                        println!("  {} Parallel reviewers: {}", "2.".cyan(), pr);
-                    }
-                    println!("    {} architect (claude-4-opus)", "•".dimmed());
-                    println!("    {} coder (gpt-5)", "•".dimmed());
-                    println!("    {} reviewer (gemini-2.5-pro)", "•".dimmed());
-                    println!("    {} security (claude-4-haiku)", "•".dimmed());
-                    println!("    {} tester (gpt-5)", "•".dimmed());
 
                     println!();
-                    println!("  {} Phases:", "3.".cyan());
+                    println!("  {} Pipeline phases:", "2.".cyan());
                     println!("    {} Planning → Designing → Implementing", "•".dimmed());
-                    println!("    {} Reviewing → Testing → Finalizing", "•".dimmed());
+                    println!("    {} Reviewing → Testing → SecurityScan → Finalizing", "•".dimmed());
 
                     println!();
-                    println!("  {} Context Budget:", "4.".cyan());
-                    println!("    {} Model: gpt-5 (128k context)", "•".dimmed());
-                    println!("    {} Hard limit: 89,600 tokens (70%)", "•".dimmed());
-                    println!("    {} Profile: balanced", "•".dimmed());
+                    println!("  {} Context Budget:", "3.".cyan());
+                    println!("    {} Default: 128k context (70% hard limit)", "•".dimmed());
 
                     println!();
-                    println!("  {} Estimated Cost:", "5.".cyan());
-                    println!("    {} ~15,000 input tokens", "•".dimmed());
-                    println!("    {} ~5,000 output tokens", "•".dimmed());
-                    println!("    {} ~$0.03-0.05 (GPT-5)", "•".dimmed());
+                    println!("  {} Estimated Cost:", "4.".cyan());
+                    let estimated_tokens: u32 = config.roles.len() as u32 * 2000;
+                    println!("    {} ~{} tokens per agent ({} agents)", "•".dimmed(), estimated_tokens, config.roles.len());
 
                     println!();
-                    println!("  {} Hard Limits:", "6.".cyan());
+                    println!("  {} Hard Limits:", "5.".cyan());
                     println!("    {} Max iterations: 50", "•".dimmed());
                     println!("    {} Session TTL: 60 min", "•".dimmed());
                     println!("    {} Phase timeout: 5 min", "•".dimmed());
@@ -340,7 +312,7 @@ async fn main() -> anyhow::Result<()> {
                     // Show overrides if any
                     if !overrides.is_empty() {
                         println!();
-                        println!("  {} Overrides:", "7.".cyan());
+                        println!("  {} Overrides:", "6.".cyan());
                         for (key, value) in &overrides {
                             println!("    {} {} = {}", "•".dimmed(), key, value);
                         }
@@ -348,23 +320,22 @@ async fn main() -> anyhow::Result<()> {
 
                     println!();
                     println!("{} Run without --dry-run to execute", "→".cyan());
-                    let _ = runtime.shutdown().await;
 
                 } else if headless {
                     // Headless: JSON output
                     println!("{} Running in headless mode", "→".cyan());
-                    let runtime = project_x_core::CoreRuntime::new().await?;
-                    let handle = runtime.spawn_echo_agent("coder").await?;
-                    let response = runtime.echo_to(&handle.name, &g).await?;
+                    let mut runtime = project_x_core::CoreRuntime::new().await?;
+                    let result = runtime.run_goal(&g, None).await?;
 
-                    let result = serde_json::json!({
-                        "status": "completed",
-                        "goal": g,
-                        "response": response,
-                        "agents": 1,
+                    let json_result = serde_json::json!({
+                        "status": if result.passed { "completed" } else { "failed" },
+                        "goal": result.goal,
+                        "agents_executed": result.agent_results.len(),
+                        "passed": result.passed,
+                        "total_duration_ms": result.total_duration_ms,
                         "timestamp": chrono::Utc::now().to_rfc3339(),
                     });
-                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    println!("{}", serde_json::to_string_pretty(&json_result)?);
 
                     let _ = runtime.shutdown().await;
 
@@ -375,23 +346,28 @@ async fn main() -> anyhow::Result<()> {
                     println!();
 
                     println!("{}", "📦 Starting core runtime...".dimmed());
-                    let runtime = project_x_core::CoreRuntime::new().await?;
+                    let mut runtime = project_x_core::CoreRuntime::new().await?;
 
-                    println!("{}", "🤖 Spawning agent...".dimmed());
-                    let handle = runtime.spawn_echo_agent("coder").await?;
-                    println!("  {} Agent '{}' ready", "✓".green(), handle.name.cyan());
+                    println!("{}", "🤖 Initializing agent pipeline...".dimmed());
+
+                    // Run through the full agent pipeline
+                    let result = runtime.run_goal(&g, None).await?;
 
                     println!();
-                    println!("{}", "💬 Executing...".dimmed());
-                    let response = runtime.echo_to(&handle.name, &g).await?;
-                    println!("  {} {}", "✓".green(), response);
-
-                    let agents = runtime.list_agents().await?;
-                    println!();
-                    println!("  {} {} agents active", "→".cyan(), agents.len());
-                    for agent in &agents {
-                        println!("    {} {} ({})", "•".dimmed(), agent.name.cyan(), agent.role);
+                    println!("  {} Goal: {}", "→".cyan(), result.goal.white().bold());
+                    println!("  {} Status: {}", "→".cyan(),
+                        if result.passed { "✅ PASSED".green().bold() } else { "❌ FAILED".red().bold() });
+                    println!("  {} Agents executed: {}", "→".cyan(), result.agent_results.len());
+                    for agent_result in &result.agent_results {
+                        println!("    {} {} ({}) — {:?} — {}ms",
+                            "•".dimmed(),
+                            agent_result.agent_id.cyan(),
+                            agent_result.role,
+                            agent_result.status,
+                            agent_result.duration_ms,
+                        );
                     }
+                    println!("  {} Total duration: {}ms", "→".cyan(), result.total_duration_ms);
 
                     println!();
                     println!("{}", "🔌 Shutting down...".dimmed());

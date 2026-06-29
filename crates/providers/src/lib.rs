@@ -12,6 +12,9 @@ pub mod router;
 
 pub use mock::MockProvider;
 pub use openai::OpenAIProvider;
+pub use anthropic::AnthropicProvider;
+pub use gemini::GeminiProvider;
+pub use ollama::OllamaProvider;
 pub use router::ProviderRouter;
 
 // Re-export key types from agent-traits for convenience

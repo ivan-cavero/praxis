@@ -35,7 +35,7 @@ pub fn check_permission(
 
 /// RBAC middleware that checks permissions.
 pub async fn rbac_middleware(
-    mut request: Request,
+    request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     // TODO: Extract user from auth token
