@@ -6,30 +6,54 @@ import Card from './components/ui/Card.vue'
 import Badge from './components/ui/Badge.vue'
 import MetricCard from './components/ui/MetricCard.vue'
 import StatusBar from './components/layout/StatusBar.vue'
+import Icon from './components/ui/Icon.vue'
+import LoginView from './views/LoginView.vue'
 
 const store = useAppStore()
 const ws = useWebSocket()
 const currentView = ref('overview')
 const sidebarCollapsed = ref(false)
+const isAuthenticated = ref(false)
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-onMounted(async () => {
-  await store.refreshAll()
-  refreshInterval = setInterval(() => store.refreshAll(), 10000)
+// Check for existing token on mount
+onMounted(() => {
+  const token = localStorage.getItem('project-x-token')
+  if (token) {
+    isAuthenticated.value = true
+    startApp()
+  }
 })
 
 onUnmounted(() => {
   if (refreshInterval) clearInterval(refreshInterval)
 })
 
+function handleLogin(token: string) {
+  isAuthenticated.value = true
+  localStorage.setItem('project-x-token', token)
+  startApp()
+}
+
+function handleLogout() {
+  isAuthenticated.value = false
+  localStorage.removeItem('project-x-token')
+  if (refreshInterval) clearInterval(refreshInterval)
+}
+
+function startApp() {
+  store.refreshAll()
+  refreshInterval = setInterval(() => store.refreshAll(), 10000)
+}
+
 const navItems = [
-  { id: 'overview', label: 'Overview', icon: '◉' },
-  { id: 'sessions', label: 'Sessions', icon: '◈' },
-  { id: 'agents', label: 'Agents', icon: '◎' },
-  { id: 'context', label: 'Context', icon: '⬡' },
-  { id: 'events', label: 'Events', icon: '▤' },
-  { id: 'config', label: 'Config', icon: '⚙' },
+  { id: 'overview', label: 'Overview', icon: 'dashboard' },
+  { id: 'sessions', label: 'Sessions', icon: 'list' },
+  { id: 'agents', label: 'Agents', icon: 'robot' },
+  { id: 'context', label: 'Context', icon: 'brain' },
+  { id: 'events', label: 'Events', icon: 'terminal' },
+  { id: 'config', label: 'Config', icon: 'settings' },
 ]
 
 const recentEvents = computed(() => ws.events.value.slice().reverse().slice(0, 20))
@@ -48,7 +72,11 @@ function formatRelative(iso: string) {
 </script>
 
 <template>
-  <div class="h-screen flex overflow-hidden scanlines noise grid-bg">
+  <!-- Login Screen -->
+  <LoginView v-if="!isAuthenticated" @login="handleLogin" />
+
+  <!-- Main App -->
+  <div v-else class="h-screen flex overflow-hidden scanlines noise grid-bg">
 
     <!-- ═══ SIDEBAR ═══ -->
     <aside
@@ -79,9 +107,8 @@ function formatRelative(iso: string) {
             ? 'bg-[var(--cyan-ghost)] text-[var(--cyan)] border border-[rgba(0,229,255,0.1)]'
             : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.02] border border-transparent'"
         >
-          <span class="text-sm w-5 text-center font-mono opacity-70 group-hover:opacity-100 transition-opacity"
-            :class="currentView === item.id ? 'opacity-100' : ''"
-          >{{ item.icon }}</span>
+          <Icon :name="item.icon" :size="16" class="opacity-60 group-hover:opacity-100 transition-opacity"
+            :color="currentView === item.id ? 'var(--cyan)' : undefined" />
           <span v-if="!sidebarCollapsed" class="tracking-wide">{{ item.label }}</span>
         </button>
       </nav>
@@ -95,12 +122,23 @@ function formatRelative(iso: string) {
         :eventCount="ws.events.value.length"
       />
 
+      <!-- Logout -->
+      <div v-if="!sidebarCollapsed" class="px-2 pb-2">
+        <button
+          @click="handleLogout"
+          class="w-full flex items-center gap-3 px-3 py-2 rounded-[var(--radius-md)] text-[10px] text-[var(--text-ghost)] hover:text-[var(--crimson)] hover:bg-[var(--crimson-glow)] transition-all"
+        >
+          <Icon name="logout" :size="14" />
+          <span>Disconnect</span>
+        </button>
+      </div>
+
       <!-- Collapse Toggle -->
       <button
         @click="sidebarCollapsed = !sidebarCollapsed"
-        class="absolute -right-3 top-20 w-6 h-6 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--cyan)] hover:border-[var(--cyan)] transition-all text-[10px]"
+        class="absolute -right-3 top-20 w-6 h-6 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--cyan)] hover:border-[var(--cyan)] transition-all"
       >
-        {{ sidebarCollapsed ? '→' : '←' }}
+        <Icon :name="sidebarCollapsed ? 'chevron-right' : 'chevron-left'" :size="10" />
       </button>
     </aside>
 
@@ -120,7 +158,8 @@ function formatRelative(iso: string) {
           <span v-if="store.loading" class="text-[10px] font-mono text-[var(--amber)] animate-pulse">SYNCING</span>
           <span v-if="store.error" class="text-[10px] font-mono text-[var(--crimson)]">ERR: {{ store.error }}</span>
           <div class="flex items-center gap-1.5">
-            <span class="status-dot" :class="ws.connected.value ? 'status-dot-online' : 'status-dot-error'" />
+            <Icon :name="ws.connected.value ? 'wifi' : 'wifi-off'" :size="12"
+              :color="ws.connected.value ? 'var(--emerald)' : 'var(--crimson)'" />
             <span class="text-[9px] font-mono text-[var(--text-ghost)] tracking-widest">
               {{ ws.connected.value ? 'LIVE' : 'DARK' }}
             </span>
@@ -168,6 +207,7 @@ function formatRelative(iso: string) {
           <Card title="EVENT STREAM" subtitle="real-time from EventBus" glow="cyan" class="anim-slide-up" style="animation-delay: 200ms">
             <div class="max-h-72 overflow-y-auto -mx-5 -mb-5">
               <div v-if="recentEvents.length === 0" class="p-8 text-center">
+                <Icon name="terminal" :size="24" class="mx-auto mb-2 text-[var(--text-ghost)]" />
                 <div class="text-[var(--text-ghost)] text-xs font-mono">Awaiting signal transmission...</div>
               </div>
               <div
@@ -195,7 +235,7 @@ function formatRelative(iso: string) {
           </div>
 
           <div v-if="store.sessions.length === 0" class="card p-12 text-center anim-fade-in">
-            <div class="text-3xl mb-3 opacity-20">◈</div>
+            <Icon name="list" :size="28" class="mx-auto mb-3 text-[var(--text-ghost)]" />
             <div class="text-xs text-[var(--text-muted)] font-mono">No active sessions</div>
             <div class="text-[10px] text-[var(--text-ghost)] mt-1 font-mono">Execute a goal via CLI to initialize</div>
           </div>
@@ -232,19 +272,19 @@ function formatRelative(iso: string) {
           <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
             <div
               v-for="(role, idx) in [
-                { name: 'Architect', desc: 'System design, ADRs', icon: '◇', accent: 'cyan' },
-                { name: 'Coder', desc: 'Code generation', icon: '⬡', accent: 'cyan' },
-                { name: 'Reviewer', desc: 'Code review', icon: '◈', accent: 'emerald' },
-                { name: 'Security', desc: 'Vulnerability scan', icon: '◎', accent: 'amber' },
-                { name: 'Tester', desc: 'Test generation', icon: '△', accent: 'emerald' },
-                { name: 'Researcher', desc: 'Web research', icon: '☆', accent: 'cyan' },
+                { name: 'Architect', desc: 'System design, ADRs', icon: 'code', accent: 'cyan' },
+                { name: 'Coder', desc: 'Code generation', icon: 'terminal', accent: 'cyan' },
+                { name: 'Reviewer', desc: 'Code review', icon: 'eye', accent: 'emerald' },
+                { name: 'Security', desc: 'Vulnerability scan', icon: 'shield', accent: 'amber' },
+                { name: 'Tester', desc: 'Test generation', icon: 'check', accent: 'emerald' },
+                { name: 'Researcher', desc: 'Web research', icon: 'search', accent: 'cyan' },
               ]"
               :key="role.name"
               class="card card-glow p-4 anim-slide-up"
               :style="{ animationDelay: `${idx * 60}ms` }"
             >
               <div class="flex items-start justify-between mb-3">
-                <span class="text-lg opacity-40">{{ role.icon }}</span>
+                <Icon :name="role.icon" :size="20" class="opacity-40" />
                 <Badge variant="gray" size="sm">active</Badge>
               </div>
               <div class="text-sm font-semibold text-[var(--text-primary)] mb-1">{{ role.name }}</div>
@@ -275,8 +315,7 @@ function formatRelative(iso: string) {
                 <div class="h-1.5 bg-[var(--surface-overlay)] rounded-full overflow-hidden">
                   <div class="h-full rounded-full transition-all duration-1000 ease-out"
                     style="background: linear-gradient(90deg, var(--cyan-dim), var(--cyan))"
-                    :style="{ width: '0%' }"
-                  />
+                    :style="{ width: '0%' }" />
                 </div>
               </div>
             </div>
@@ -291,7 +330,8 @@ function formatRelative(iso: string) {
             <h2 class="text-sm font-semibold tracking-wide">EVENT LOG</h2>
             <div class="flex items-center gap-3">
               <div class="flex items-center gap-1.5">
-                <span class="status-dot" :class="ws.connected.value ? 'status-dot-online pulse-emerald' : 'status-dot-error'" />
+                <Icon :name="ws.connected.value ? 'wifi' : 'wifi-off'" :size="12"
+                  :color="ws.connected.value ? 'var(--emerald)' : 'var(--crimson)'" />
                 <span class="text-[9px] font-mono text-[var(--text-ghost)] tracking-widest">
                   {{ ws.connected.value ? 'STREAMING' : 'DORMANT' }}
                 </span>
@@ -302,6 +342,7 @@ function formatRelative(iso: string) {
 
           <Card :padding="false" class="anim-slide-up">
             <div v-if="ws.events.value.length === 0" class="p-12 text-center">
+              <Icon name="terminal" :size="24" class="mx-auto mb-2 text-[var(--text-ghost)]" />
               <div class="text-[var(--text-ghost)] text-xs font-mono">No events captured</div>
             </div>
             <div
@@ -330,36 +371,20 @@ function formatRelative(iso: string) {
 
           <Card title="PROVIDERS" subtitle="env vars" class="anim-slide-up" style="animation-delay: 60ms">
             <div class="space-y-1.5 font-mono text-[10px]">
-              <div class="flex items-center gap-2">
-                <span class="status-dot status-dot-idle" />
-                <span class="text-[var(--text-muted)]">NAN_API_KEY</span>
+              <div v-for="env in ['NAN_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY']" :key="env"
+                class="flex items-center gap-2">
+                <Icon name="dot" :size="8" class="text-[var(--text-ghost)]" />
+                <span class="text-[var(--text-muted)]">{{ env }}</span>
                 <span class="text-[var(--text-ghost)]">=</span>
-                <span class="text-[var(--text-muted)]">env:NAN_API_KEY</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="status-dot status-dot-idle" />
-                <span class="text-[var(--text-muted)]">OPENAI_API_KEY</span>
-                <span class="text-[var(--text-ghost)]">=</span>
-                <span class="text-[var(--text-muted)]">env:OPENAI_API_KEY</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="status-dot status-dot-idle" />
-                <span class="text-[var(--text-muted)]">ANTHROPIC_API_KEY</span>
-                <span class="text-[var(--text-ghost)]">=</span>
-                <span class="text-[var(--text-muted)]">env:ANTHROPIC_API_KEY</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="status-dot status-dot-idle" />
-                <span class="text-[var(--text-muted)]">GEMINI_API_KEY</span>
-                <span class="text-[var(--text-ghost)]">=</span>
-                <span class="text-[var(--text-muted)]">env:GEMINI_API_KEY</span>
+                <span class="text-[var(--text-muted)]">env:{{ env }}</span>
               </div>
             </div>
           </Card>
 
           <Card title="WEBSOCKET" class="anim-slide-up" style="animation-delay: 120ms">
             <div class="flex items-center gap-2">
-              <span class="status-dot" :class="ws.connected.value ? 'status-dot-online pulse-emerald' : 'status-dot-error'" />
+              <Icon :name="ws.connected.value ? 'wifi' : 'wifi-off'" :size="14"
+                :color="ws.connected.value ? 'var(--emerald)' : 'var(--crimson)'" />
               <span class="text-xs font-mono" :class="ws.connected.value ? 'text-[var(--emerald)]' : 'text-[var(--crimson)]'">
                 {{ ws.connected.value ? 'Connected to EventBus' : 'Disconnected' }}
               </span>
