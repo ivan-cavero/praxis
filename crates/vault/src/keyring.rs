@@ -8,8 +8,6 @@ use std::sync::Mutex;
 
 /// Keyring vault with file-based fallback.
 pub struct KeyringVault {
-    /// Service name prefix for keyring entries.
-    service: String,
     /// File-based fallback storage.
     file_store: Mutex<HashMap<String, String>>,
     /// Path to fallback file.
@@ -38,7 +36,6 @@ impl KeyringVault {
         };
 
         Self {
-            service: service.to_string(),
             file_store: Mutex::new(file_store),
             fallback_path,
         }
