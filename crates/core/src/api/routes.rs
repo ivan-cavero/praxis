@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub struct AppState {
     pub version: String,
     pub started_at: chrono::DateTime<chrono::Utc>,
+    pub bus: crate::EventBus,
 }
 
 /// API server configuration.
@@ -62,9 +63,11 @@ impl ApiServer {
 
     /// Start the server (non-blocking).
     pub async fn start(self) -> anyhow::Result<()> {
+        let bus = crate::EventBus::new();
         let state = AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
             started_at: chrono::Utc::now(),
+            bus,
         };
 
         let app = Self::router(state);
@@ -225,6 +228,7 @@ mod tests {
         let state = AppState {
             version: "0.1.0".to_string(),
             started_at: chrono::Utc::now(),
+            bus: crate::EventBus::new(),
         };
 
         let uptime = chrono::Utc::now()

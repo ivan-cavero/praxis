@@ -26,6 +26,8 @@ pub use orchestrator::{RoleConfig, RoleOverride, GoalConfig, ResolvedRole};
 pub use orchestrator::roles::ResolvedRole as AgentRoleResolved;
 pub use orchestrator::{Task, TaskResult, TaskStatus};
 
+use project_x_mcp_host::McpHost;
+
 use thiserror::Error;
 
 // ─── Error Types ──────────────────────────────────────────────
@@ -67,6 +69,7 @@ pub struct CoreRuntime {
     pub supervisor: ractor::ActorRef<actor::SupervisorMessage>,
     pub loop_controller: crate::r#loop::LoopController,
     pub drift_guard: crate::drift::DriftGuard,
+    pub mcp_host: McpHost,
 }
 
 impl CoreRuntime {
@@ -76,8 +79,32 @@ impl CoreRuntime {
         let supervisor = actor::Supervisor::spawn().await?;
         let loop_controller = crate::r#loop::LoopController::new();
         let drift_guard = crate::drift::DriftGuard::new();
+        let mcp_host = McpHost::new("project-x");
 
-        Ok(Self { bus, supervisor, loop_controller, drift_guard })
+        Ok(Self { bus, supervisor, loop_controller, drift_guard, mcp_host })
+    }
+
+    /// Connect MCP servers defined in the forge.toml config.
+    pub async fn connect_mcp_servers(&mut self, config: &ForgeConfig) {
+        for server_config in &config.mcp_servers {
+            tracing::info!("Connecting to MCP server: {} ({} {:?})",
+                server_config.name, server_config.command, server_config.args);
+            match self.mcp_host.connect_server(
+                &server_config.name,
+                &server_config.command,
+                &server_config.args,
+            ).await {
+                Ok(()) => {
+                    let tools = self.mcp_host.tools_for(&server_config.name);
+                    tracing::info!("MCP server '{}' connected with {} tools",
+                        server_config.name, tools.len());
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to connect MCP server '{}': {}",
+                        server_config.name, e);
+                }
+            }
+        }
     }
 
     /// Run a goal through the full agent pipeline.
@@ -226,6 +253,14 @@ pub struct GoalResult {
 pub struct ForgeConfig {
     pub roles: std::collections::HashMap<String, orchestrator::RoleConfig>,
     pub goals: Vec<orchestrator::GoalConfig>,
+    pub mcp_servers: Vec<McpServerConfig>,
+}
+
+/// MCP server configuration from forge.toml.
+pub struct McpServerConfig {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
 }
 
 impl Default for ForgeConfig {
@@ -290,6 +325,7 @@ impl Default for ForgeConfig {
                 ],
                 ..Default::default()
             }],
+            mcp_servers: Vec::new(),
         }
     }
 }
@@ -303,6 +339,7 @@ pub fn load_forge_config(path: &std::path::Path) -> Result<ForgeConfig> {
         .map_err(|e| CoreError::Config(format!("Failed to parse {}: {}", path.display(), e)))?;
 
     let mut roles = std::collections::HashMap::new();
+    let mut mcp_servers = Vec::new();
 
     // Parse roles from [roles.*] sections
     if let Some(roles_table) = value.get("roles").and_then(|v| v.as_table()) {
@@ -325,9 +362,23 @@ pub fn load_forge_config(path: &std::path::Path) -> Result<ForgeConfig> {
         }
     }
 
+    // Parse MCP servers from [[mcp_servers]] sections
+    if let Some(servers_array) = value.get("mcp_servers").and_then(|v| v.as_array()) {
+        for server_value in servers_array {
+            let name = server_value.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+            let command = server_value.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let args = server_value.get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            mcp_servers.push(McpServerConfig { name, command, args });
+        }
+    }
+
     Ok(ForgeConfig {
         roles,
         goals: Vec::new(),
+        mcp_servers,
     })
 }
 
