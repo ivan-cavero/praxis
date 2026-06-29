@@ -40,7 +40,7 @@ impl Priority {
 
 // ─── Phases ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phase {
     Idle,
     Planning,
@@ -59,7 +59,71 @@ pub enum Phase {
 
 impl std::fmt::Display for Phase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{}", self.display_name())
+    }
+}
+
+impl Phase {
+    /// Get the index of this phase (for ordering).
+    pub fn index(&self) -> u8 {
+        match self {
+            Phase::Idle => 0,
+            Phase::Planning => 1,
+            Phase::Researching => 2,
+            Phase::Designing => 3,
+            Phase::Implementing => 4,
+            Phase::Reviewing => 5,
+            Phase::Fixing => 6,
+            Phase::Testing => 7,
+            Phase::SecurityScan => 8,
+            Phase::Finalizing => 9,
+            Phase::Completed => 10,
+            Phase::Failed => 11,
+            Phase::Cancelled => 12,
+        }
+    }
+
+    /// Check if this is a terminal phase (no more transitions).
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Phase::Completed | Phase::Failed | Phase::Cancelled)
+    }
+
+    /// Get the default transitions from this phase.
+    pub fn default_transitions(&self) -> Vec<Phase> {
+        match self {
+            Phase::Idle => vec![Phase::Planning, Phase::Cancelled],
+            Phase::Planning => vec![Phase::Researching, Phase::Designing, Phase::Implementing, Phase::Cancelled],
+            Phase::Researching => vec![Phase::Designing, Phase::Cancelled],
+            Phase::Designing => vec![Phase::Implementing, Phase::Cancelled],
+            Phase::Implementing => vec![Phase::Reviewing, Phase::Testing, Phase::Cancelled],
+            Phase::Reviewing => vec![Phase::Fixing, Phase::Testing, Phase::Implementing, Phase::Completed, Phase::Cancelled],
+            Phase::Fixing => vec![Phase::Reviewing, Phase::Implementing, Phase::Cancelled],
+            Phase::Testing => vec![Phase::SecurityScan, Phase::Finalizing, Phase::Reviewing, Phase::Cancelled],
+            Phase::SecurityScan => vec![Phase::Fixing, Phase::Finalizing, Phase::Cancelled],
+            Phase::Finalizing => vec![Phase::Completed, Phase::Cancelled],
+            Phase::Completed => vec![],
+            Phase::Failed => vec![],
+            Phase::Cancelled => vec![],
+        }
+    }
+
+    /// Display name for the phase.
+    pub fn display_name(&self) -> &str {
+        match self {
+            Phase::Idle => "Idle",
+            Phase::Planning => "Planning",
+            Phase::Researching => "Researching",
+            Phase::Designing => "Designing",
+            Phase::Implementing => "Implementing",
+            Phase::Reviewing => "Reviewing",
+            Phase::Fixing => "Fixing",
+            Phase::Testing => "Testing",
+            Phase::SecurityScan => "Security Scan",
+            Phase::Finalizing => "Finalizing",
+            Phase::Completed => "Completed",
+            Phase::Failed => "Failed",
+            Phase::Cancelled => "Cancelled",
+        }
     }
 }
 
