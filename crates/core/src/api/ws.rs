@@ -3,105 +3,122 @@
 //! Each connected client receives all system events as JSON.
 //! Clients can send commands (inject, subscribe, unsubscribe).
 
-use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    extract::State,
-    response::IntoResponse,
-};
-use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
+use axum::extract::ws::{Message, WebSocket};
+use axum::extract::State;
+use futures_util::{SinkExt, StreamExt, stream::SplitSink};
+use tokio::sync::broadcast;
+use super::routes::AppState;
 
-use super::AppState;
-use crate::EventBus;
+/// Client connection state
+#[allow(dead_code)]
+struct ClientState {
+    sender: SplitSink<WebSocket, Message>,
+    subscriptions: Vec<String>,
+}
 
-/// WebSocket upgrade handler.
+/// Spawn a task that forwards EventBus events to all connected clients.
+pub fn start_event_forwarder(bus: &crate::EventBus, clients: broadcast::Sender<String>) {
+    let mut rx = bus.subscribe();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let msg = serde_json::json!({
+                        "id": event.id,
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "kind": format!("{:?}", event.kind),
+                        "source": event.source,
+                        "metadata": event.metadata,
+                    });
+                    let payload = serde_json::to_string(&msg).unwrap_or_default();
+                    let _ = clients.send(payload);
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!("Event forwarder lagged by {} events", n);
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
+/// Handle an incoming WebSocket connection.
 pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+    ws: axum::extract::ws::WebSocketUpgrade,
+    State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::response::Response {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-/// Handle an individual WebSocket connection.
-///
-/// Sends all EventBus events to the client as JSON.
-/// Receives commands from the client.
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
-    tracing::info!("WebSocket client connected");
-
     let (mut sender, mut receiver) = socket.split();
 
     // Subscribe to EventBus
-    let mut event_rx = state.bus.subscribe();
+    let mut rx = state.bus.subscribe();
 
-    // Spawn a task to forward events to the WebSocket client
+    // Spawn a task to forward events to this client
     let send_task = tokio::spawn(async move {
-        while let Ok(event) = event_rx.recv().await {
-            match serde_json::to_string(&event) {
-                Ok(json) => {
-                    if sender.send(Message::Text(json.into())).await.is_err() {
-                        tracing::debug!("WebSocket client disconnected (send error)");
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let msg = serde_json::json!({
+                        "id": event.id,
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "kind": format!("{:?}", event.kind),
+                        "source": event.source,
+                        "metadata": event.metadata,
+                    });
+                    let payload = serde_json::to_string(&msg).unwrap_or_default();
+                    if sender.send(Message::Text(payload.into())).await.is_err() {
                         break;
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to serialize event: {}", e);
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::debug!("Client lagged by {} events", n);
                 }
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     });
 
-    // Handle incoming messages from the client
-    let recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = receiver.next().await {
-            match msg {
-                Message::Text(text) => {
-                    handle_client_message(&text, &state);
-                }
-                Message::Close(_) => {
-                    tracing::info!("WebSocket client disconnected");
-                    break;
-                }
-                _ => {}
+    // Read incoming messages
+    while let Some(msg) = receiver.next().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                handle_client_message(&text);
             }
+            Ok(Message::Close(_)) => break,
+            Err(e) => {
+                tracing::debug!("WS error: {}", e);
+                break;
+            }
+            _ => {}
         }
-    });
-
-    // Wait for either task to complete
-    tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
     }
 
-    tracing::info!("WebSocket connection closed");
+    send_task.abort();
 }
 
-/// Handle a message from a WebSocket client.
-///
-/// Supported commands:
-/// - `{"type": "ping"}` → responds with `{"type": "pong"}`
-/// - `{"type": "status"}` → responds with system status
-/// - `{"type": "inject", "target": "...", "message": "..."}` → inject into session
-fn handle_client_message(text: &str, state: &AppState) {
+fn handle_client_message(text: &str) {
     let msg: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
-        Err(_) => return,
+        Err(_) => {
+            tracing::debug!("WS invalid JSON: {}", text);
+            return;
+        }
     };
 
-    let msg_type = msg["type"].as_str().unwrap_or("");
+    let msg_type = msg["type"].as_str().unwrap_or("unknown");
 
     match msg_type {
         "ping" => {
             tracing::debug!("WS ping received");
         }
-        "status" => {
-            tracing::debug!("WS status requested");
-        }
         "inject" => {
             let target = msg["target"].as_str().unwrap_or("unknown");
             let message = msg["message"].as_str().unwrap_or("");
             tracing::info!("WS inject to {}: {}", target, message);
-            // TODO: Forward to InjectionChannel when implemented
         }
         _ => {
             tracing::debug!("WS unknown command: {}", msg_type);
@@ -115,50 +132,23 @@ mod tests {
 
     #[test]
     fn test_handle_client_message_ping() {
-        // Just ensure it doesn't panic
-        let state = AppState {
-            version: "test".to_string(),
-            started_at: chrono::Utc::now(),
-            bus: EventBus::new(),
-            auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
-            vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
-                std::env::temp_dir().join("test-vault-ws.json"),
-                None,
-            )),
-        };
-        handle_client_message(r#"{"type": "ping"}"#, &state);
+        handle_client_message(r#"{"type": "ping"}"#);
     }
 
     #[test]
     fn test_handle_client_message_inject() {
-        let state = AppState {
-            version: "test".to_string(),
-            started_at: chrono::Utc::now(),
-            bus: EventBus::new(),
-            auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
-            vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
-                std::env::temp_dir().join("test-vault-ws2.json"),
-                None,
-            )),
-        };
         handle_client_message(
             r#"{"type": "inject", "target": "coder", "message": "use thiserror"}"#,
-            &state,
         );
     }
 
     #[test]
     fn test_handle_client_message_invalid_json() {
-        let state = AppState {
-            version: "test".to_string(),
-            started_at: chrono::Utc::now(),
-            bus: EventBus::new(),
-            auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
-            vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
-                std::env::temp_dir().join("test-vault-ws3.json"),
-                None,
-            )),
-        };
-        handle_client_message("not json", &state);
+        handle_client_message(r#"not-json"#);
+    }
+
+    #[test]
+    fn test_handle_client_message_unknown() {
+        handle_client_message(r#"{"type": "unknown_command"}"#);
     }
 }

@@ -1,12 +1,12 @@
 [package]
-name = "project-x-memory"
+name = "praxis-memory"
 version = "0.1.0"
 edition = "2024"
 license = "Proprietary"
 
 [dependencies]
-project-x-shared = { path = "../shared" }
-project-x-agent-traits = { path = "../agent-traits" }
+praxis-shared = { path = "../shared" }
+praxis-agent-traits = { path = "../agent-traits" }
 
 dashmap.workspace = true
 moka.workspace = true

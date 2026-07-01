@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_build_initialize() {
         let client = ClientInfo {
-            name: "project-x".to_string(),
+            name: "praxis".to_string(),
             version: "0.1.0".to_string(),
         };
         let req = build_initialize_request(1, &client);

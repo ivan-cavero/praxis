@@ -6,7 +6,7 @@
 //! Each transition can be guarded by a quality gate.
 
 // Re-export Phase from shared (canonical definition)
-pub use project_x_shared::types::Phase;
+pub use praxis_shared::types::Phase;
 
 // Re-use Transition from shared if compatible, or define state-machine-specific ones
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

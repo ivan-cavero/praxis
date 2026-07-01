@@ -5,13 +5,13 @@ Get from zero to running your first goal in 5 minutes.
 ## Step 1: Install
 
 ```bash
-curl -fsSL https://project-x.dev/install.sh | bash
+curl -fsSL https://praxis.dev/install.sh | bash
 ```
 
 ## Step 2: Create a Project
 
 ```bash
-project-x init my-api
+praxis init my-api
 cd my-api
 ```
 
@@ -27,7 +27,7 @@ my-api/
 
 ```bash
 # Set your OpenAI API key
-project-x config set providers.openai.api_key "sk-..."
+praxis config set providers.openai.api_key "sk-..."
 
 # Or use environment variable
 export OPENAI_API_KEY="sk-..."
@@ -36,7 +36,7 @@ export OPENAI_API_KEY="sk-..."
 ## Step 4: Run Your First Goal
 
 ```bash
-project-x run --goal "Create a REST API with user authentication"
+praxis run --goal "Create a REST API with user authentication"
 ```
 
 The system will:
@@ -49,28 +49,28 @@ The system will:
 
 ```bash
 # Open the terminal monitor
-project-x monitor
+praxis monitor
 
 # Or open the web dashboard
-project-x dashboard
+praxis dashboard
 ```
 
 ## Step 6: Check Context
 
 ```bash
 # See context budget and pressure
-project-x context inspect --session <session-id>
+praxis context inspect --session <session-id>
 
 # Force compression if needed
-project-x context force-compress --session <session-id>
+praxis context force-compress --session <session-id>
 ```
 
 ## Step 7: Deploy (Optional)
 
 ```bash
 # Deploy to a VPS
-project-x deploy setup user@your-vps.com
-project-x deploy push
+praxis deploy setup user@your-vps.com
+praxis deploy push
 ```
 
 ## What Just Happened?

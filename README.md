@@ -1,4 +1,4 @@
-# Project-X
+# praxis
 
 **Autonomous Multi-Agent System — Infinite Loop, Cross-Model Verification, Desktop-Native**
 
@@ -13,7 +13,7 @@
 
 Most AI coding assistants are **single-agent, single-model, single-threaded**. You send a prompt, one model responds, you iterate manually. OpenCode, Cursor, Claude Code, Aider — they are all fundamentally the same architecture: a user in the loop, one agent, one context window, no parallel verification, no memory between sessions.
 
-**Project-X is different.**
+**praxis is different.**
 
 It is a **multi-agent factory** where each agent is a specialist with its own model, its own tools, its own system prompt, and its own perspective. They work in parallel, review each other's output, verify from different angles, and never stop iterating until the goal is met.
 
@@ -34,10 +34,10 @@ It is a **multi-agent factory** where each agent is a specialist with its own mo
 
 ```bash
 # Install (one command)
-curl -fsSL https://project-x.dev/install.sh | bash
+curl -fsSL https://praxis.dev/install.sh | bash
 
 # Create a project
-project-x init my-api
+praxis init my-api
 
 # Define your agents and models in TOML
 vim forge.toml
@@ -47,14 +47,14 @@ vim forge.toml
 #   model = "claude-4-opus"
 
 # Run with a goal — the system loops until it's done
-project-x run --goal "Create a REST API in Rust with JWT auth"
+praxis run --goal "Create a REST API in Rust with JWT auth"
 
 # Or open the desktop app
-project-x desktop
+praxis desktop
 
 # Or deploy to a VPS
-project-x deploy setup user@vps
-project-x deploy push
+praxis deploy setup user@vps
+praxis deploy push
 ```
 
 The system spawns an **Orchestrator** that:
@@ -93,7 +93,7 @@ Every role is **customizable** in `forge.toml`: model, temperature, system promp
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                    BINARY (project-x)                  │
+│                    BINARY (praxis)                  │
 │                                                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │
 │  │   Core        │  │   MCP Host   │  │  HTTP/WS   │  │
@@ -242,7 +242,7 @@ Rust nightly gives us cleaner abstractions without runtime overhead. We can stab
 ## Directory Structure
 
 ```
-project-x/
+praxis/
 ├── Cargo.toml                       # Workspace root (nightly)
 ├── rust-toolchain.toml              # Nightly pin
 ├── crates/

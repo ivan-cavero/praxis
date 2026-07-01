@@ -9,18 +9,19 @@ use std::sync::Arc;
 
 /// Minimal test server that mimics the real API.
 async fn start_test_server() -> u16 {
-    let bus = project_x_core::EventBus::new();
-    let auth = std::sync::Arc::new(project_x_core::api::auth::AuthState::new(b"test-secret-key-for-e2e-tests-32bytes!!"));
+    let bus = praxis_core::EventBus::new();
+    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::new(b"test-secret-key-for-e2e-tests-32bytes!!"));
 
-    let state = project_x_core::api::routes::AppState {
+    let state = praxis_core::api::routes::AppState {
         version: "test-0.1.0".to_string(),
         started_at: chrono::Utc::now(),
         bus,
         auth,
-        vault: std::sync::Arc::new(project_x_vault::VaultService::with_path(
+        vault: std::sync::Arc::new(praxis_vault::VaultService::with_path(
             std::env::temp_dir().join("test-vault.json"),
             None,
         )),
+        data_dir: std::env::temp_dir(),
     };
 
     let app = Router::new()

@@ -4,6 +4,7 @@ import { useApi } from '../composables/useApi'
 import Card from '../components/ui/Card.vue'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
+import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
 
 const api = useApi()
@@ -84,12 +85,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-1 overflow-y-auto px-6 py-5">
+  <div class="settings-content">
     <div class="max-w-3xl space-y-5 stagger">
 
       <!-- Header -->
       <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold tracking-wide">SETTINGS</h2>
+        <h2 class="text-sm font-semibold tracking-wide mb-3">SETTINGS</h2>
         <Button
           v-if="!showInput"
           @click="showInput = true"
@@ -102,31 +103,27 @@ onMounted(() => {
       </div>
 
       <!-- Add Key Form -->
-      <Card v-if="showInput" glow="cyan" class="anim-slide-up">
+      <Card glow="cyan" v-if="showInput" class="anim-slide-up">
         <div class="space-y-4">
           <div>
-            <label class="text-[10px] font-mono text-[var(--text-muted)] tracking-widest">PROVIDER</label>
-            <div class="flex gap-2 mt-1">
-              <Input
-                v-model="newProvider"
-                placeholder="Provider name (e.g., nan, openai)"
-                class="flex-1"
-              />
-            </div>
+            <label class="data-label mb-1">PROVIDER</label>
+            <Input
+              v-model="newProvider"
+              placeholder="Provider name (e.g., nan, openai)"
+            />
           </div>
 
           <div>
-            <label class="text-[10px] font-mono text-[var(--text-muted)] tracking-widest">API KEY</label>
+            <label class="data-label mb-1">API KEY</label>
             <Input
               v-model="newApiKey"
               type="password"
               placeholder="sk-xxx..."
-              class="mt-1"
               @keyup.enter="saveKey"
             />
           </div>
 
-          <div class="flex items-center gap-2 pt-2">
+          <div class="flex items-center gap-3 pt-2">
             <Button
               @click="saveKey"
               variant="cyan"
@@ -144,17 +141,17 @@ onMounted(() => {
 
       <!-- Known Providers Reference -->
       <Card title="KNOWN PROVIDERS" subtitle="click to auto-fill">
-        <div class="grid grid-cols-2 gap-2">
+        <div class="known-providers-grid">
           <button
             v-for="p in knownProviders"
             :key="p.name"
             @click="selectKnownProvider(p.name)"
-            class="flex items-center gap-3 p-3 rounded-lg border border-[var(--border-subtle)] hover:border-[var(--cyan)] hover:bg-[var(--cyan-ghost)] transition-all text-left group"
+            class="known-provider-btn"
           >
-            <Icon name="shield" :size="16" class="text-[var(--text-ghost)] group-hover:text-[var(--cyan)] transition-colors" />
+            <Icon name="shield" :size="16" class="provider-icon" />
             <div>
-              <div class="text-xs font-semibold text-[var(--text-primary)]">{{ p.label }}</div>
-              <div class="text-[10px] text-[var(--text-muted)] font-mono">{{ p.desc }}</div>
+              <div class="provider-label">{{ p.label }}</div>
+              <div class="provider-desc">{{ p.desc }}</div>
             </div>
           </button>
         </div>
@@ -162,12 +159,12 @@ onMounted(() => {
 
       <!-- Stored Keys -->
       <Card title="STORED KEYS" :subtitle="`${providers.length} configured`">
-        <div v-if="loading" class="text-xs text-[var(--text-muted)] font-mono py-4 text-center">
+        <div v-if="loading" class="text-xs text-muted font-mono py-4 text-center">
           Loading...
         </div>
 
-        <div v-else-if="providers.length === 0" class="text-xs text-[var(--text-muted)] font-mono py-8 text-center">
-          <Icon name="shield-off" :size="20" class="mx-auto mb-2 text-[var(--text-ghost)]" />
+        <div v-else-if="providers.length === 0" class="text-xs text-muted font-mono py-8 text-center">
+          <Icon name="shield-off" :size="20" class="mx-auto mb-2 opacity-40" />
           No provider keys stored. Add one above.
         </div>
 
@@ -175,17 +172,17 @@ onMounted(() => {
           <div
             v-for="p in providers"
             :key="p.provider"
-            class="flex items-center justify-between p-3 rounded-lg border border-[var(--border-subtle)] hover:border-[var(--border)] transition-colors"
+            class="provider-row"
           >
             <div class="flex items-center gap-3">
               <Icon
                 :name="p.has_key ? 'shield-check' : 'shield-off'"
                 :size="16"
-                :color="p.has_key ? 'var(--emerald)' : 'var(--text-ghost)'"
+                :color="p.has_key ? 'var(--clr-emerald)' : 'var(--clr-text-muted)'"
               />
               <div>
-                <div class="text-xs font-semibold text-[var(--text-primary)] capitalize">{{ p.provider }}</div>
-                <div class="text-[10px] font-mono text-[var(--text-muted)]">{{ p.key_masked || 'No key' }}</div>
+                <div class="text-xs font-semibold text-primary capitalize">{{ p.provider }}</div>
+                <div class="font-10 font-mono text-muted">{{ p.key_masked || 'No key' }}</div>
               </div>
             </div>
             <div class="flex items-center gap-2">
@@ -197,7 +194,7 @@ onMounted(() => {
               </Badge>
               <button
                 @click="deleteKey(p.provider)"
-                class="p-1.5 rounded-md text-[var(--text-ghost)] hover:text-[var(--crimson)] hover:bg-[var(--crimson-glow)] transition-all"
+                class="btn-icon-danger"
                 title="Delete key"
               >
                 <Icon name="trash" :size="14" />
@@ -210,14 +207,14 @@ onMounted(() => {
       <!-- Security Notice -->
       <Card glow="amber" class="anim-slide-up">
         <div class="flex items-start gap-3">
-          <Icon name="shield-lock" :size="18" class="text-[var(--amber)] shrink-0 mt-0.5" />
+          <Icon name="shield-lock" :size="18" class="text-amber shrink-0 mt-0.5" />
           <div>
-            <div class="text-xs font-semibold text-[var(--text-primary)] mb-1">Security</div>
-            <div class="text-[10px] text-[var(--text-muted)] leading-relaxed">
+            <div class="text-xs font-semibold text-primary mb-1">Security</div>
+            <div class="font-10 text-muted leading-relaxed">
               API keys are encrypted with AES-256-GCM and stored in
-              <code class="text-[var(--cyan)] font-mono">.forge/credentials.vault.json</code>.
+              <code class="text-primary font-mono">.forge/credentials.vault.json</code>.
               Keys are never logged or transmitted in plaintext. To enable encryption, set the
-              <code class="text-[var(--cyan)] font-mono">VAULT_PASSWORD</code> environment variable before starting the server.
+              <code class="text-primary font-mono">VAULT_PASSWORD</code> environment variable before starting the server.
             </div>
           </div>
         </div>
@@ -226,3 +223,125 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-xl);
+}
+
+.max-w-3xl {
+  max-width: 720px;
+}
+
+.space-y-5 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.space-y-4 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.space-y-2 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Known providers grid */
+.known-providers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
+.known-provider-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius);
+  border: 1px solid var(--clr-border-subtle);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+  text-align: left;
+}
+
+.known-provider-btn:hover {
+  border-color: var(--clr-primary);
+  background: var(--clr-primary-glow);
+}
+
+.provider-icon {
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  color: var(--clr-text-muted);
+}
+
+.known-provider-btn:hover .provider-icon {
+  opacity: 1;
+  color: var(--clr-primary);
+}
+
+.provider-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--clr-text);
+}
+
+.provider-desc {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--clr-text-muted);
+}
+
+/* Provider row */
+.provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  border-radius: var(--radius);
+  border: 1px solid var(--clr-border-subtle);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.provider-row:hover {
+  border-color: var(--clr-border);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.btn-icon-danger {
+  padding: 6px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: var(--clr-text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-icon-danger:hover {
+  color: var(--clr-crimson);
+  background: var(--clr-crimson-glow);
+}
+
+.mb-3 { margin-bottom: var(--space-md); }
+.mb-2 { margin-bottom: var(--space-sm); }
+.mb-1 { margin-bottom: var(--space-xs); }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.text-center { text-align: center; }
+.py-4 { padding-top: var(--space-md); padding-bottom: var(--space-md); }
+.py-8 { padding-top: var(--space-xl); padding-bottom: var(--space-xl); }
+.shrink-0 { flex-shrink: 0; }
+.ml-auto { margin-left: auto; }
+.text-amber { color: var(--clr-amber); }
+</style>

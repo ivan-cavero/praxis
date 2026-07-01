@@ -1,8 +1,8 @@
 //! Mock provider — deterministic responses for testing.
 
 use async_trait::async_trait;
-use project_x_agent_traits::provider::*;
-use project_x_shared::types::{ModelInfo, TokenUsage};
+use praxis_agent_traits::provider::*;
+use praxis_shared::types::{ModelInfo, TokenUsage};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::mpsc;
 

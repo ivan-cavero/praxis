@@ -70,7 +70,7 @@ impl VaultService {
             .unwrap_or_else(|_| ".".to_string());
 
         let file_path = PathBuf::from(home)
-            .join(".project-x")
+            .join(".praxis")
             .join(format!("{}.vault.json", service));
 
         let encrypted = master_password.is_some();
@@ -212,7 +212,7 @@ impl VaultService {
 
 impl Default for VaultService {
     fn default() -> Self {
-        Self::new("project-x", None)
+        Self::new("praxis", None)
     }
 }
 

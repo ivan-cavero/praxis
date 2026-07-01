@@ -4,7 +4,7 @@
 //! All queries are parameterized (no SQL injection).
 
 use async_trait::async_trait;
-use project_x_agent_traits::persistence::{EventStore, StoredEvent, StoredSnapshot};
+use praxis_agent_traits::persistence::{EventStore, StoredEvent, StoredSnapshot};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
@@ -174,13 +174,13 @@ impl SqliteEventStore {
 #[async_trait]
 impl EventStore for SqliteEventStore {
     /// Append a new event (with version conflict detection).
-    async fn append(&self, event: StoredEvent) -> project_x_shared::error::Result<()> {
+    async fn append(&self, event: StoredEvent) -> praxis_shared::error::Result<()> {
         let _lock = self.write_lock.lock().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(format!("Lock error: {}", e))
+            praxis_shared::error::ProjectXError::DatabaseError(format!("Lock error: {}", e))
         })?;
 
         let conn = self.conn().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(e)
+            praxis_shared::error::ProjectXError::DatabaseError(e)
         })?;
 
         // Check version conflict
@@ -191,11 +191,11 @@ impl EventStore for SqliteEventStore {
                 |row| row.get(0),
             )
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
             })?;
 
         if event.version <= max_version {
-            return Err(project_x_shared::error::ProjectXError::DatabaseError(format!(
+            return Err(praxis_shared::error::ProjectXError::DatabaseError(format!(
                 "Version conflict: event version {} <= max version {}",
                 event.version, max_version
             )));
@@ -216,7 +216,7 @@ impl EventStore for SqliteEventStore {
             ],
         )
         .map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(format!("Insert error: {}", e))
+            praxis_shared::error::ProjectXError::DatabaseError(format!("Insert error: {}", e))
         })?;
 
         Ok(())
@@ -227,9 +227,9 @@ impl EventStore for SqliteEventStore {
         &self,
         aggregate_id: Uuid,
         after_version: Option<i64>,
-    ) -> project_x_shared::error::Result<Vec<StoredEvent>> {
+    ) -> praxis_shared::error::Result<Vec<StoredEvent>> {
         let conn = self.conn().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(e)
+            praxis_shared::error::ProjectXError::DatabaseError(e)
         })?;
 
         let rows = if let Some(version) = after_version {
@@ -241,7 +241,7 @@ impl EventStore for SqliteEventStore {
                      ORDER BY version ASC",
                 )
                 .map_err(|e| {
-                    project_x_shared::error::ProjectXError::DatabaseError(format!("Prepare error: {}", e))
+                    praxis_shared::error::ProjectXError::DatabaseError(format!("Prepare error: {}", e))
                 })?;
 
             stmt.query_map(params![aggregate_id.to_string(), version], |row| {
@@ -257,11 +257,11 @@ impl EventStore for SqliteEventStore {
                 })
             })
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
             })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Row error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Row error: {}", e))
             })?
         } else {
             let mut stmt = conn
@@ -272,7 +272,7 @@ impl EventStore for SqliteEventStore {
                      ORDER BY version ASC",
                 )
                 .map_err(|e| {
-                    project_x_shared::error::ProjectXError::DatabaseError(format!("Prepare error: {}", e))
+                    praxis_shared::error::ProjectXError::DatabaseError(format!("Prepare error: {}", e))
                 })?;
 
             stmt.query_map(params![aggregate_id.to_string()], |row| {
@@ -288,11 +288,11 @@ impl EventStore for SqliteEventStore {
                 })
             })
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
             })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Row error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Row error: {}", e))
             })?
         };
 
@@ -300,9 +300,9 @@ impl EventStore for SqliteEventStore {
     }
 
     /// Get the latest snapshot for an aggregate.
-    async fn get_snapshot(&self, aggregate_id: Uuid) -> project_x_shared::error::Result<Option<StoredSnapshot>> {
+    async fn get_snapshot(&self, aggregate_id: Uuid) -> praxis_shared::error::Result<Option<StoredSnapshot>> {
         let conn = self.conn().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(e)
+            praxis_shared::error::ProjectXError::DatabaseError(e)
         })?;
 
         let result = conn
@@ -322,20 +322,20 @@ impl EventStore for SqliteEventStore {
             )
             .optional()
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Snapshot query error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Snapshot query error: {}", e))
             })?;
 
         Ok(result)
     }
 
     /// Save (upsert) a snapshot for an aggregate.
-    async fn save_snapshot(&self, snapshot: StoredSnapshot) -> project_x_shared::error::Result<()> {
+    async fn save_snapshot(&self, snapshot: StoredSnapshot) -> praxis_shared::error::Result<()> {
         let _lock = self.write_lock.lock().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(format!("Lock error: {}", e))
+            praxis_shared::error::ProjectXError::DatabaseError(format!("Lock error: {}", e))
         })?;
 
         let conn = self.conn().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(e)
+            praxis_shared::error::ProjectXError::DatabaseError(e)
         })?;
 
         conn.execute(
@@ -350,33 +350,33 @@ impl EventStore for SqliteEventStore {
             ],
         )
         .map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(format!("Snapshot save error: {}", e))
+            praxis_shared::error::ProjectXError::DatabaseError(format!("Snapshot save error: {}", e))
         })?;
 
         Ok(())
     }
 
     /// List all aggregate IDs of a given type.
-    async fn list_aggregates(&self, aggregate_type: &str) -> project_x_shared::error::Result<Vec<Uuid>> {
+    async fn list_aggregates(&self, aggregate_type: &str) -> praxis_shared::error::Result<Vec<Uuid>> {
         let conn = self.conn().map_err(|e| {
-            project_x_shared::error::ProjectXError::DatabaseError(e)
+            praxis_shared::error::ProjectXError::DatabaseError(e)
         })?;
 
         let ids = conn
             .prepare("SELECT DISTINCT aggregate_id FROM events WHERE aggregate_type = ?1")
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Prepare error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Prepare error: {}", e))
             })?
             .query_map(params![aggregate_type], |row| {
                 let id_str: String = row.get(0)?;
                 Ok(Uuid::parse_str(&id_str).unwrap_or_default())
             })
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Query error: {}", e))
             })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::DatabaseError(format!("Row error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!("Row error: {}", e))
             })?;
 
         Ok(ids)
@@ -544,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_based_store() {
-        let dir = std::env::temp_dir().join(format!("project-x-test-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("praxis-test-{}", Uuid::new_v4()));
         let db_path = dir.join("test.db");
 
         let store = SqliteEventStore::new(&db_path).expect("Failed to create file store");

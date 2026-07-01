@@ -15,7 +15,7 @@ pub mod prelude {
 }
 
 // Re-export the unified error type from shared
-pub use project_x_shared::error::ProjectXError;
+pub use praxis_shared::error::ProjectXError;
 
 /// Result type used throughout agent-traits.
 pub type Result<T> = std::result::Result<T, ProjectXError>;
@@ -67,7 +67,7 @@ mod tests {
         let response = provider::ChatResponse {
             content: "Hello!".to_string(),
             finish_reason: "stop".to_string(),
-            usage: project_x_shared::types::TokenUsage::new(10, 5),
+            usage: praxis_shared::types::TokenUsage::new(10, 5),
             model: "gpt-4o".to_string(),
         };
         assert_eq!(response.content, "Hello!");
@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn test_stream_chunk_types() {
         let delta = provider::StreamChunk::Delta("hello".to_string());
-        let done = provider::StreamChunk::Done(project_x_shared::types::TokenUsage::new(100, 50));
+        let done = provider::StreamChunk::Done(praxis_shared::types::TokenUsage::new(100, 50));
         let error = provider::StreamChunk::Error("timeout".to_string());
 
         match delta {
@@ -286,14 +286,14 @@ mod tests {
     // ─── Error Types ───────────────────────────────────────────
 
     #[test]
-    fn test_project_x_error_display() {
+    fn test_praxis_error_display() {
         let err = ProjectXError::ProviderError("test error".to_string());
         let msg = format!("{}", err);
         assert!(msg.contains("test error"), "Error should contain message: {}", msg);
     }
 
     #[test]
-    fn test_project_x_error_database() {
+    fn test_praxis_error_database() {
         let err = ProjectXError::DatabaseError("connection failed".to_string());
         assert!(format!("{}", err).contains("connection failed"));
     }

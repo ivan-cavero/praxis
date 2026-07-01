@@ -1,8 +1,15 @@
 //! REST API routes.
+//!
+//! Architecture:
+//!   %APPDATA%/praxis/          (o ~/.config/praxis/)
+//!   ├── projects.json             ← TODOS los proyectos con forge_toml embebido
+//!   ├── jwt.secret                ← Global
+//!   └── credentials.vault.json    ← Global (API keys del usuario)
 
-use axum::{Router, routing::{get, post, delete}, Json, extract::State, http::StatusCode};
+use axum::{Router, routing::{get, post, delete, put}, Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// Shared state for the API server.
 #[derive(Clone)]
@@ -11,16 +18,18 @@ pub struct AppState {
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub bus: crate::EventBus,
     pub auth: std::sync::Arc<super::auth::AuthState>,
-    pub vault: std::sync::Arc<project_x_vault::VaultService>,
+    pub vault: std::sync::Arc<praxis_vault::VaultService>,
+    /// Directory where ALL project data lives (%APPDATA%/praxis).
+    pub data_dir: std::path::PathBuf,
 }
 
 /// API server configuration.
 pub struct ApiServerConfig {
     pub port: u16,
     pub cors_origins: Vec<String>,
-    /// Optional master password for vault encryption.
-    /// If None, vault stores keys unencrypted (fallback).
     pub vault_password: Option<String>,
+    /// Data directory (%APPDATA%/praxis or ~/.config/praxis).
+    pub data_dir: std::path::PathBuf,
 }
 
 impl Default for ApiServerConfig {
@@ -29,6 +38,7 @@ impl Default for ApiServerConfig {
             port: 8080,
             cors_origins: vec!["*".to_string()],
             vault_password: None,
+            data_dir: std::path::PathBuf::from("."),
         }
     }
 }
@@ -43,65 +53,60 @@ impl ApiServer {
         Self { config }
     }
 
-    /// Build the Axum router with all routes and auth middleware.
     pub fn router(state: AppState) -> Router {
         let cors = tower_http::cors::CorsLayer::permissive();
         let auth_state = state.auth.clone();
 
-        // Vault routes — exempt from auth (they SET the auth credentials)
-        let vault_routes = Router::new()
-            .route("/api/vault/keys", get(vault::list_keys))
-            .route("/api/vault/keys", post(vault::set_key))
-            .route("/api/vault/keys/{provider}", delete(vault::delete_key))
-            .with_state(Arc::new(state.clone()));
-
         // Authenticated routes
         let auth_routes = Router::new()
-            // Health (exempt from auth)
-            .route("/api/health", get(routes::health))
-            // Projects
-            .route("/api/projects", get(routes::list_projects))
-            .route("/api/projects", post(routes::create_project))
-            // Sessions
-            .route("/api/sessions", get(routes::list_sessions))
-            // Metrics
-            .route("/api/metrics/tokens", get(routes::token_metrics))
-            .route("/api/metrics/summary", get(routes::metrics_summary))
-            // Context
-            .route("/api/metrics/context", get(routes::context_metrics))
-            // WebSocket (exempt from auth)
-            .route("/ws/global", get(super::ws::ws_handler))
-            .with_state(Arc::new(state))
+            .route("/api/projects", get(projects::list))
+            .route("/api/projects", post(projects::create))
+            .route("/api/projects/{id}", get(projects::get_one))
+            .route("/api/projects/{id}", put(projects::update))
+            .route("/api/projects/{id}", delete(projects::delete))
+            .route("/api/projects/{id}/config", get(projects::get_config))
+            .route("/api/projects/{id}/config", put(projects::update_config))
+            .with_state(Arc::new(state.clone()))
             .layer(axum::middleware::from_fn_with_state(
                 auth_state,
                 super::auth::auth_middleware,
             ));
 
+        // Public routes
+        let public_routes = Router::new()
+            .route("/api/health", get(routes::health))
+            .route("/api/metrics/tokens", get(routes::token_metrics))
+            .route("/api/metrics/summary", get(routes::metrics_summary))
+            .route("/api/metrics/context", get(routes::context_metrics))
+            .route("/api/vault/keys", get(vault::list_keys))
+            .route("/api/vault/keys", post(vault::set_key))
+            .route("/api/vault/keys/{provider}", delete(vault::delete_key))
+            .route("/ws/global", get(super::ws::ws_handler))
+            .with_state(Arc::new(state));
+
         Router::new()
-            .merge(vault_routes)
+            .merge(public_routes)
             .merge(auth_routes)
             .layer(cors)
     }
 
-    /// Start the server (non-blocking).
     pub async fn start(self) -> anyhow::Result<()> {
         let bus = crate::EventBus::new();
+        let data_dir = self.config.data_dir.clone();
 
-        // Initialize JWT auth with auto-generated or loaded secret
-        let secret_path = std::path::PathBuf::from(".forge")
-            .join("jwt.secret");
+        // Ensure data directory exists
+        std::fs::create_dir_all(&data_dir)?;
+
+        // Initialize JWT auth
+        let secret_path = data_dir.join("jwt.secret");
         let auth = std::sync::Arc::new(
             super::auth::AuthState::from_file_or_create(&secret_path)
         );
 
-        // Initialize vault service
-        let vault_dir = std::path::PathBuf::from(".forge");
-        if !vault_dir.exists() {
-            std::fs::create_dir_all(&vault_dir)?;
-        }
-        let vault_path = vault_dir.join("credentials.vault.json");
+        // Initialize vault
+        let vault_path = data_dir.join("credentials.vault.json");
         let vault = std::sync::Arc::new(
-            project_x_vault::VaultService::with_path(vault_path.clone(), self.config.vault_password.clone())
+            praxis_vault::VaultService::with_path(vault_path, self.config.vault_password.clone())
         );
         vault.init()?;
 
@@ -111,6 +116,7 @@ impl ApiServer {
             bus,
             auth,
             vault,
+            data_dir,
         };
 
         let app = Self::router(state);
@@ -129,20 +135,142 @@ impl ApiServer {
     }
 }
 
-// ─── Vault API Handlers ───────────────────────────────────────
+// ─── Helper: read/write projects.json ─────────────────────────
 
-/// Request body for setting a provider API key.
+fn projects_path(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("projects.json")
+}
+
+fn read_projects(data_dir: &std::path::Path) -> Vec<ProjectEntry> {
+    let path = projects_path(data_dir);
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn write_projects(data_dir: &std::path::Path, projects: &[ProjectEntry]) -> Result<(), String> {
+    let path = projects_path(data_dir);
+    serde_json::to_string_pretty(projects)
+        .map_err(|e| e.to_string())
+        .and_then(|content| {
+            std::fs::write(&path, &content).map_err(|e| e.to_string())
+        })
+}
+
+/// Default forge.toml template for new projects.
+const DEFAULT_FORGE_TOML: &str = r#"[project]
+name = "{name}"
+version = "0.1.0"
+
+[providers.nan]
+base_url = "https://api.nan.builders/v1"
+api_key = "env:NAN_API_KEY"
+default_model = "qwen3.6"
+
+[roles.architect]
+model = "claude-sonnet-4-20250514"
+temperature = 0.2
+tools = ["filesystem", "web_search"]
+system_prompt = "You are a senior software architect."
+
+[roles.coder]
+model = "gpt-4o"
+temperature = 0.3
+tools = ["filesystem", "execute_command"]
+system_prompt = "You implement clean, maintainable code."
+
+[roles.reviewer]
+model = "gpt-4o"
+temperature = 0.2
+tools = ["filesystem"]
+system_prompt = "Review for correctness and quality."
+
+[roles.security]
+model = "claude-sonnet-4-20250514"
+temperature = 0.1
+tools = ["filesystem", "grep"]
+system_prompt = "Audit for security vulnerabilities."
+
+[roles.tester]
+model = "gpt-4o"
+temperature = 0.2
+tools = ["filesystem", "execute_command"]
+system_prompt = "Generate and execute tests."
+
+[roles.researcher]
+model = "gpt-4o"
+temperature = 0.3
+tools = ["web_search", "read_url"]
+system_prompt = "Research technical topics."
+
+[[goals]]
+name = "full-feature"
+agents = ["architect", "coder", "reviewer", "security", "tester"]
+gates = ["review.pass", "security.no_critical", "test.pass"]
+max_iterations = 10
+
+[[goals]]
+name = "quick-fix"
+agents = ["coder", "reviewer"]
+max_iterations = 3
+
+[limits]
+max_iterations_per_goal = 50
+max_iterations_per_phase = 5
+session_ttl_seconds = 3600
+phase_timeout_seconds = 300
+"#;
+
+// ─── Project types ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectEntry {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    pub created_at: String,
+    #[serde(default)]
+    pub last_active: String,
+    #[serde(default)]
+    pub forge_toml: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateProjectRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Optional forge.toml content. Auto-generated if empty.
+    #[serde(default)]
+    pub forge_toml: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProjectRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub forge_toml: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateConfigRequest {
+    pub config: String,
+}
+
+// ─── Vault API ────────────────────────────────────────────────
+
 #[derive(Deserialize)]
 pub struct SetKeyRequest {
-    /// Provider name (e.g., "nan", "openai", "anthropic")
     pub provider: String,
-    /// The API key value
     pub api_key: String,
-    /// Optional base URL override
     pub base_url: Option<String>,
 }
 
-/// Response for a stored provider key.
 #[derive(Serialize)]
 pub struct ProviderKeyResponse {
     pub provider: String,
@@ -150,7 +278,6 @@ pub struct ProviderKeyResponse {
     pub has_key: bool,
 }
 
-/// Response for listing all configured providers.
 #[derive(Serialize)]
 pub struct ListKeysResponse {
     pub providers: Vec<ProviderKeyResponse>,
@@ -160,112 +287,335 @@ pub struct ListKeysResponse {
 pub mod vault {
     use super::*;
 
-    /// List all configured provider keys (with masked values).
-    pub async fn list_keys(
-        State(state): State<Arc<AppState>>,
-    ) -> Json<ListKeysResponse> {
-        let keys = state.vault.list_keys()
-            .unwrap_or_default();
-
-        let providers: Vec<ProviderKeyResponse> = keys
-            .into_iter()
-            .map(|provider| {
-                let has_key = state.vault.get(&provider).unwrap_or_default().is_some();
-                let key_masked = if has_key {
-                    let key = state.vault.get(&provider).unwrap().unwrap();
-                    if key.len() > 8 {
-                        format!("{}...{}", &key[..4], &key[key.len()-4..])
-                    } else {
-                        "****".to_string()
-                    }
-                } else {
-                    String::new()
-                };
-                ProviderKeyResponse {
-                    provider,
-                    key_masked,
-                    has_key,
-                }
-            })
-            .collect();
-
-        let total = providers.len();
-        Json(ListKeysResponse {
-            providers,
-            total,
-        })
+    pub async fn list_keys(State(state): State<Arc<AppState>>) -> Json<ListKeysResponse> {
+        let keys = state.vault.list_keys().unwrap_or_default();
+        let providers: Vec<ProviderKeyResponse> = keys.into_iter().map(|provider| {
+            let has_key = state.vault.get(&provider).unwrap_or_default().is_some();
+            let key_masked = if has_key {
+                let key = state.vault.get(&provider).unwrap().unwrap();
+                if key.len() > 8 {
+                    format!("{}...{}", &key[..4], &key[key.len()-4..])
+                } else { "****".to_string() }
+            } else { String::new() };
+            ProviderKeyResponse { provider, key_masked, has_key }
+        }).collect();
+        Json(ListKeysResponse { total: providers.len(), providers })
     }
 
-    /// Set (or update) a provider API key.
     pub async fn set_key(
         State(state): State<Arc<AppState>>,
         Json(request): Json<SetKeyRequest>,
     ) -> (StatusCode, Json<ProviderKeyResponse>) {
-        // Validate provider name (alphanumeric + underscore only)
         if !request.provider.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ProviderKeyResponse {
-                    provider: request.provider,
-                    key_masked: String::new(),
-                    has_key: false,
-                }),
-            );
+            return (StatusCode::BAD_REQUEST, Json(ProviderKeyResponse {
+                provider: request.provider, key_masked: String::new(), has_key: false,
+            }));
         }
-
-        // Store the key in the vault
         if let Err(e) = state.vault.set(&request.provider, &request.api_key) {
-            tracing::error!("Failed to store API key for {}: {}", request.provider, e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ProviderKeyResponse {
-                    provider: request.provider,
-                    key_masked: String::new(),
-                    has_key: false,
-                }),
-            );
+            tracing::error!("Failed to store API key: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ProviderKeyResponse {
+                provider: request.provider, key_masked: String::new(), has_key: false,
+            }));
         }
-
         let masked = if request.api_key.len() > 8 {
             format!("{}...{}", &request.api_key[..4], &request.api_key[request.api_key.len()-4..])
-        } else {
-            "****".to_string()
-        };
-
-        tracing::info!("Stored API key for provider: {}", request.provider);
-
+        } else { "****".to_string() };
         (StatusCode::OK, Json(ProviderKeyResponse {
-            provider: request.provider,
-            key_masked: masked,
-            has_key: true,
+            provider: request.provider, key_masked: masked, has_key: true,
         }))
     }
 
-    /// Delete a provider API key.
     pub async fn delete_key(
         State(state): State<Arc<AppState>>,
         axum::extract::Path(provider): axum::extract::Path<String>,
     ) -> (StatusCode, Json<ProviderKeyResponse>) {
         if let Err(e) = state.vault.delete(&provider) {
-            tracing::error!("Failed to delete API key for {}: {}", provider, e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ProviderKeyResponse {
-                    provider,
-                    key_masked: String::new(),
-                    has_key: false,
-                }),
-            );
+            tracing::error!("Failed to delete key: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ProviderKeyResponse {
+                provider, key_masked: String::new(), has_key: false,
+            }));
         }
-
-        tracing::info!("Deleted API key for provider: {}", provider);
-
         (StatusCode::OK, Json(ProviderKeyResponse {
-            provider,
-            key_masked: String::new(),
-            has_key: false,
+            provider, key_masked: String::new(), has_key: false,
         }))
     }
+}
+
+// ─── Projects API ─────────────────────────────────────────────
+
+pub mod projects {
+    use super::*;
+
+    pub async fn list(State(state): State<Arc<AppState>>) -> Json<Vec<ProjectEntry>> {
+        let projects = read_projects(&state.data_dir);
+        Json(projects)
+    }
+
+    pub async fn get_one(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<ProjectEntry>, StatusCode> {
+        let projects = read_projects(&state.data_dir);
+        projects.into_iter().find(|p| p.id == id)
+            .map(Json)
+            .ok_or(StatusCode::NOT_FOUND)
+    }
+
+    pub async fn create(
+        State(state): State<Arc<AppState>>,
+        Json(request): Json<CreateProjectRequest>,
+    ) -> Result<(StatusCode, Json<ProjectEntry>), StatusCode> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let forge_toml = if request.forge_toml.is_empty() {
+            DEFAULT_FORGE_TOML.replace("{name}", &request.name)
+        } else {
+            request.forge_toml
+        };
+
+        let entry = ProjectEntry {
+            id: id.clone(),
+            name: request.name,
+            description: request.description,
+            created_at: now.clone(),
+            last_active: now,
+            forge_toml,
+        };
+
+        let mut projects = read_projects(&state.data_dir);
+        projects.push(entry.clone());
+        write_projects(&state.data_dir, &projects)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        tracing::info!("Created project: {} ({})", entry.name, entry.id);
+        Ok((StatusCode::CREATED, Json(entry)))
+    }
+
+    pub async fn update(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+        Json(request): Json<UpdateProjectRequest>,
+    ) -> Result<Json<ProjectEntry>, StatusCode> {
+        let mut projects = read_projects(&state.data_dir);
+        let idx = projects.iter().position(|p| p.id == id)
+            .ok_or(StatusCode::NOT_FOUND)?;
+
+        let entry = &mut projects[idx];
+        if let Some(name) = request.name { entry.name = name; }
+        if let Some(desc) = request.description { entry.description = desc; }
+        if let Some(toml) = request.forge_toml { entry.forge_toml = toml; }
+        entry.last_active = chrono::Utc::now().to_rfc3339();
+
+        let cloned = entry.clone();
+
+        write_projects(&state.data_dir, &projects)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(Json(cloned))
+    }
+
+    pub async fn delete(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> StatusCode {
+        let mut projects = read_projects(&state.data_dir);
+        let before = projects.len();
+        projects.retain(|p| p.id != id);
+        if projects.len() == before {
+            return StatusCode::NOT_FOUND;
+        }
+        let _ = write_projects(&state.data_dir, &projects);
+        tracing::info!("Deleted project: {}", id);
+        StatusCode::OK
+    }
+
+    /// Get parsed forge.toml config for a project.
+    pub async fn get_config(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<ProjectConfigResponse>, StatusCode> {
+        let projects = read_projects(&state.data_dir);
+        let entry = projects.into_iter().find(|p| p.id == id)
+            .ok_or(StatusCode::NOT_FOUND)?;
+
+        let parsed = parse_forge_toml(&entry.forge_toml);
+        Ok(Json(ProjectConfigResponse {
+            raw: entry.forge_toml,
+            roles: parsed.roles,
+            providers: parsed.providers,
+            goals: parsed.goals,
+            limits: parsed.limits,
+            project: ProjectInfo {
+                name: entry.name.clone(),
+                version: parsed.project_version,
+            },
+        }))
+    }
+
+    /// Update forge.toml for a project.
+    pub async fn update_config(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+        Json(request): Json<UpdateConfigRequest>,
+    ) -> Result<Json<ProjectConfigResponse>, StatusCode> {
+        let mut projects = read_projects(&state.data_dir);
+        let idx = projects.iter().position(|p| p.id == id)
+            .ok_or(StatusCode::NOT_FOUND)?;
+
+        let entry = &mut projects[idx];
+        entry.forge_toml = request.config;
+        entry.last_active = chrono::Utc::now().to_rfc3339();
+
+        let forge_toml = entry.forge_toml.clone();
+        let name = entry.name.clone();
+
+        write_projects(&state.data_dir, &projects)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let parsed = parse_forge_toml(&forge_toml);
+        Ok(Json(ProjectConfigResponse {
+            raw: forge_toml,
+            roles: parsed.roles,
+            providers: parsed.providers,
+            goals: parsed.goals,
+            limits: parsed.limits,
+            project: ProjectInfo {
+                name,
+                version: parsed.project_version,
+            },
+        }))
+    }
+}
+
+// ─── Config parsing ───────────────────────────────────────────
+
+fn parse_forge_toml(raw: &str) -> ParsedConfig {
+    let parsed = match toml::from_str::<toml::Value>(raw) {
+        Ok(v) => v,
+        Err(_) => return ParsedConfig::default(),
+    };
+
+    let roles: HashMap<String, RoleDetail> = parsed
+        .get("roles").and_then(|v| v.as_table())
+        .map(|table| table.iter().map(|(name, value)| {
+            let detail = RoleDetail {
+                model: value.get("model").and_then(|v| v.as_str()).unwrap_or("gpt-4o").to_string(),
+                temperature: value.get("temperature").and_then(|v| v.as_float()).unwrap_or(0.3),
+                max_tokens: value.get("max_tokens").and_then(|v| v.as_integer()).unwrap_or(4096) as u32,
+                system_prompt: value.get("system_prompt").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                tools: value.get("tools").and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                description: value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            };
+            (name.clone(), detail)
+        }).collect()).unwrap_or_default();
+
+    let providers: HashMap<String, ProviderDetail> = parsed
+        .get("providers").and_then(|v| v.as_table())
+        .map(|table| table.iter().map(|(name, value)| {
+            let detail = ProviderDetail {
+                base_url: value.get("base_url").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                api_key_ref: value.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                default_model: value.get("default_model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            };
+            (name.clone(), detail)
+        }).collect()).unwrap_or_default();
+
+    let goals: Vec<GoalDetail> = parsed
+        .get("goals").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_table()).map(|table| GoalDetail {
+            name: table.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            agents: table.get("agents").and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default(),
+            max_iterations: table.get("max_iterations").and_then(|v| v.as_integer()).unwrap_or(10) as u32,
+            gates: table.get("gates").and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default(),
+        }).collect()).unwrap_or_default();
+
+    let limits = LimitsDetail {
+        max_iterations_per_goal: parsed.get("limits").and_then(|l| l.get("max_iterations_per_goal")).and_then(|v| v.as_integer()).unwrap_or(50) as u32,
+        max_iterations_per_phase: parsed.get("limits").and_then(|l| l.get("max_iterations_per_phase")).and_then(|v| v.as_integer()).unwrap_or(5) as u32,
+        session_ttl_seconds: parsed.get("limits").and_then(|l| l.get("session_ttl_seconds")).and_then(|v| v.as_integer()).unwrap_or(3600) as u32,
+        phase_timeout_seconds: parsed.get("limits").and_then(|l| l.get("phase_timeout_seconds")).and_then(|v| v.as_integer()).unwrap_or(300) as u32,
+    };
+
+    let project_version = parsed.get("project").and_then(|p| p.get("version")).and_then(|v| v.as_str()).unwrap_or("0.1.0").to_string();
+
+    ParsedConfig { roles, providers, goals, limits, project_version }
+}
+
+// ─── Config response types ────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct ProjectConfigResponse {
+    pub raw: String,
+    pub roles: HashMap<String, RoleDetail>,
+    pub providers: HashMap<String, ProviderDetail>,
+    pub goals: Vec<GoalDetail>,
+    pub limits: LimitsDetail,
+    pub project: ProjectInfo,
+}
+
+#[derive(Serialize)]
+pub struct ProjectInfo {
+    pub name: String,
+    pub version: String,
+}
+
+struct ParsedConfig {
+    roles: HashMap<String, RoleDetail>,
+    providers: HashMap<String, ProviderDetail>,
+    goals: Vec<GoalDetail>,
+    limits: LimitsDetail,
+    project_version: String,
+}
+
+impl Default for ParsedConfig {
+    fn default() -> Self {
+        Self {
+            roles: HashMap::new(),
+            providers: HashMap::new(),
+            goals: Vec::new(),
+            limits: LimitsDetail::default(),
+            project_version: "0.1.0".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub struct RoleDetail {
+    pub model: String,
+    pub temperature: f64,
+    pub max_tokens: u32,
+    pub system_prompt: String,
+    pub tools: Vec<String>,
+    pub description: String,
+}
+
+#[derive(Serialize, Clone)]
+pub struct ProviderDetail {
+    pub base_url: String,
+    pub api_key_ref: String,
+    pub default_model: String,
+}
+
+#[derive(Serialize, Clone)]
+pub struct GoalDetail {
+    pub name: String,
+    pub agents: Vec<String>,
+    pub max_iterations: u32,
+    pub gates: Vec<String>,
+}
+
+#[derive(Serialize, Clone, Default)]
+pub struct LimitsDetail {
+    pub max_iterations_per_goal: u32,
+    pub max_iterations_per_phase: u32,
+    pub session_ttl_seconds: u32,
+    pub phase_timeout_seconds: u32,
 }
 
 // ─── Response Types ───────────────────────────────────────────
@@ -275,23 +625,6 @@ pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub uptime_seconds: u64,
-}
-
-#[derive(Serialize)]
-pub struct ProjectResponse {
-    pub id: String,
-    pub name: String,
-    pub created_at: String,
-}
-
-#[derive(Serialize)]
-pub struct SessionResponse {
-    pub id: String,
-    pub project_id: String,
-    pub status: String,
-    pub goal: String,
-    pub phase: String,
-    pub iteration: u32,
 }
 
 #[derive(Serialize)]
@@ -320,11 +653,6 @@ pub struct MetricsSummaryResponse {
     pub avg_asi_score: f32,
 }
 
-#[derive(Deserialize)]
-pub struct CreateProjectRequest {
-    pub name: String,
-}
-
 #[derive(Serialize)]
 pub struct ErrorResponse {
     pub error: String,
@@ -340,7 +668,6 @@ pub mod routes {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
-
         Json(HealthResponse {
             status: "ok".to_string(),
             version: state.version.clone(),
@@ -348,30 +675,9 @@ pub mod routes {
         })
     }
 
-    pub async fn list_projects() -> Json<Vec<ProjectResponse>> {
-        Json(vec![])
-    }
-
-    pub async fn create_project(
-        Json(_request): Json<CreateProjectRequest>,
-    ) -> (StatusCode, Json<ProjectResponse>) {
-        let response = ProjectResponse {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "new-project".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-        };
-        (StatusCode::CREATED, Json(response))
-    }
-
-    pub async fn list_sessions() -> Json<Vec<SessionResponse>> {
-        Json(vec![])
-    }
-
     pub async fn token_metrics() -> Json<TokenMetricsResponse> {
         Json(TokenMetricsResponse {
-            total_input: 0,
-            total_output: 0,
-            total_tokens: 0,
+            total_input: 0, total_output: 0, total_tokens: 0,
             by_provider: std::collections::HashMap::new(),
             by_model: std::collections::HashMap::new(),
         })
@@ -379,10 +685,8 @@ pub mod routes {
 
     pub async fn context_metrics() -> Json<ContextMetricsResponse> {
         Json(ContextMetricsResponse {
-            avg_pressure: 0.0,
-            max_pressure: 0.0,
-            total_compressions: 0,
-            active_sessions: 0,
+            avg_pressure: 0.0, max_pressure: 0.0,
+            total_compressions: 0, active_sessions: 0,
         })
     }
 
@@ -390,7 +694,6 @@ pub mod routes {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
-
         Json(MetricsSummaryResponse {
             version: state.version.clone(),
             uptime_seconds: uptime,
@@ -401,60 +704,61 @@ pub mod routes {
     }
 }
 
+// ─── Tests ────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_health_response_structure() {
-        let vault = project_x_vault::VaultService::with_path(
-            std::env::temp_dir().join("test-vault.json"),
-            None,
-        );
-        let state = AppState {
-            version: "0.1.0".to_string(),
-            started_at: chrono::Utc::now(),
-            bus: crate::EventBus::new(),
-            auth: std::sync::Arc::new(crate::api::auth::AuthState::new(b"test-secret-key-for-testing-32bytes!!")),
-            vault: std::sync::Arc::new(vault),
-        };
-
-        let uptime = chrono::Utc::now()
-            .signed_duration_since(state.started_at)
-            .num_seconds() as u64;
-
+    fn test_health_response() {
         let response = HealthResponse {
             status: "ok".to_string(),
-            version: state.version.clone(),
-            uptime_seconds: uptime,
-        };
-
-        assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.1.0");
-    }
-
-    #[test]
-    fn test_project_response_structure() {
-        let response = ProjectResponse {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "test-project".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-        };
-        assert!(!response.id.is_empty());
-        assert_eq!(response.name, "test-project");
-    }
-
-    #[test]
-    fn test_metrics_summary_structure() {
-        let response = MetricsSummaryResponse {
             version: "0.1.0".to_string(),
             uptime_seconds: 100,
-            active_sessions: 5,
-            total_tokens: 10000,
-            avg_asi_score: 85.0,
         };
-        assert_eq!(response.version, "0.1.0");
-        assert_eq!(response.active_sessions, 5);
-        assert_eq!(response.avg_asi_score, 85.0);
+        assert_eq!(response.status, "ok");
+    }
+
+    #[test]
+    fn test_project_entry_roundtrip() {
+        let entry = ProjectEntry {
+            id: "test-id".to_string(),
+            name: "test".to_string(),
+            description: "desc".to_string(),
+            created_at: "now".to_string(),
+            last_active: "now".to_string(),
+            forge_toml: "[project]\nname = \"test\"".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: ProjectEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "test-id");
+        assert_eq!(back.name, "test");
+        assert!(back.forge_toml.contains("name = \"test\""));
+    }
+
+    #[test]
+    fn test_default_forge_toml_template() {
+        let filled = DEFAULT_FORGE_TOML.replace("{name}", "my-project");
+        assert!(filled.contains("name = \"my-project\""));
+    }
+
+    #[test]
+    fn test_parse_forge_toml() {
+        let raw = DEFAULT_FORGE_TOML.replace("{name}", "test");
+        let result = parse_forge_toml(&raw);
+        assert!(result.roles.contains_key("architect"));
+        assert!(result.roles.contains_key("coder"));
+        assert!(result.providers.contains_key("nan"));
+        assert!(result.goals.len() >= 1);
+        assert_eq!(result.limits.max_iterations_per_goal, 50);
+    }
+
+    #[test]
+    fn test_parse_empty_forge_toml() {
+        let result = parse_forge_toml("");
+        assert!(result.roles.is_empty());
+        assert!(result.providers.is_empty());
+        assert!(result.goals.is_empty());
     }
 }

@@ -4,7 +4,7 @@
 
 ## Context
 
-Project-X is a multi-agent autonomous system that:
+praxis is a multi-agent autonomous system that:
 1. Takes a goal from the user
 2. Spawns multiple agents with different models
 3. Iterates until the goal is achieved

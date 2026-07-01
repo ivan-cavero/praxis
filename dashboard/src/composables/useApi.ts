@@ -1,99 +1,119 @@
 /**
  * useApi — Backend API communication composable.
- *
- * All API calls go through the backend server, never directly to LLM providers.
- * The Vite dev server proxies /api/* to localhost:8080.
  */
 
 const API_BASE = '/api'
 
 export interface HealthStatus {
-  status: string
-  version: string
-  uptime_seconds: number
+  status: string; version: string; uptime_seconds: number
 }
 
 export interface Project {
   id: string
   name: string
+  description: string
   created_at: string
+  last_active: string
+  forge_toml: string
 }
 
-export interface Session {
-  id: string
-  project_id: string
-  status: string
-  goal: string
-  phase: string
-  iteration: number
+export interface ProjectConfig {
+  raw: string
+  roles: Record<string, RoleDetail>
+  providers: Record<string, ProviderDetail>
+  goals: GoalDetail[]
+  limits: LimitsDetail
+  project: { name: string; version: string }
 }
 
-export interface TokenMetrics {
-  total_input: number
-  total_output: number
-  total_tokens: number
-  by_provider: Record<string, number>
-  by_model: Record<string, number>
+export interface RoleDetail {
+  model: string; temperature: number; max_tokens: number
+  system_prompt: string; tools: string[]; description: string
 }
 
-export interface ContextMetrics {
-  avg_pressure: number
-  max_pressure: number
-  total_compressions: number
-  active_sessions: number
+export interface ProviderDetail {
+  base_url: string; api_key_ref: string; default_model: string
 }
 
-export interface MetricsSummary {
-  version: string
-  uptime_seconds: number
-  active_sessions: number
-  total_tokens: number
-  avg_asi_score: number
+export interface GoalDetail {
+  name: string; agents: string[]; max_iterations: number; gates: string[]
 }
 
-async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`)
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
+export interface LimitsDetail {
+  max_iterations_per_goal: number; max_iterations_per_phase: number
+  session_ttl_seconds: number; phase_timeout_seconds: number
+}
+
+export interface ProviderKey { provider: string; key_masked: string; has_key: boolean }
+
+function getToken(): string | null {
+  return localStorage.getItem('praxis-token')
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`API ${res.status}: ${body || res.statusText}`)
+  }
   return res.json()
-}
-
-async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
-  return res.json()
-}
-
-async function apiDelete(path: string): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
 }
 
 export function useApi() {
-  const getHealth = () => apiGet<HealthStatus>('/health')
-  const getProjects = () => apiGet<Project[]>('/projects')
-  const createProject = (name: string) => apiPost<Project>('/projects', { name })
-  const getSessions = () => apiGet<Session[]>('/sessions')
-  const getTokenMetrics = () => apiGet<TokenMetrics>('/metrics/tokens')
-  const getContextMetrics = () => apiGet<ContextMetrics>('/metrics/context')
-  const getMetricsSummary = () => apiGet<MetricsSummary>('/metrics/summary')
-  const get = apiGet
-  const post = apiPost
-  const del = apiDelete
+  // Health & Metrics
+  const getHealth = () => apiFetch<HealthStatus>('/health')
+  const getMetricsSummary = () => apiFetch<{ version: string; uptime_seconds: number; active_sessions: number; total_tokens: number; avg_asi_score: number }>('/metrics/summary')
+
+  // Projects
+  const getProjects = () => apiFetch<Project[]>('/projects')
+  const getProject = (id: string) => apiFetch<Project>(`/projects/${id}`)
+  const createProject = (name: string, description = '') =>
+    apiFetch<Project>('/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    })
+  const updateProject = (id: string, data: { name?: string; description?: string; forge_toml?: string }) =>
+    apiFetch<Project>(`/projects/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+  const deleteProject = (id: string) => apiFetch(`/projects/${id}`, { method: 'DELETE' })
+
+  // Project Config
+  const getProjectConfig = (id: string) => apiFetch<ProjectConfig>(`/projects/${id}/config`)
+  const updateProjectConfig = (id: string, config: string) =>
+    apiFetch<ProjectConfig>(`/projects/${id}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    })
+
+  // Vault
+  const getVaultKeys = () => apiFetch<{ providers: ProviderKey[]; total: number }>('/vault/keys')
+  const setVaultKey = (provider: string, api_key: string, base_url?: string) =>
+    apiFetch('/vault/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, api_key, base_url }),
+    })
+  const deleteVaultKey = (provider: string) => apiFetch(`/vault/keys/${provider}`, { method: 'DELETE' })
+
+  // Generic
+  const get = apiFetch
+  const post = (path: string, body: unknown) =>
+    apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const del = (path: string) => apiFetch(path, { method: 'DELETE' })
 
   return {
-    getHealth,
-    getProjects,
-    createProject,
-    getSessions,
-    getTokenMetrics,
-    getContextMetrics,
-    getMetricsSummary,
-    get,
-    post,
-    del,
+    getHealth, getMetricsSummary,
+    getProjects, getProject, createProject, updateProject, deleteProject,
+    getProjectConfig, updateProjectConfig,
+    getVaultKeys, setVaultKey, deleteVaultKey,
+    get, post, del,
   }
 }

@@ -7,22 +7,23 @@ use std::sync::Arc;
 
 /// Minimal test server with vault endpoints.
 async fn start_vault_server() -> (u16, String) {
-    let bus = project_x_core::EventBus::new();
-    let auth = std::sync::Arc::new(project_x_core::api::auth::AuthState::new(b"test-secret-key-for-vault-e2e-tests-32b!!"));
-    let vault = std::sync::Arc::new(project_x_vault::VaultService::with_path(
+    let bus = praxis_core::EventBus::new();
+    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::new(b"test-secret-key-for-vault-e2e-tests-32b!!"));
+    let vault = std::sync::Arc::new(praxis_vault::VaultService::with_path(
         std::env::temp_dir().join(format!("vault-e2e-{}.json", uuid::Uuid::new_v4())),
         None,
     ));
 
-    let state = project_x_core::api::routes::AppState {
+    let state = praxis_core::api::routes::AppState {
         version: "test-0.1.0".to_string(),
         started_at: chrono::Utc::now(),
         bus,
         auth,
-        vault: vault.clone(),
+        vault,
+        data_dir: std::env::temp_dir(),
     };
 
-    let app = project_x_core::api::ApiServer::router(state);
+    let app = praxis_core::api::ApiServer::router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

@@ -4,8 +4,8 @@
 //! Endpoint: https://generativelanguage.googleapis.com/v1beta/openai/
 
 use async_trait::async_trait;
-use project_x_agent_traits::provider::*;
-use project_x_shared::types::{ModelInfo, TokenUsage};
+use praxis_agent_traits::provider::*;
+use praxis_shared::types::{ModelInfo, TokenUsage};
 use tokio::sync::mpsc;
 
 /// Google Gemini provider (via OpenAI-compatible endpoint).
@@ -48,7 +48,7 @@ impl GeminiProvider {
     async fn send_with_retry(
         &self,
         request: reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, project_x_shared::error::ProjectXError> {
+    ) -> Result<reqwest::Response, praxis_shared::error::ProjectXError> {
         let mut attempts = 0;
         loop {
             let req = request.try_clone().expect("Request must be cloneable");
@@ -69,21 +69,21 @@ impl GeminiProvider {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     tracing::error!("Gemini HTTP {}: {}", status, body);
-                    return Err(project_x_shared::error::ProjectXError::ProviderError(
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(
                         format!("Gemini HTTP {}: {}", status, body),
                     ));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     attempts += 1;
                     if attempts > self.max_retries {
-                        return Err(project_x_shared::error::ProjectXError::ProviderError(
+                        return Err(praxis_shared::error::ProjectXError::ProviderError(
                             format!("Gemini failed after {} retries: {}", self.max_retries, e),
                         ));
                     }
                     let backoff = std::time::Duration::from_millis(100 * 2u64.pow(attempts - 1));
                     tokio::time::sleep(backoff).await;
                 }
-                Err(e) => return Err(project_x_shared::error::ProjectXError::ProviderError(
+                Err(e) => return Err(praxis_shared::error::ProjectXError::ProviderError(
                     format!("Gemini request error: {}", e),
                 )),
             }
@@ -121,11 +121,11 @@ impl LLMProvider for GeminiProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Gemini API error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Gemini API error: {}", e))
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Gemini parse error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Gemini parse error: {}", e))
         })?;
 
         let content = value["choices"][0]["message"]["content"]
@@ -180,7 +180,7 @@ impl LLMProvider for GeminiProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Gemini stream error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Gemini stream error: {}", e))
         })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -226,7 +226,7 @@ impl LLMProvider for GeminiProvider {
     }
 
     async fn embed(&self, _input: &[String]) -> crate::Result<Vec<Vec<f32>>> {
-        Err(project_x_shared::error::ProjectXError::ProviderError(
+        Err(praxis_shared::error::ProjectXError::ProviderError(
             "Gemini embeddings not implemented. Use OpenAI for embeddings.".to_string(),
         ))
     }

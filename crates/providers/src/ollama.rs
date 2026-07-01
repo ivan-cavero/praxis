@@ -4,8 +4,8 @@
 //! Default endpoint: http://localhost:11434
 
 use async_trait::async_trait;
-use project_x_agent_traits::provider::*;
-use project_x_shared::types::{ModelInfo, TokenUsage};
+use praxis_agent_traits::provider::*;
+use praxis_shared::types::{ModelInfo, TokenUsage};
 use tokio::sync::mpsc;
 
 /// Ollama provider for local models.
@@ -72,13 +72,13 @@ impl LLMProvider for OllamaProvider {
             .send()
             .await
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::ProviderError(
+                praxis_shared::error::ProjectXError::ProviderError(
                     format!("Ollama request failed (is Ollama running?): {}", e),
                 )
             })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Ollama parse error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Ollama parse error: {}", e))
         })?;
 
         let content = value["message"]["content"]
@@ -135,7 +135,7 @@ impl LLMProvider for OllamaProvider {
             .send()
             .await
             .map_err(|e| {
-                project_x_shared::error::ProjectXError::ProviderError(
+                praxis_shared::error::ProjectXError::ProviderError(
                     format!("Ollama stream failed: {}", e),
                 )
             })?;
@@ -185,7 +185,7 @@ impl LLMProvider for OllamaProvider {
     }
 
     async fn embed(&self, _input: &[String]) -> crate::Result<Vec<Vec<f32>>> {
-        Err(project_x_shared::error::ProjectXError::ProviderError(
+        Err(praxis_shared::error::ProjectXError::ProviderError(
             "Ollama embeddings not implemented. Use OpenAI for embeddings.".to_string(),
         ))
     }

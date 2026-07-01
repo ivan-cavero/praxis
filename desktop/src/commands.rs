@@ -101,7 +101,7 @@ pub async fn run_goal(request: RunGoalRequest) -> Result<String, String> {
     tracing::info!("Running goal: {}", request.goal);
 
     // Create core runtime
-    let runtime = project_x_core::CoreRuntime::new()
+    let runtime = praxis_core::CoreRuntime::new()
         .await
         .map_err(|e| e.to_string())?;
 

@@ -193,9 +193,9 @@ mod tests {
 
     #[test]
     fn test_mcp_host_new() {
-        let host = McpHost::new("project-x");
+        let host = McpHost::new("praxis");
         assert!(host.servers.is_empty());
-        assert_eq!(host.client_info.name, "project-x");
+        assert_eq!(host.client_info.name, "praxis");
     }
 
     #[test]

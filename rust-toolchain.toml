@@ -9,7 +9,7 @@ targets = [
     "x86_64-pc-windows-msvc",
 ]
 
-# Nightly features used by project-x:
+# Nightly features used by praxis:
 # - async_fn_in_trait: Async methods in Agent, Tool, Provider traits
 # - return_type_notation: Precise async return types
 # - type_alias_impl_trait: Complex nested types for actor mailboxes

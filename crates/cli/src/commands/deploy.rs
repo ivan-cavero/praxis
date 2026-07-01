@@ -18,7 +18,7 @@ impl DeployConfig {
             host: host.to_string(),
             user: user.to_string(),
             port: 22,
-            project_path: "/opt/project-x".to_string(),
+            project_path: "/opt/praxis".to_string(),
         }
     }
 }

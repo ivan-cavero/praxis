@@ -1,17 +1,17 @@
 [package]
-name = "project-x-core"
+name = "praxis-core"
 version = "0.1.0"
 edition = "2024"
 license = "Proprietary"
 
 [dependencies]
-project-x-shared = { path = "../shared" }
-project-x-agent-traits = { path = "../agent-traits" }
-project-x-providers = { path = "../providers" }
-project-x-mcp-host = { path = "../mcp-host" }
-project-x-memory = { path = "../memory" }
-project-x-persistence = { path = "../persistence" }
-project-x-vault = { path = "../vault" }
+praxis-shared = { path = "../shared" }
+praxis-agent-traits = { path = "../agent-traits" }
+praxis-providers = { path = "../providers" }
+praxis-mcp-host = { path = "../mcp-host" }
+praxis-memory = { path = "../memory" }
+praxis-persistence = { path = "../persistence" }
+praxis-vault = { path = "../vault" }
 
 ractor.workspace = true
 tokio.workspace = true

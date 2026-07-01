@@ -2,12 +2,12 @@
 
 ## Core Commands
 
-### `project-x init <name>`
+### `praxis init <name>`
 
 Create a new project with default configuration.
 
 ```bash
-project-x init my-api
+praxis init my-api
 ```
 
 Creates:
@@ -15,25 +15,25 @@ Creates:
 - `my-api/.forge/` — Project data directory
 - `my-api/.gitignore`
 
-### `project-x run`
+### `praxis run`
 
 Execute a goal with the agent system.
 
 ```bash
 # Run with a goal
-project-x run --goal "Create a REST API"
+praxis run --goal "Create a REST API"
 
 # Run with agent overrides
-project-x run --goal "..." --agents coder,reviewer --agent coder.model=claude-4-opus
+praxis run --goal "..." --agents coder,reviewer --agent coder.model=claude-4-opus
 
 # Resume interrupted session
-project-x run --resume
+praxis run --resume
 
 # Dry run (show plan without executing)
-project-x run --goal "..." --dry-run
+praxis run --goal "..." --dry-run
 
 # JSON output for CI/CD
-project-x run --goal "..." --headless
+praxis run --goal "..." --headless
 ```
 
 **Options:**
@@ -47,93 +47,93 @@ project-x run --goal "..." --headless
 - `--dry-run` — Show plan without executing
 - `--headless` — JSON output for CI/CD
 
-### `project-x test`
+### `praxis test`
 
 Run comprehensive integration tests.
 
 ```bash
-project-x test
+praxis test
 ```
 
 ## Project Commands
 
 ```bash
-project-x project list           # List all projects
-project-x project show <id>      # Show project details
-project-x project archive <id>   # Archive a project
+praxis project list           # List all projects
+praxis project show <id>      # Show project details
+praxis project archive <id>   # Archive a project
 ```
 
 ## Session Commands
 
 ```bash
-project-x session list           # List sessions
-project-x session show <id>      # Show session details
-project-x session stop <id>      # Stop running session
-project-x session logs <id>      # View session logs
-project-x session logs <id> --tail  # Stream logs in real-time
+praxis session list           # List sessions
+praxis session show <id>      # Show session details
+praxis session stop <id>      # Stop running session
+praxis session logs <id>      # View session logs
+praxis session logs <id> --tail  # Stream logs in real-time
 ```
 
 ## Configuration Commands
 
 ```bash
-project-x config show            # Show current configuration
-project-x config get <key>       # Get a config value (dot notation)
-project-x config set <key> <val> # Set a config value
-project-x config edit            # Open config in $EDITOR
-project-x config import <file>   # Import configuration
-project-x config export <file>   # Export configuration
+praxis config show            # Show current configuration
+praxis config get <key>       # Get a config value (dot notation)
+praxis config set <key> <val> # Set a config value
+praxis config edit            # Open config in $EDITOR
+praxis config import <file>   # Import configuration
+praxis config export <file>   # Export configuration
 ```
 
 ## Context Commands
 
 ```bash
-project-x context inspect --session <id>    # Show context budget
-project-x context history --session <id>    # Compression history
-project-x context force-compress --session <id>  # Force EMC
+praxis context inspect --session <id>    # Show context budget
+praxis context history --session <id>    # Compression history
+praxis context force-compress --session <id>  # Force EMC
 ```
 
 ## Provider Commands
 
 ```bash
-project-x provider list           # List configured providers
-project-x provider test <name>    # Test provider connection
+praxis provider list           # List configured providers
+praxis provider test <name>    # Test provider connection
 ```
 
 ## MCP Commands
 
 ```bash
-project-x mcp list               # List connected MCP servers
-project-x mcp add <name> <cmd>   # Add MCP server
-project-x mcp remove <name>      # Remove MCP server
-project-x mcp test <name>        # Test MCP server
+praxis mcp list               # List connected MCP servers
+praxis mcp add <name> <cmd>   # Add MCP server
+praxis mcp remove <name>      # Remove MCP server
+praxis mcp test <name>        # Test MCP server
 ```
 
 ## Deploy Commands
 
 ```bash
-project-x deploy setup <host>    # Configure VPS deployment
-project-x deploy push            # Push project to VPS
-project-x deploy status          # Check VPS status
-project-x deploy logs --tail     # Stream logs from VPS
+praxis deploy setup <host>    # Configure VPS deployment
+praxis deploy push            # Push project to VPS
+praxis deploy status          # Check VPS status
+praxis deploy logs --tail     # Stream logs from VPS
 ```
 
 ## Desktop & Dashboard
 
 ```bash
-project-x desktop                # Open desktop app
-project-x dashboard              # Open web dashboard
-project-x monitor                # Open terminal UI
+praxis desktop                # Open desktop app
+praxis dashboard              # Open web dashboard
+praxis monitor                # Open terminal UI
 ```
 
 ## Enterprise Commands
 
 ```bash
-project-x org create <name>      # Create organization
-project-x org list               # List organizations
-project-x org switch <id>        # Switch organization
+praxis org create <name>      # Create organization
+praxis org list               # List organizations
+praxis org switch <id>        # Switch organization
 
-project-x billing show           # Show billing info
-project-x billing invoices       # List invoices
+praxis billing show           # Show billing info
+praxis billing invoices       # List invoices
 ```
 
 ## Global Options

@@ -1,5 +1,5 @@
 [package]
-name = "project-x-e2e"
+name = "praxis-e2e"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -21,13 +21,13 @@ name = "vault_e2e"
 path = "vault_e2e.rs"
 
 [dev-dependencies]
-project-x-core = { path = "../crates/core" }
-project-x-shared = { path = "../crates/shared" }
-project-x-memory = { path = "../crates/memory" }
-project-x-persistence = { path = "../crates/persistence" }
-project-x-providers = { path = "../crates/providers" }
-project-x-agent-traits = { path = "../crates/agent-traits" }
-project-x-vault = { path = "../crates/vault" }
+praxis-core = { path = "../crates/core" }
+praxis-shared = { path = "../crates/shared" }
+praxis-memory = { path = "../crates/memory" }
+praxis-persistence = { path = "../crates/persistence" }
+praxis-providers = { path = "../crates/providers" }
+praxis-agent-traits = { path = "../crates/agent-traits" }
+praxis-vault = { path = "../crates/vault" }
 
 tokio.workspace = true
 serde.workspace = true

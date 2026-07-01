@@ -4,33 +4,33 @@
 
 ```bash
 # Linux / macOS
-curl -fsSL https://project-x.dev/install.sh | bash
+curl -fsSL https://praxis.dev/install.sh | bash
 
 # Windows (PowerShell)
-iwr -useb https://project-x.dev/install.ps1 | iex
+iwr -useb https://praxis.dev/install.ps1 | iex
 ```
 
 ## Manual Install
 
 ### From GitHub Releases
 
-Download the latest binary for your platform from [GitHub Releases](https://github.com/ivan-cavero/project-x/releases):
+Download the latest binary for your platform from [GitHub Releases](https://github.com/ivan-cavero/praxis/releases):
 
 | Platform | Binary |
 |----------|--------|
-| Linux x86_64 | `project-x-linux-x86_64` |
-| macOS x86_64 | `project-x-macos-x86_64` |
-| macOS ARM64 | `project-x-macos-aarch64` |
-| Windows x86_64 | `project-x-windows-x86_64.exe` |
+| Linux x86_64 | `praxis-linux-x86_64` |
+| macOS x86_64 | `praxis-macos-x86_64` |
+| macOS ARM64 | `praxis-macos-aarch64` |
+| Windows x86_64 | `praxis-windows-x86_64.exe` |
 
 ```bash
 # Linux
-chmod +x project-x-linux-x86_64
-sudo mv project-x-linux-x86_64 /usr/local/bin/project-x
+chmod +x praxis-linux-x86_64
+sudo mv praxis-linux-x86_64 /usr/local/bin/praxis
 
 # macOS
-chmod +x project-x-macos-x86_64
-sudo mv project-x-macos-x86_64 /usr/local/bin/project-x
+chmod +x praxis-macos-x86_64
+sudo mv praxis-macos-x86_64 /usr/local/bin/praxis
 ```
 
 ### From Source
@@ -40,28 +40,28 @@ sudo mv project-x-macos-x86_64 /usr/local/bin/project-x
 rustup toolchain install nightly
 
 # Clone the repository
-git clone https://github.com/ivan-cavero/project-x.git
-cd project-x
+git clone https://github.com/ivan-cavero/praxis.git
+cd praxis
 
 # Build
 cargo build --release
 
 # Install
-sudo cp target/release/project-x /usr/local/bin/
+sudo cp target/release/praxis /usr/local/bin/
 ```
 
 ### Homebrew (macOS)
 
 ```bash
 brew tap ivan-cavero/tap
-brew install project-x
+brew install praxis
 ```
 
 ## Verify Installation
 
 ```bash
-project-x --version
-# Project-X v0.1.0
+praxis --version
+# praxis v0.1.0
 ```
 
 ## System Requirements

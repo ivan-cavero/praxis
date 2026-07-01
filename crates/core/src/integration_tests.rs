@@ -57,7 +57,7 @@ mod integration_tests {
 
     #[test]
     fn test_context_stress() {
-        use project_x_memory::context::{ContextManager, BudgetProfile, ContextWindow, Message};
+        use praxis_memory::context::{ContextManager, BudgetProfile, ContextWindow, Message};
 
         let mut manager = ContextManager::new(128_000, BudgetProfile::Balanced);
         let mut context = ContextWindow::new();

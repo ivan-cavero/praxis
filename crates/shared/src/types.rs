@@ -1,4 +1,4 @@
-//! Shared type aliases and core enums for the Project-X system.
+//! Shared type aliases and core enums for the praxis system.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

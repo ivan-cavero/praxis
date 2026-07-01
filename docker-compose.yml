@@ -10,8 +10,8 @@ services:
       - ./config:/config
     environment:
       - RUST_LOG=info
-      - PROJECT_X_DATA_DIR=/data
-      - PROJECT_X_CONFIG_DIR=/config
+      - praxis_DATA_DIR=/data
+      - praxis_CONFIG_DIR=/config
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]

@@ -1,6 +1,6 @@
 //! E2E tests for the CLI binary.
 //!
-//! These tests actually compile and run the `project-x` binary,
+//! These tests actually compile and run the `praxis` binary,
 //! verifying real-world behavior end-to-end.
 
 use std::process::Command;
@@ -16,7 +16,7 @@ fn binary_path() -> String {
 
     // Walk up until we find target/debug
     loop {
-        if path.join("project-x.exe").exists() || path.join("project-x").exists() {
+        if path.join("praxis.exe").exists() || path.join("praxis").exists() {
             break;
         }
         if !path.pop() {
@@ -26,24 +26,31 @@ fn binary_path() -> String {
 
     // Check for .exe (Windows) or plain binary (Unix)
     let exe = if cfg!(windows) {
-        path.join("project-x.exe")
+        path.join("praxis.exe")
     } else {
-        path.join("project-x")
+        path.join("praxis")
     };
 
     exe.to_string_lossy().to_string()
 }
 
 /// Run the CLI with arguments and capture output.
-fn run_cli(args: &[&str]) -> (String, String, bool) {
+fn run_cli_in(dir: &str, args: &[&str]) -> (String, String, bool) {
+    let data_dir = std::env::temp_dir().join("praxis-e2e").join(dir);
+    let _ = std::fs::create_dir_all(&data_dir);
     let output = Command::new(binary_path())
         .args(args)
+        .env("PRAXIS_DATA_DIR", &data_dir)
         .output()
         .expect("Failed to execute CLI binary");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     (stdout, stderr, output.status.success())
+}
+
+fn run_cli(args: &[&str]) -> (String, String, bool) {
+    run_cli_in("default", args)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -54,7 +61,7 @@ fn run_cli(args: &[&str]) -> (String, String, bool) {
 fn e2e_cli_version() {
     let (stdout, _, success) = run_cli(&["version"]);
     assert!(success, "CLI version command failed");
-    assert!(stdout.contains("Project-X"), "Should contain 'Project-X': {}", stdout);
+    assert!(stdout.contains("praxis"), "Should contain 'praxis': {}", stdout);
     assert!(stdout.contains("0.1.0"), "Should contain version: {}", stdout);
 }
 
@@ -62,48 +69,36 @@ fn e2e_cli_version() {
 fn e2e_cli_help() {
     let (stdout, _, success) = run_cli(&["--help"]);
     assert!(success, "CLI help command failed");
-    assert!(stdout.contains("project-x"), "Should contain binary name");
+    assert!(stdout.contains("praxis"), "Should contain binary name");
     assert!(stdout.contains("init"), "Should mention init command");
     assert!(stdout.contains("run"), "Should mention run command");
 }
 
 #[test]
 fn e2e_cli_init_creates_project() {
-    let test_dir = std::env::temp_dir().join(format!("e2e-test-init-{}", uuid::Uuid::new_v4()));
-    let test_path = test_dir.to_string_lossy();
-
-    let (stdout, _, success) = run_cli(&["init", &test_path]);
+    let project_name = format!("proj-{}", uuid::Uuid::new_v4());
+    let dir = format!("init-test-{}", uuid::Uuid::new_v4());
+    let (stdout, _, success) = run_cli_in(&dir, &["init", &project_name]);
     assert!(success, "CLI init failed: {}", stdout);
+    assert!(stdout.contains("Created project"), "Should confirm creation: {}", stdout);
 
-    // Verify files were created
-    assert!(test_dir.join("forge.toml").exists(), "forge.toml should exist");
-    assert!(test_dir.join(".gitignore").exists(), ".gitignore should exist");
-
-    // Verify forge.toml content
-    let content = std::fs::read_to_string(test_dir.join("forge.toml")).unwrap();
-    assert!(content.contains("[project]"), "forge.toml should have [project] section");
-    assert!(content.contains("[roles"), "forge.toml should have roles");
-
-    // Verify .gitignore
-    let gitignore = std::fs::read_to_string(test_dir.join(".gitignore")).unwrap();
-    assert!(gitignore.contains(".forge"), ".gitignore should ignore .forge");
-
-    // Cleanup
-    std::fs::remove_dir_all(&test_dir).ok();
+    let projects_path = std::env::temp_dir().join("praxis-e2e").join(&dir).join("projects.json");
+    assert!(projects_path.exists(), "projects.json should exist at {}", projects_path.display());
+    let content = std::fs::read_to_string(&projects_path).unwrap();
+    assert!(content.contains(&format!("\"name\": \"{}\"", project_name)), "Project should be in projects.json");
 }
 
 #[test]
 fn e2e_cli_init_already_exists() {
-    let test_dir = std::env::temp_dir().join(format!("e2e-test-init-exists-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&test_dir).unwrap();
+    let dir = format!("init-dupe-{}", uuid::Uuid::new_v4());
+    let project_name = "dup-test";
 
-    let test_path = test_dir.to_string_lossy();
-    let (_, stderr, success) = run_cli(&["init", &test_path]);
-    assert!(!success, "CLI init should fail when directory exists");
-    assert!(stderr.contains("already exists") || stderr.contains("Error"),
-        "Should show error about existing directory: {}", stderr);
+    let (_, _, success) = run_cli_in(&dir, &["init", project_name]);
+    assert!(success, "First init should succeed");
 
-    std::fs::remove_dir_all(&test_dir).ok();
+    let (_, stderr, success) = run_cli_in(&dir, &["init", project_name]);
+    assert!(!success, "CLI init should fail when project exists");
+    assert!(stderr.contains("already exists"), "Should show error: {}", stderr);
 }
 
 #[test]
@@ -113,13 +108,11 @@ fn e2e_cli_run_requires_goal() {
 }
 
 #[test]
-fn e2e_cli_config_show_no_project() {
-    let (stdout, _, _success) = run_cli(&["config", "show"]);
-    // Should show "No forge.toml found" when not in a project
-    assert!(
-        stdout.contains("No forge.toml") || stdout.contains("forge.toml"),
-        "Should indicate no config found: {}", stdout
-    );
+fn e2e_cli_init_help_shows_commands() {
+    let (stdout, _, success) = run_cli(&["--help"]);
+    assert!(success, "CLI help should succeed");
+    assert!(stdout.contains("init"), "Should show init command");
+    assert!(stdout.contains("run"), "Should show run command");
 }
 
 #[test]

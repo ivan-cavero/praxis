@@ -1,4 +1,4 @@
-//! Project-X Desktop — Tauri v2 binary.
+//! praxis Desktop — Tauri v2 binary.
 //!
 //! Embeds the core runtime and serves the dashboard via WebView.
 
@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 /// Application state shared across Tauri commands.
 pub struct AppState {
-    pub runtime: Option<project_x_core::CoreRuntime>,
+    pub runtime: Option<praxis_core::CoreRuntime>,
 }
 
 impl AppState {
@@ -19,7 +19,7 @@ impl AppState {
 
     pub async fn init(&mut self) -> Result<(), String> {
         self.runtime = Some(
-            project_x_core::CoreRuntime::new()
+            praxis_core::CoreRuntime::new()
                 .await
                 .map_err(|e| e.to_string())?,
         );
@@ -38,7 +38,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .setup(|app| {
-            tracing::info!("Project-X Desktop starting");
+            tracing::info!("praxis Desktop starting");
 
             // Initialize core runtime in background
             let handle = app.handle().clone();

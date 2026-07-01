@@ -184,7 +184,7 @@ mod ollama_tests {
 #[cfg(test)]
 mod router_tests {
     use crate::{ProviderRouter, MockProvider};
-    use project_x_agent_traits::provider::ModelTier;
+    use praxis_agent_traits::provider::ModelTier;
     use std::sync::Arc;
 
     #[test]
@@ -212,9 +212,9 @@ mod router_tests {
     #[tokio::test]
     async fn test_router_tier_detection() {
         let mut router = ProviderRouter::new();
-        let openai: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let openai: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("test"));
-        let anthropic: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let anthropic: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("test"));
 
         router.register("openai", openai, ModelTier::Balanced);
@@ -228,11 +228,11 @@ mod router_tests {
     #[tokio::test]
     async fn test_router_multiple_providers() {
         let mut router = ProviderRouter::new();
-        let p1: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let p1: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("openai"));
-        let p2: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let p2: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("anthropic"));
-        let p3: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let p3: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("gemini"));
 
         router.register("openai", p1, ModelTier::Balanced);

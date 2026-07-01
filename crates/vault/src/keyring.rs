@@ -22,7 +22,7 @@ impl KeyringVault {
             .unwrap_or_else(|_| ".".to_string());
 
         let fallback_path = PathBuf::from(home)
-            .join(".project-x")
+            .join(".praxis")
             .join(format!("{}.credentials", service));
 
         // Load existing credentials from file
@@ -99,7 +99,7 @@ impl KeyringVault {
 
 impl Default for KeyringVault {
     fn default() -> Self {
-        Self::new("project-x")
+        Self::new("praxis")
     }
 }
 

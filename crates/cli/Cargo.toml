@@ -1,17 +1,17 @@
 [package]
-name = "project-x-cli"
+name = "praxis-cli"
 version = "0.1.0"
 edition = "2024"
 license = "Proprietary"
 
 [dependencies]
-project-x-core = { path = "../core" }
-project-x-shared = { path = "../shared" }
-project-x-persistence = { path = "../persistence" }
-project-x-providers = { path = "../providers" }
-project-x-agent-traits = { path = "../agent-traits" }
-project-x-memory = { path = "../memory" }
-project-x-vault = { path = "../vault" }
+praxis-core = { path = "../core" }
+praxis-shared = { path = "../shared" }
+praxis-persistence = { path = "../persistence" }
+praxis-providers = { path = "../providers" }
+praxis-agent-traits = { path = "../agent-traits" }
+praxis-memory = { path = "../memory" }
+praxis-vault = { path = "../vault" }
 
 clap.workspace = true
 tokio.workspace = true
@@ -29,5 +29,5 @@ toml.workspace = true
 chrono.workspace = true
 
 [[bin]]
-name = "project-x"
+name = "praxis"
 path = "src/main.rs"

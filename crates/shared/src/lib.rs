@@ -1,4 +1,4 @@
-//! # Project-X Shared Types
+//! # praxis Shared Types
 //!
 //! Core type definitions, protocol messages, configuration structs
 //! shared across all crates in the workspace.

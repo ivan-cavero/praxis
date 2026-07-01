@@ -10,28 +10,31 @@ defineProps<{
 
 <template>
   <div
-    class="card relative overflow-hidden"
-    :class="[
-      padding !== false ? 'p-5' : '',
-      glow ? `glow-${glow}` : '',
-      hover ? 'card-glow' : '',
-    ]"
+    class="card"
+    :class="{
+      'card-glow': hover,
+    }"
   >
     <!-- Accent line at top -->
     <div
       v-if="glow"
-      class="absolute top-0 left-0 h-[1px] w-16"
+      class="accent-line"
       :class="{
-        'bg-gradient-to-r from-[var(--cyan)] to-transparent': glow === 'cyan',
-        'bg-gradient-to-r from-[var(--amber)] to-transparent': glow === 'amber',
-        'bg-gradient-to-r from-[var(--crimson)] to-transparent': glow === 'crimson',
+        'accent-cyan': glow === 'cyan',
+        'accent-amber': glow === 'amber',
+        'accent-crimson': glow === 'crimson',
       }"
     />
 
-    <div v-if="title" class="flex items-baseline gap-3 mb-4">
-      <span class="data-label">{{ title }}</span>
-      <span v-if="subtitle" class="text-[10px] text-[var(--text-ghost)] font-mono">{{ subtitle }}</span>
+    <div v-if="title" class="card-header">
+      <div class="card-title">{{ title }}</div>
+      <span v-if="subtitle" class="card-subtitle">{{ subtitle }}</span>
     </div>
-    <slot />
+    <div v-if="title" class="card-body">
+      <slot />
+    </div>
+    <div v-else class="card-body">
+      <slot />
+    </div>
   </div>
 </template>

@@ -1,4 +1,4 @@
-//! Unified error types for the Project-X system.
+//! Unified error types for the praxis system.
 
 use thiserror::Error;
 

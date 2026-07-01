@@ -117,7 +117,7 @@ impl TauriStoreVault {
 
 impl Default for TauriStoreVault {
     fn default() -> Self {
-        Self::new("project-x")
+        Self::new("praxis")
     }
 }
 

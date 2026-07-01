@@ -15,8 +15,6 @@ use std::sync::Arc;
 
 /// JWT secret key (generated once, stored in .forge/jwt.secret).
 /// In production, this should be at least 32 bytes.
-const DEFAULT_SECRET: &[u8] = b"project-x-default-secret-CHANGE-ME-in-production!!";
-
 /// JWT token claims.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
@@ -81,7 +79,7 @@ impl AuthState {
     fn generate_and_save(secret_path: &std::path::Path) -> Vec<u8> {
         use rand::RngCore;
         let mut secret = vec![0u8; 64];
-        rand::thread_rng().fill_bytes(&mut secret);
+        rand::rng().fill_bytes(&mut secret);
 
         if let Some(parent) = secret_path.parent() {
             let _ = std::fs::create_dir_all(parent);

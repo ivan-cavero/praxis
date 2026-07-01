@@ -54,7 +54,7 @@ tools = ["filesystem", "execute_command"]
 
     // Load config
     let config_path = test_dir.join("forge.toml");
-    let config = project_x_core::load_forge_config(&config_path).expect("Failed to load config");
+    let config = praxis_core::load_forge_config(&config_path).expect("Failed to load config");
 
     assert!(!config.roles.is_empty(), "Config should have roles");
     assert!(config.roles.contains_key("architect"), "Should have architect role");
@@ -69,7 +69,7 @@ tools = ["filesystem", "execute_command"]
     assert_eq!(architect.temperature, 0.3);
 
     // Create runtime and run goal
-    let mut runtime = project_x_core::CoreRuntime::new().await.expect("Failed to create runtime");
+    let mut runtime = praxis_core::CoreRuntime::new().await.expect("Failed to create runtime");
 
     let result = runtime.run_goal("build a REST API for user management", Some(&config_path), None)
         .await
@@ -84,7 +84,7 @@ tools = ["filesystem", "execute_command"]
     for agent_result in &result.agent_results {
         assert_eq!(
             agent_result.status,
-            project_x_core::orchestrator::task::TaskStatus::Completed,
+            praxis_core::orchestrator::task::TaskStatus::Completed,
             "Agent {} should have completed",
             agent_result.agent_id
         );
@@ -117,7 +117,7 @@ name = "minimal"
 model = "gpt-4o"
 "#).unwrap();
 
-    let config = project_x_core::load_forge_config(&test_dir.join("forge.toml")).unwrap();
+    let config = praxis_core::load_forge_config(&test_dir.join("forge.toml")).unwrap();
     assert_eq!(config.roles.len(), 1);
     assert!(config.roles.contains_key("coder"));
     assert_eq!(config.roles.get("coder").unwrap().model, "gpt-4o");
@@ -132,21 +132,21 @@ model = "gpt-4o"
 
 [[mcp_servers]]
 name = "filesystem"
-command = "project-x-mcp-filesystem"
+command = "praxis-mcp-filesystem"
 args = ["--root", "/tmp"]
 "#).unwrap();
 
-    let config = project_x_core::load_forge_config(&test_dir.join("forge.toml")).unwrap();
+    let config = praxis_core::load_forge_config(&test_dir.join("forge.toml")).unwrap();
     assert_eq!(config.mcp_servers.len(), 1);
     assert_eq!(config.mcp_servers[0].name, "filesystem");
-    assert_eq!(config.mcp_servers[0].command, "project-x-mcp-filesystem");
+    assert_eq!(config.mcp_servers[0].command, "praxis-mcp-filesystem");
 
     std::fs::remove_dir_all(&test_dir).ok();
 }
 
 #[tokio::test]
 async fn e2e_pipeline_phase_transitions() {
-    let mut runtime = project_x_core::CoreRuntime::new().await.unwrap();
+    let mut runtime = praxis_core::CoreRuntime::new().await.unwrap();
 
     // Start the loop
     runtime.loop_controller.start();
@@ -154,14 +154,14 @@ async fn e2e_pipeline_phase_transitions() {
 
     // Navigate through all phases
     let phases = vec![
-        project_x_core::machine::phase::Phase::Planning,
-        project_x_core::machine::phase::Phase::Designing,
-        project_x_core::machine::phase::Phase::Implementing,
-        project_x_core::machine::phase::Phase::Reviewing,
-        project_x_core::machine::phase::Phase::Testing,
-        project_x_core::machine::phase::Phase::SecurityScan,
-        project_x_core::machine::phase::Phase::Finalizing,
-        project_x_core::machine::phase::Phase::Completed,
+        praxis_core::machine::phase::Phase::Planning,
+        praxis_core::machine::phase::Phase::Designing,
+        praxis_core::machine::phase::Phase::Implementing,
+        praxis_core::machine::phase::Phase::Reviewing,
+        praxis_core::machine::phase::Phase::Testing,
+        praxis_core::machine::phase::Phase::SecurityScan,
+        praxis_core::machine::phase::Phase::Finalizing,
+        praxis_core::machine::phase::Phase::Completed,
     ];
 
     for phase in &phases {
@@ -180,13 +180,13 @@ async fn e2e_pipeline_phase_transitions() {
 
 #[tokio::test]
 async fn e2e_pipeline_agent_factory_all_roles() {
-    use project_x_core::actor::roles::base::AgentFactory;
-    use project_x_core::orchestrator::task::Task;
+    use praxis_core::actor::roles::base::AgentFactory;
+    use praxis_core::orchestrator::task::Task;
 
     let roles = vec!["architect", "coder", "reviewer", "security", "tester", "git"];
 
     for role_name in roles {
-        let role = project_x_core::orchestrator::roles::ResolvedRole {
+        let role = praxis_core::orchestrator::roles::ResolvedRole {
             role_name: role_name.to_string(),
             model: "gpt-4o".to_string(),
             temperature: 0.3,
@@ -202,7 +202,7 @@ async fn e2e_pipeline_agent_factory_all_roles() {
 
         assert_eq!(
             result.status,
-            project_x_core::orchestrator::task::TaskStatus::Completed,
+            praxis_core::orchestrator::task::TaskStatus::Completed,
             "{} agent should complete",
             role_name
         );
@@ -212,18 +212,18 @@ async fn e2e_pipeline_agent_factory_all_roles() {
 
 #[tokio::test]
 async fn e2e_pipeline_event_bus_during_pipeline() {
-    let mut runtime = project_x_core::CoreRuntime::new().await.unwrap();
+    let mut runtime = praxis_core::CoreRuntime::new().await.unwrap();
     let mut rx = runtime.bus.subscribe();
 
     // Start loop and trigger events
     runtime.loop_controller.start();
     runtime.bus.publish(
-        project_x_shared::protocol::MessageKind::SessionHeartbeat,
+        praxis_shared::protocol::MessageKind::SessionHeartbeat,
         "test",
     );
 
     // Advance a phase
-    runtime.loop_controller.advance(project_x_core::machine::phase::Phase::Planning).ok();
+    runtime.loop_controller.advance(praxis_core::machine::phase::Phase::Planning).ok();
 
     // Verify events were published
     let event = tokio::time::timeout(
@@ -240,7 +240,7 @@ async fn e2e_pipeline_event_bus_during_pipeline() {
 
 #[tokio::test]
 async fn e2e_pipeline_limits_enforcement() {
-    let limits = project_x_core::r#loop::Limits {
+    let limits = praxis_core::r#loop::Limits {
         max_iterations_per_goal: 3,
         max_iterations_per_phase: 2,
         session_ttl_seconds: 3600,
@@ -248,12 +248,12 @@ async fn e2e_pipeline_limits_enforcement() {
         cycle_detection_window: 4,
     };
 
-    let mut runtime = project_x_core::CoreRuntime::new().await.unwrap();
-    runtime.loop_controller = project_x_core::r#loop::LoopController::with_limits(limits);
+    let mut runtime = praxis_core::CoreRuntime::new().await.unwrap();
+    runtime.loop_controller = praxis_core::r#loop::LoopController::with_limits(limits);
     runtime.loop_controller.start();
 
     // Advance to planning
-    runtime.loop_controller.advance(project_x_core::machine::phase::Phase::Planning).ok();
+    runtime.loop_controller.advance(praxis_core::machine::phase::Phase::Planning).ok();
 
     // Do 2 iterations (should be OK)
     runtime.loop_controller.increment_iteration();
@@ -270,12 +270,12 @@ async fn e2e_pipeline_limits_enforcement() {
 
 #[tokio::test]
 async fn e2e_pipeline_drift_guard_during_pipeline() {
-    let mut runtime = project_x_core::CoreRuntime::new().await.unwrap();
+    let mut runtime = praxis_core::CoreRuntime::new().await.unwrap();
 
     // Record some metrics
     for i in 0..15 {
         runtime.drift_guard.record_and_evaluate(
-            project_x_core::drift::metrics::MetricSample {
+            praxis_core::drift::metrics::MetricSample {
                 iteration: i,
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 latency_ms: 100,

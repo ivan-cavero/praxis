@@ -4,8 +4,8 @@
 //! Uses reqwest for HTTP, handles retry + timeout.
 
 use async_trait::async_trait;
-use project_x_agent_traits::provider::*;
-use project_x_shared::types::{ModelInfo, TokenUsage};
+use praxis_agent_traits::provider::*;
+use praxis_shared::types::{ModelInfo, TokenUsage};
 use tokio::sync::mpsc;
 
 /// OpenAI / API-compatible provider.
@@ -59,7 +59,7 @@ impl OpenAIProvider {
     async fn send_with_retry(
         &self,
         request: reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, project_x_shared::error::ProjectXError> {
+    ) -> Result<reqwest::Response, praxis_shared::error::ProjectXError> {
         let mut attempts = 0;
         loop {
             let req = request
@@ -84,14 +84,14 @@ impl OpenAIProvider {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     tracing::error!("HTTP {}: {}", status, body);
-                    return Err(project_x_shared::error::ProjectXError::ProviderError(
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(
                         format!("HTTP {}: {}", status, body),
                     ));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     attempts += 1;
                     if attempts > self.max_retries {
-                        return Err(project_x_shared::error::ProjectXError::ProviderError(
+                        return Err(praxis_shared::error::ProjectXError::ProviderError(
                             format!("Request failed after {} retries: {}", self.max_retries, e),
                         ));
                     }
@@ -99,7 +99,7 @@ impl OpenAIProvider {
                     tracing::warn!("Request failed: {}, retrying in {:?}", e, backoff);
                     tokio::time::sleep(backoff).await;
                 }
-                Err(e) => return Err(project_x_shared::error::ProjectXError::ProviderError(
+                Err(e) => return Err(praxis_shared::error::ProjectXError::ProviderError(
                     format!("Request error: {}", e),
                 )),
             }
@@ -175,15 +175,15 @@ impl LLMProvider for OpenAIProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("OpenAI API error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("OpenAI API error: {}", e))
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Failed to parse response: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Failed to parse response: {}", e))
         })?;
 
         self.parse_chat_response(value).map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(e)
+            praxis_shared::error::ProjectXError::ProviderError(e)
         })
     }
 
@@ -217,7 +217,7 @@ impl LLMProvider for OpenAIProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("OpenAI stream error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("OpenAI stream error: {}", e))
         })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -297,11 +297,11 @@ impl LLMProvider for OpenAIProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Embedding error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Embedding error: {}", e))
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Failed to parse embedding response: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Failed to parse embedding response: {}", e))
         })?;
 
         let embeddings: Vec<Vec<f32>> = value["data"]

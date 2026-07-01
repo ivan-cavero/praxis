@@ -7,46 +7,40 @@ defineProps<{
   trend?: 'up' | 'down' | 'stable'
   trendValue?: string
 }>()
+
+const accentColor = (a?: string) => {
+  switch (a) {
+    case 'amber': return 'var(--clr-amber)'
+    case 'crimson': return 'var(--clr-crimson)'
+    case 'emerald': return 'var(--clr-emerald)'
+    default: return 'var(--clr-primary)'
+  }
+}
 </script>
 
 <template>
-  <div class="card card-glow p-4 relative overflow-hidden group">
-    <!-- Background gradient accent -->
+  <div class="metric-card component">
     <div
-      class="absolute -top-12 -right-12 w-24 h-24 rounded-full opacity-[0.04] group-hover:opacity-[0.08] transition-opacity duration-500"
-      :class="{
-        'bg-[var(--cyan)]': accent === 'cyan' || !accent,
-        'bg-[var(--amber)]': accent === 'amber',
-        'bg-[var(--crimson)]': accent === 'crimson',
-        'bg-[var(--emerald)]': accent === 'emerald',
-      }"
+      class="metric-card-glow"
+      :style="{ background: accentColor(accent) }"
     />
 
-    <div class="relative z-10">
-      <div class="flex items-center justify-between mb-3">
+    <div class="metric-card-content">
+      <div class="metric-card-header">
         <span class="data-label">{{ label }}</span>
-        <span v-if="icon" class="text-base opacity-60">{{ icon }}</span>
+        <span v-if="icon" class="metric-icon">{{ icon }}</span>
       </div>
 
-      <div class="flex items-end gap-2">
+      <div class="metric-card-value-row">
         <span
-          class="text-2xl font-bold font-mono tracking-tight"
-          :class="{
-            'text-[var(--cyan)]': accent === 'cyan' || !accent,
-            'text-[var(--amber)]': accent === 'amber',
-            'text-[var(--crimson)]': accent === 'crimson',
-            'text-[var(--emerald)]': accent === 'emerald',
-          }"
+          class="metric-value"
+          :style="{ color: accentColor(accent) }"
         >{{ value }}</span>
 
         <span
           v-if="trend"
-          class="text-[10px] font-mono mb-1"
-          :class="{
-            'text-[var(--emerald)]': trend === 'up',
-            'text-[var(--crimson)]': trend === 'down',
-            'text-[var(--text-muted)]': trend === 'stable',
-          }"
+          class="metric-trend"
+          :style="{ color: trend === 'up' ? 'var(--clr-emerald)' : trend === 'down' ? 'var(--clr-crimson)' : 'var(--clr-text-muted)' }"
         >
           {{ trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→' }}
           {{ trendValue }}
@@ -55,3 +49,69 @@ defineProps<{
     </div>
   </div>
 </template>
+
+<style scoped>
+.component {
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-lg);
+}
+
+.metric-card-glow {
+  position: absolute;
+  top: -48px;
+  right: -48px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  opacity: 0.04;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+
+.component:hover .metric-card-glow {
+  opacity: 0.08;
+}
+
+.metric-card-content {
+  position: relative;
+  z-index: 10;
+  padding: var(--space-md);
+}
+
+.metric-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.metric-icon {
+  font-size: 16px;
+  opacity: 0.6;
+}
+
+.metric-card-value-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+}
+
+.metric-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+.metric-trend {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 4px 0;
+}
+</style>

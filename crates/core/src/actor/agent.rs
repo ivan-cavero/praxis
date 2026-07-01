@@ -47,7 +47,7 @@ pub struct AgentOutput {
     pub task_id: String,
     pub content: String,
     pub success: bool,
-    pub token_usage: project_x_shared::types::TokenUsage,
+    pub token_usage: praxis_shared::types::TokenUsage,
 }
 
 /// The core Agent trait — all specialized agents implement this.

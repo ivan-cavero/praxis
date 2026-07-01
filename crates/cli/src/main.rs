@@ -1,7 +1,7 @@
-//! Project-X CLI — Multi-Agent Autonomous System
+//! praxis CLI — Multi-Agent Autonomous System
 //!
-//! Usage: project-x <command> [options]
-//! See `project-x help` for full documentation.
+//! Usage: praxis <command> [options]
+//! See `praxis help` for full documentation.
 
 mod commands;
 
@@ -10,11 +10,11 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 /// Load vault service from .forge/credentials.vault.json if it exists.
-fn load_vault() -> Option<std::sync::Arc<project_x_vault::VaultService>> {
-    let vault_path = PathBuf::from(".forge").join("credentials.vault.json");
+fn load_vault() -> Option<std::sync::Arc<praxis_vault::VaultService>> {
+    let vault_path = get_data_dir().join("credentials.vault.json");
     if vault_path.exists() {
         let vault = std::sync::Arc::new(
-            project_x_vault::VaultService::with_path(vault_path.clone(), None)
+            praxis_vault::VaultService::with_path(vault_path.clone(), None)
         );
         if vault.init().is_ok() {
             tracing::info!("Vault loaded from {}", vault_path.display());
@@ -24,23 +24,65 @@ fn load_vault() -> Option<std::sync::Arc<project_x_vault::VaultService>> {
     None
 }
 
-/// Find forge.toml config file in current directory or parent directories.
-fn find_forge_config() -> Option<PathBuf> {
-    let mut path = std::env::current_dir().ok()?;
-    loop {
-        let config = path.join("forge.toml");
-        if config.exists() {
-            return Some(config);
+/// Get the central data directory for all projects and config.
+///   Windows: %APPDATA%/praxis
+///   Linux:   $HOME/.config/praxis
+///   macOS:   $HOME/Library/Application Support/praxis
+fn get_data_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("PRAXIS_DATA_DIR") {
+        return PathBuf::from(dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return PathBuf::from(appdata).join("praxis");
         }
-        if !path.pop() {
-            break;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(".config").join("praxis");
+        }
+    }
+
+    // Fallback
+    PathBuf::from(".praxis-data")
+}
+
+/// Find a project by name in AppData and return its forge_toml path (as temp file).
+fn find_project_forge(project_name: &str) -> Option<PathBuf> {
+    let data_dir = get_data_dir();
+    let projects_path = data_dir.join("projects.json");
+    let content = std::fs::read_to_string(projects_path).ok()?;
+    let projects: Vec<serde_json::Value> = serde_json::from_str(&content).ok()?;
+    for project in projects {
+        let name = project.get("name").and_then(|v| v.as_str())?;
+        if name == project_name {
+            let forge_toml = project.get("forge_toml").and_then(|v| v.as_str())?;
+            let tmp = std::env::temp_dir().join(format!("praxis-{}.toml", project_name));
+            let _ = std::fs::write(&tmp, forge_toml);
+            return Some(tmp);
         }
     }
     None
 }
 
+/// Load ForgeConfig from AppData project, or return default empty config.
+fn load_project_config(project_name: Option<&str>) -> praxis_core::ForgeConfig {
+    if let Some(name) = project_name {
+        if let Some(path) = find_project_forge(name) {
+            if let Ok(cfg) = praxis_core::load_forge_config(&path) {
+                return cfg;
+            }
+        }
+    }
+    praxis_core::ForgeConfig::default()
+}
+
 #[derive(Parser)]
-#[command(name = "project-x")]
+#[command(name = "praxis")]
 #[command(about = "Autonomous Multi-Agent System", long_about = None)]
 #[command(version = "0.1.0")]
 #[command(arg_required_else_help = true)]
@@ -107,10 +149,6 @@ enum Commands {
     /// Manage sessions
     #[command(subcommand)]
     Session(SessionCommands),
-
-    /// Configuration management
-    #[command(subcommand)]
-    Config(ConfigCommands),
 
     /// LLM provider management
     #[command(subcommand)]
@@ -197,17 +235,6 @@ enum SessionCommands {
 }
 
 #[derive(Subcommand)]
-enum ConfigCommands {
-    Show,
-    Get { key: String },
-    Set { key: String, value: String },
-    Unset { key: String },
-    Edit,
-    Import { file: PathBuf },
-    Export { file: PathBuf },
-}
-
-#[derive(Subcommand)]
 enum ProviderCommands {
     List,
     Test { name: String },
@@ -283,7 +310,7 @@ async fn main() -> anyhow::Result<()> {
             println!();
             println!("  Next steps:");
             println!("    cd {}", name);
-            println!("    {} --goal \"your goal here\"", "project-x run".yellow());
+            println!("    {} --goal \"your goal here\"", "praxis run".yellow());
         }
 
         // ─── Run ───────────────────────────────────────────
@@ -311,10 +338,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", "─".repeat(50).dimmed());
 
                     // Load config to show real plan
-                    let config = match commands::config::find_config() {
-                        Some(path) => project_x_core::load_forge_config(&path).unwrap_or_default(),
-                        None => project_x_core::ForgeConfig::default(),
-                    };
+                    let config = load_project_config(None);
 
                     println!();
                     println!("  {} Agents that would be spawned:", "1.".cyan());
@@ -357,13 +381,12 @@ async fn main() -> anyhow::Result<()> {
                 } else if headless {
                     // Headless: JSON output
                     println!("{} Running in headless mode", "→".cyan());
-                    let mut runtime = project_x_core::CoreRuntime::new().await?;
+                    let mut runtime = praxis_core::CoreRuntime::new().await?;
 
                     // Load vault if exists
                     let vault = load_vault();
 
-                    let config_path = find_forge_config();
-                    let result = runtime.run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v)).await?;
+                    let result = runtime.run_goal(&g, None, vault.as_ref().map(|v| &**v)).await?;
 
                     let json_result = serde_json::json!({
                         "status": if result.passed { "completed" } else { "failed" },
@@ -384,16 +407,15 @@ async fn main() -> anyhow::Result<()> {
                     println!();
 
                     println!("{}", "📦 Starting core runtime...".dimmed());
-                    let mut runtime = project_x_core::CoreRuntime::new().await?;
+                    let mut runtime = praxis_core::CoreRuntime::new().await?;
 
                     // Load vault if exists
                     let vault = load_vault();
 
                     println!("{}", "🤖 Initializing agent pipeline...".dimmed());
 
-                    let config_path = find_forge_config();
                     // Run through the full agent pipeline
-                    let result = runtime.run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v)).await?;
+                    let result = runtime.run_goal(&g, None, vault.as_ref().map(|v| &**v)).await?;
 
                     println!();
                     println!("  {} Goal: {}", "→".cyan(), result.goal.white().bold());
@@ -425,25 +447,15 @@ async fn main() -> anyhow::Result<()> {
 
             } else if resume {
                 println!("{} Resuming last session...", "→".cyan());
-                // Try to find last session from SQLite
-                match commands::config::find_config() {
-                    Some(config_path) => {
-                        let db_path = config_path.parent()
-                            .unwrap_or(&config_path)
-                            .join(".forge")
-                            .join("state.db");
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
 
-                        if db_path.exists() {
-                            println!("  {} Found database: {}", "→".dimmed(), db_path.display());
-                            println!("  {} Resuming from checkpoint...", "→".dimmed());
-                            println!("{}", "⚠ Full resume not yet implemented".yellow());
-                        } else {
-                            println!("  {} No database found. Run a session first.", "✗".red());
-                        }
-                    }
-                    None => {
-                        println!("  {} No project found. Run 'project-x init' first.", "✗".red());
-                    }
+                if db_path.exists() {
+                    println!("  {} Found database at {}", "→".dimmed(), db_path.display());
+                    println!("  {} Resume from checkpoint...", "→".dimmed());
+                    println!("{}", "⚠ Full resume not yet implemented".yellow());
+                } else {
+                    println!("  {} No database found. Run a session first.", "✗".red());
                 }
 
             } else {
@@ -452,30 +464,9 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        // ─── Config ────────────────────────────────────────
-        Commands::Config(cmd) => match cmd {
-            ConfigCommands::Show => commands::config::show_config()?,
-            ConfigCommands::Get { key } => commands::config::get_config(&key)?,
-            ConfigCommands::Set { key, value } => commands::config::set_config(&key, &value)?,
-            ConfigCommands::Unset { key } => commands::config::unset_config(&key)?,
-            ConfigCommands::Edit => {
-                if let Some(config_path) = commands::config::find_config() {
-                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "notepad".to_string());
-                    println!("{} Opening {} with {}...", "→".dimmed(), config_path.display(), editor);
-                    std::process::Command::new(&editor)
-                        .arg(config_path)
-                        .status()?;
-                } else {
-                    println!("  {} No forge.toml found", "✗".red());
-                }
-            }
-            ConfigCommands::Import { file } => commands::config::import_config(&file)?,
-            ConfigCommands::Export { file } => commands::config::export_config(&file)?,
-        },
-
         // ─── Version ───────────────────────────────────────
         Commands::Version => {
-            println!("{} v{}", "Project-X".cyan().bold(), env!("CARGO_PKG_VERSION"));
+            println!("{} v{}", "praxis".cyan().bold(), env!("CARGO_PKG_VERSION"));
         }
 
         // ─── Test ──────────────────────────────────────────
@@ -485,11 +476,11 @@ async fn main() -> anyhow::Result<()> {
             println!();
 
             print!("  {} EventBus... ", "1.".cyan());
-            let bus = project_x_core::EventBus::new();
+            let bus = praxis_core::EventBus::new();
             println!("{} capacity={}", "✓".green(), bus.capacity());
 
             print!("  {} CoreRuntime... ", "2.".cyan());
-            let runtime = project_x_core::CoreRuntime::new().await?;
+            let runtime = praxis_core::CoreRuntime::new().await?;
             println!("{}", "✓".green());
 
             print!("  {} Spawning 3 agents... ", "3.".cyan());
@@ -514,12 +505,12 @@ async fn main() -> anyhow::Result<()> {
             }
             println!("{} {} agents", "✓".green(), agents.len());
 
-            use project_x_agent_traits::persistence::EventStore;
+            use praxis_agent_traits::persistence::EventStore;
             print!("  {} SQLite event store... ", "6.".cyan());
-            let store = project_x_persistence::SqliteEventStore::in_memory()
+            let store = praxis_persistence::SqliteEventStore::in_memory()
                 .map_err(|e| anyhow::anyhow!(e))?;
             let agg_id = uuid::Uuid::new_v4();
-            let event = project_x_agent_traits::persistence::StoredEvent {
+            let event = praxis_agent_traits::persistence::StoredEvent {
                 id: uuid::Uuid::new_v4(),
                 aggregate_id: agg_id,
                 aggregate_type: "test".to_string(),
@@ -537,7 +528,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{} append+read ok", "✓".green());
 
             print!("  {} Snapshots... ", "7.".cyan());
-            let snapshot = project_x_agent_traits::persistence::StoredSnapshot {
+            let snapshot = praxis_agent_traits::persistence::StoredSnapshot {
                 aggregate_id: agg_id,
                 aggregate_type: "test".to_string(),
                 state: serde_json::json!({"phase": "testing"}),
@@ -552,10 +543,10 @@ async fn main() -> anyhow::Result<()> {
             println!("{} save+load ok", "✓".green());
 
             print!("  {} ProviderRouter... ", "8.".cyan());
-            let mut router = project_x_providers::ProviderRouter::new();
-            let mock: std::sync::Arc<dyn project_x_providers::LLMProvider> =
-                std::sync::Arc::new(project_x_providers::MockProvider::simple("test"));
-            router.register("mock", mock, project_x_providers::ModelTier::Balanced);
+            let mut router = praxis_providers::ProviderRouter::new();
+            let mock: std::sync::Arc<dyn praxis_providers::LLMProvider> =
+                std::sync::Arc::new(praxis_providers::MockProvider::simple("test"));
+            router.register("mock", mock, praxis_providers::ModelTier::Balanced);
             let resolved = router.resolve("mock")
                 .map_err(|e| anyhow::anyhow!(e))?;
             if resolved.provider_name() != "mock" {
@@ -564,36 +555,36 @@ async fn main() -> anyhow::Result<()> {
             println!("{} resolve ok", "✓".green());
 
             print!("  {} StateMachine... ", "9.".cyan());
-            let mut sm = project_x_core::StateMachine::new();
-            sm.transition(project_x_core::machine::phase::Phase::Planning, 0)
+            let mut sm = praxis_core::StateMachine::new();
+            sm.transition(praxis_core::machine::phase::Phase::Planning, 0)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            sm.transition(project_x_core::machine::phase::Phase::Implementing, 1)
+            sm.transition(praxis_core::machine::phase::Phase::Implementing, 1)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            sm.transition(project_x_core::machine::phase::Phase::Reviewing, 2)
+            sm.transition(praxis_core::machine::phase::Phase::Reviewing, 2)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            sm.transition(project_x_core::machine::phase::Phase::Testing, 3)
+            sm.transition(praxis_core::machine::phase::Phase::Testing, 3)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            sm.transition(project_x_core::machine::phase::Phase::Finalizing, 4)
+            sm.transition(praxis_core::machine::phase::Phase::Finalizing, 4)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            sm.transition(project_x_core::machine::phase::Phase::Completed, 5)
+            sm.transition(praxis_core::machine::phase::Phase::Completed, 5)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            if sm.current() != project_x_core::machine::phase::Phase::Completed {
+            if sm.current() != praxis_core::machine::phase::Phase::Completed {
                 anyhow::bail!("State machine failed");
             }
             println!("{} full flow ok", "✓".green());
 
             print!("  {} LoopController... ", "10.".cyan());
-            let mut ctrl = project_x_core::LoopController::new();
+            let mut ctrl = praxis_core::LoopController::new();
             ctrl.start();
-            ctrl.advance(project_x_core::machine::phase::Phase::Planning)
+            ctrl.advance(praxis_core::machine::phase::Phase::Planning)
                 .map_err(|e| anyhow::anyhow!(e))?;
             ctrl.increment_iteration();
-            ctrl.advance(project_x_core::machine::phase::Phase::Implementing)
+            ctrl.advance(praxis_core::machine::phase::Phase::Implementing)
                 .map_err(|e| anyhow::anyhow!(e))?;
             ctrl.increment_iteration();
-            ctrl.advance(project_x_core::machine::phase::Phase::Reviewing)
+            ctrl.advance(praxis_core::machine::phase::Phase::Reviewing)
                 .map_err(|e| anyhow::anyhow!(e))?;
-            ctrl.advance(project_x_core::machine::phase::Phase::Completed)
+            ctrl.advance(praxis_core::machine::phase::Phase::Completed)
                 .map_err(|e| anyhow::anyhow!(e))?;
             if !ctrl.phase_info().current.is_terminal() {
                 anyhow::bail!("Loop controller failed");
@@ -601,9 +592,9 @@ async fn main() -> anyhow::Result<()> {
             println!("{} ok", "✓".green());
 
             print!("  {} DriftGuard... ", "11.".cyan());
-            let mut drift = project_x_core::DriftGuard::new();
+            let mut drift = praxis_core::DriftGuard::new();
             for i in 0..12 {
-                drift.record_and_evaluate(project_x_core::drift::metrics::MetricSample {
+                drift.record_and_evaluate(praxis_core::drift::metrics::MetricSample {
                     iteration: i,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     latency_ms: 100,
@@ -619,10 +610,10 @@ async fn main() -> anyhow::Result<()> {
             println!("{} metrics ok", "✓".green());
 
             print!("  {} HotMemory... ", "12.".cyan());
-            let _mem = project_x_core::EventBus::new();
-            let hot = project_x_memory::HotMemory::new();
+            let _mem = praxis_core::EventBus::new();
+            let hot = praxis_memory::HotMemory::new();
             hot.create_session("test-s1", "test-p1", "test goal");
-            hot.push_interaction("test-s1", "coder", project_x_memory::Interaction {
+            hot.push_interaction("test-s1", "coder", praxis_memory::Interaction {
                 role: "user".to_string(),
                 content: "test".to_string(),
                 token_count: 5,
@@ -635,9 +626,9 @@ async fn main() -> anyhow::Result<()> {
             println!("{} session+context ok", "✓".green());
 
             print!("  {} LLMCache... ", "13.".cyan());
-            let cache = project_x_memory::LLMCache::default_cache();
-            let key = project_x_memory::LLMCache::key("gpt-5", &["test".to_string()], 0.3);
-            cache.insert(key, project_x_memory::CachedResponse {
+            let cache = praxis_memory::LLMCache::default_cache();
+            let key = praxis_memory::LLMCache::key("gpt-5", &["test".to_string()], 0.3);
+            cache.insert(key, praxis_memory::CachedResponse {
                 content: "test".to_string(),
                 model: "gpt-5".to_string(),
                 input_tokens: 5,
@@ -651,12 +642,12 @@ async fn main() -> anyhow::Result<()> {
             println!("{} insert+get ok", "✓".green());
 
             print!("  {} ContextManager... ", "14.".cyan());
-            let mut ctx_mgr = project_x_memory::ContextManager::new(
+            let mut ctx_mgr = praxis_memory::ContextManager::new(
                 128_000,
-                project_x_memory::BudgetProfile::Balanced,
+                praxis_memory::BudgetProfile::Balanced,
             );
-            let mut ctx_window = project_x_memory::ContextWindow::new();
-            ctx_window.push(project_x_memory::Message {
+            let mut ctx_window = praxis_memory::ContextWindow::new();
+            ctx_window.push(praxis_memory::Message {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
             });
@@ -699,7 +690,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Provider(cmd) => match cmd {
             ProviderCommands::List => {
                 println!("{} Configured providers:", "→".cyan());
-                println!("  Use {} to add a custom provider", "project-x provider add".yellow());
+                println!("  Use {} to add a custom provider", "praxis provider add".yellow());
                 println!();
                 println!("  Supported APIs:");
                 println!("    {} OpenAI (api.openai.com)", "•".dimmed());
@@ -710,10 +701,10 @@ async fn main() -> anyhow::Result<()> {
                 println!("    {} Any OpenAI-compatible API (custom base_url)", "•".dimmed());
                 println!();
                 println!("  Examples:");
-                println!("    {} provider add openai https://api.openai.com/v1 sk-xxx", "project-x".yellow());
-                println!("    {} provider add nan https://api.nan.builders/v1 sk-xxx", "project-x".yellow());
-                println!("    {} provider add deepseek https://api.deepseek.com/v1 sk-xxx", "project-x".yellow());
-                println!("    {} provider add my-api http://localhost:8080/v1 my-key", "project-x".yellow());
+                println!("    {} provider add openai https://api.openai.com/v1 sk-xxx", "praxis".yellow());
+                println!("    {} provider add nan https://api.nan.builders/v1 sk-xxx", "praxis".yellow());
+                println!("    {} provider add deepseek https://api.deepseek.com/v1 sk-xxx", "praxis".yellow());
+                println!("    {} provider add my-api http://localhost:8080/v1 my-key", "praxis".yellow());
             }
             ProviderCommands::Test { name } => {
                 println!("{} Testing provider: {}...", "→".cyan(), name);
@@ -732,9 +723,9 @@ async fn main() -> anyhow::Result<()> {
                 println!("  {} Saved to config", "✓".green());
                 println!();
                 println!("  {} Usage:", "→".cyan());
-                println!("    {} run --goal \"...\" --agent coder.model=<model-name>", "project-x".yellow());
-                println!("    {} config set roles.coder.model <model-name>", "project-x".yellow());
-                println!("    {} config set providers.{}.base_url \"{}\"", "project-x".yellow(), name, base_url);
+                println!("    {} run --goal \"...\" --agent coder.model=<model-name>", "praxis".yellow());
+                println!("    {} config set roles.coder.model <model-name>", "praxis".yellow());
+                println!("    {} config set providers.{}.base_url \"{}\"", "praxis".yellow(), name, base_url);
             }
         },
 
@@ -751,9 +742,9 @@ async fn main() -> anyhow::Result<()> {
                 println!();
 
                 // Show context budget breakdown
-                let ctx_mgr = project_x_memory::ContextManager::new(
+                let ctx_mgr = praxis_memory::ContextManager::new(
                     128_000,
-                    project_x_memory::BudgetProfile::Balanced,
+                    praxis_memory::BudgetProfile::Balanced,
                 );
 
                 println!("  {} Model: gpt-5 (128k max)", "→".cyan());
@@ -763,13 +754,13 @@ async fn main() -> anyhow::Result<()> {
 
                 println!("  {} Budget Allocation:", "→".cyan());
                 let sections = [
-                    ("System Prompt", project_x_memory::Section::SystemPrompt),
-                    ("Goal Definition", project_x_memory::Section::GoalDefinition),
-                    ("Active Task", project_x_memory::Section::ActiveTask),
-                    ("Tool Results", project_x_memory::Section::ToolResults),
-                    ("Recent History", project_x_memory::Section::RecentHistory),
-                    ("Memory (RAG)", project_x_memory::Section::MemoryRag),
-                    ("Project Context", project_x_memory::Section::ProjectContext),
+                    ("System Prompt", praxis_memory::Section::SystemPrompt),
+                    ("Goal Definition", praxis_memory::Section::GoalDefinition),
+                    ("Active Task", praxis_memory::Section::ActiveTask),
+                    ("Tool Results", praxis_memory::Section::ToolResults),
+                    ("Recent History", praxis_memory::Section::RecentHistory),
+                    ("Memory (RAG)", praxis_memory::Section::MemoryRag),
+                    ("Project Context", praxis_memory::Section::ProjectContext),
                 ];
 
                 for (name, section) in sections {
@@ -797,15 +788,15 @@ async fn main() -> anyhow::Result<()> {
             ContextCommands::ForceCompress { session } => {
                 println!("{} Forcing compression for session: {}", "→".cyan(), session);
 
-                let mut ctx_mgr = project_x_memory::ContextManager::new(
+                let mut ctx_mgr = praxis_memory::ContextManager::new(
                     128_000,
-                    project_x_memory::BudgetProfile::Balanced,
+                    praxis_memory::BudgetProfile::Balanced,
                 );
-                let mut ctx_window = project_x_memory::ContextWindow::new();
+                let mut ctx_window = praxis_memory::ContextWindow::new();
 
                 // Simulate over-budget context
                 for i in 0..20 {
-                    ctx_window.push(project_x_memory::Message {
+                    ctx_window.push(praxis_memory::Message {
                         role: "user".to_string(),
                         content: format!("Message {} with some content to test compression", i),
                     });
@@ -831,26 +822,27 @@ async fn main() -> anyhow::Result<()> {
         Commands::Server => {
             // Read vault password from env if set
             let vault_password = std::env::var("VAULT_PASSWORD").ok();
+            let data_dir = get_data_dir();
 
             println!("{} Starting API server...", "→".cyan());
+            println!("{} Data directory: {}", "→".cyan(), data_dir.display());
 
-            // Ensure .forge directory exists for JWT secret and vault
-            let forge_dir = std::path::PathBuf::from(".forge");
-            if !forge_dir.exists() {
-                std::fs::create_dir_all(&forge_dir)?;
-            }
+            // Ensure data directory exists
+            std::fs::create_dir_all(&data_dir)?;
 
-            let server = project_x_core::api::ApiServer::new(
-                project_x_core::api::ApiServerConfig {
+            let server = praxis_core::api::ApiServer::new(
+                praxis_core::api::ApiServerConfig {
                     port: 8080,
                     cors_origins: vec!["*".to_string()],
                     vault_password,
+                    data_dir,
                 }
             );
 
             println!("{} REST: http://localhost:8080", "✓".green());
             println!("{} WebSocket: ws://localhost:8080/ws", "✓".green());
-            println!("{} Vault: .forge/credentials.vault.json", "✓".green());
+            println!("{} Vault: AppData/credentials.vault.json", "✓".green());
+            println!("{} Projects: AppData/projects.json", "✓".green());
             println!("{0}\n{} Press Ctrl+C to stop\n{0}", "─".repeat(50).dimmed());
 
             tokio::spawn(async move {

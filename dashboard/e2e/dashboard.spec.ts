@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test'
 
-test.describe('Project-X Dashboard E2E', () => {
+test.describe('praxis Dashboard E2E', () => {
 
   test('shows login page', async ({ page }) => {
     await page.goto('/')
     // Login page should have the logo and access token input
-    await expect(page.locator('h1:has-text("PROJECT-X")')).toBeVisible()
+    await expect(page.locator('h1:has-text("praxis")')).toBeVisible()
     await expect(page.locator('input[type="password"]')).toBeVisible()
   })
 

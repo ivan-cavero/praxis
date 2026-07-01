@@ -7,7 +7,7 @@ use axum::{
     response::Response,
 };
 
-use project_x_shared::tenant::OrgRole;
+use praxis_shared::tenant::OrgRole;
 
 /// Permission check result.
 #[derive(Debug)]
@@ -46,7 +46,7 @@ pub async fn rbac_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
-use project_x_shared::tenant::OrgRole;
+use praxis_shared::tenant::OrgRole;
 
     #[test]
     fn test_permission_check_allowed() {

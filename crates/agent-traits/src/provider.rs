@@ -1,7 +1,7 @@
 //! LLMProvider trait — abstraction over different LLM APIs.
 
 use async_trait::async_trait;
-use project_x_shared::types::{ModelInfo, TokenUsage};
+use praxis_shared::types::{ModelInfo, TokenUsage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 

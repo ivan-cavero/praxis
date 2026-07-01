@@ -4,8 +4,8 @@
 //! API docs: https://docs.anthropic.com/en/api/messages
 
 use async_trait::async_trait;
-use project_x_agent_traits::provider::*;
-use project_x_shared::types::{ModelInfo, TokenUsage};
+use praxis_agent_traits::provider::*;
+use praxis_shared::types::{ModelInfo, TokenUsage};
 use tokio::sync::mpsc;
 
 /// Anthropic Claude provider.
@@ -47,7 +47,7 @@ impl AnthropicProvider {
     async fn send_with_retry(
         &self,
         request: reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, project_x_shared::error::ProjectXError> {
+    ) -> Result<reqwest::Response, praxis_shared::error::ProjectXError> {
         let mut attempts = 0;
         loop {
             let req = request
@@ -70,14 +70,14 @@ impl AnthropicProvider {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     tracing::error!("Anthropic HTTP {}: {}", status, body);
-                    return Err(project_x_shared::error::ProjectXError::ProviderError(
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(
                         format!("Anthropic HTTP {}: {}", status, body),
                     ));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     attempts += 1;
                     if attempts > self.max_retries {
-                        return Err(project_x_shared::error::ProjectXError::ProviderError(
+                        return Err(praxis_shared::error::ProjectXError::ProviderError(
                             format!("Anthropic request failed after {} retries: {}", self.max_retries, e),
                         ));
                     }
@@ -85,7 +85,7 @@ impl AnthropicProvider {
                     tracing::warn!("Anthropic request failed: {}, retrying in {:?}", e, backoff);
                     tokio::time::sleep(backoff).await;
                 }
-                Err(e) => return Err(project_x_shared::error::ProjectXError::ProviderError(
+                Err(e) => return Err(praxis_shared::error::ProjectXError::ProviderError(
                     format!("Anthropic request error: {}", e),
                 )),
             }
@@ -150,11 +150,11 @@ impl LLMProvider for AnthropicProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Anthropic API error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Anthropic API error: {}", e))
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Failed to parse Anthropic response: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Failed to parse Anthropic response: {}", e))
         })?;
 
         // Parse Anthropic response format
@@ -239,7 +239,7 @@ impl LLMProvider for AnthropicProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            project_x_shared::error::ProjectXError::ProviderError(format!("Anthropic stream error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!("Anthropic stream error: {}", e))
         })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -299,7 +299,7 @@ impl LLMProvider for AnthropicProvider {
 
     async fn embed(&self, _input: &[String]) -> crate::Result<Vec<Vec<f32>>> {
         // Anthropic doesn't have a native embeddings API
-        Err(project_x_shared::error::ProjectXError::ProviderError(
+        Err(praxis_shared::error::ProjectXError::ProviderError(
             "Anthropic does not support embeddings. Use OpenAI or a dedicated embedding model.".to_string(),
         ))
     }

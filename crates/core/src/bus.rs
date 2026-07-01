@@ -1,6 +1,6 @@
 //! EventBus — Publish/subscribe event system using tokio::sync::broadcast.
 //!
-//! The central nervous system of Project-X. Every subsystem publishes
+//! The central nervous system of praxis. Every subsystem publishes
 //! events here; subscribers (logs, metrics, dashboard, CLI) receive them.
 //!
 //! # Design
@@ -8,7 +8,7 @@
 //! - Slow subscribers: dropped (broadcast channel behavior)
 //! - Events are serializable (sent to WebSocket clients)
 
-use project_x_shared::protocol::SystemEvent;
+use praxis_shared::protocol::SystemEvent;
 
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -45,7 +45,7 @@ impl EventBus {
     /// If all receivers have been dropped, returns `Ok(0)`.
     /// If all channels are at capacity, the oldest unread message is dropped
     /// and `Err` is returned with the number of active receivers.
-    pub fn publish(&self, kind: project_x_shared::protocol::MessageKind, source: &str) -> usize {
+    pub fn publish(&self, kind: praxis_shared::protocol::MessageKind, source: &str) -> usize {
         let event = SystemEvent {
             id: Uuid::new_v4(),
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -118,7 +118,7 @@ impl LogSubscriber {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use project_x_shared::protocol::MessageKind;
+    use praxis_shared::protocol::MessageKind;
 
 
     #[tokio::test]

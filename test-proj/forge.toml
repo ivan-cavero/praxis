@@ -1,4 +1,4 @@
-# Project-X Configuration
+# praxis Configuration
 # https://github.com/ivan-cavero/proyect-x
 
 [project]
@@ -83,4 +83,4 @@ phase_timeout_seconds = 300
 
 [[mcp_servers]]
 name = "filesystem"
-command = "project-x-mcp-filesystem"
+command = "praxis-mcp-filesystem"

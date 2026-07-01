@@ -1,4 +1,4 @@
-//! # Project-X Core Runtime
+//! # praxis Core Runtime
 //!
 //! The heart of the system: actor model, state machine, orchestrator,
 //! loop controller, drift detection, and context management.
@@ -27,8 +27,8 @@ pub use orchestrator::{RoleConfig, RoleOverride, GoalConfig, ResolvedRole};
 pub use orchestrator::roles::ResolvedRole as AgentRoleResolved;
 pub use orchestrator::{Task, TaskResult, TaskStatus};
 
-use project_x_mcp_host::McpHost;
-use project_x_vault::VaultService;
+use praxis_mcp_host::McpHost;
+use praxis_vault::VaultService;
 
 use thiserror::Error;
 
@@ -81,7 +81,7 @@ impl CoreRuntime {
         let supervisor = actor::Supervisor::spawn().await?;
         let loop_controller = crate::r#loop::LoopController::new();
         let drift_guard = crate::drift::DriftGuard::new();
-        let mcp_host = McpHost::new("project-x");
+        let mcp_host = McpHost::new("praxis");
 
         Ok(Self { bus, supervisor, loop_controller, drift_guard, mcp_host })
     }
@@ -119,8 +119,8 @@ impl CoreRuntime {
         &self,
         config: &ForgeConfig,
         vault: Option<&VaultService>,
-    ) -> project_x_providers::ProviderRouter {
-        let mut router = project_x_providers::ProviderRouter::new();
+    ) -> praxis_providers::ProviderRouter {
+        let mut router = praxis_providers::ProviderRouter::new();
 
         for (name, provider_cfg) in &config.providers {
             tracing::info!("Initializing provider: {} ({})", name, provider_cfg.base_url);
@@ -133,10 +133,10 @@ impl CoreRuntime {
                 continue;
             }
 
-            let provider: std::sync::Arc<dyn project_x_providers::LLMProvider> =
+            let provider: std::sync::Arc<dyn praxis_providers::LLMProvider> =
                 match provider_cfg.name.as_str() {
                     "nan" | "openai" | "openai_compat" => {
-                        std::sync::Arc::new(project_x_providers::OpenAIProvider::new(
+                        std::sync::Arc::new(praxis_providers::OpenAIProvider::new(
                             api_key,
                             provider_cfg.default_model.clone(),
                             Some(provider_cfg.base_url.clone()),
@@ -145,7 +145,7 @@ impl CoreRuntime {
                         ))
                     }
                     "anthropic" => {
-                        std::sync::Arc::new(project_x_providers::AnthropicProvider::new(
+                        std::sync::Arc::new(praxis_providers::AnthropicProvider::new(
                             api_key,
                             provider_cfg.default_model.clone(),
                             Some(provider_cfg.base_url.clone()),
@@ -154,7 +154,7 @@ impl CoreRuntime {
                         ))
                     }
                     "gemini" => {
-                        std::sync::Arc::new(project_x_providers::GeminiProvider::new(
+                        std::sync::Arc::new(praxis_providers::GeminiProvider::new(
                             api_key,
                             provider_cfg.default_model.clone(),
                             Some(provider_cfg.base_url.clone()),
@@ -163,14 +163,14 @@ impl CoreRuntime {
                         ))
                     }
                     "ollama" => {
-                        std::sync::Arc::new(project_x_providers::OllamaProvider::new(
+                        std::sync::Arc::new(praxis_providers::OllamaProvider::new(
                             provider_cfg.default_model.clone(),
                             Some(provider_cfg.base_url.clone()),
                         ))
                     }
                     _ => {
                         // Default to OpenAI-compatible provider
-                        std::sync::Arc::new(project_x_providers::OpenAIProvider::new(
+                        std::sync::Arc::new(praxis_providers::OpenAIProvider::new(
                             api_key,
                             provider_cfg.default_model.clone(),
                             Some(provider_cfg.base_url.clone()),
@@ -180,7 +180,7 @@ impl CoreRuntime {
                     }
                 };
 
-            router.register(name, provider, project_x_providers::ModelTier::Balanced);
+            router.register(name, provider, praxis_providers::ModelTier::Balanced);
             tracing::info!("Provider '{}' registered with model '{}'", name, provider_cfg.default_model);
         }
 
@@ -259,7 +259,7 @@ impl CoreRuntime {
         // Start the loop
         self.loop_controller.start();
         self.bus.publish(
-            project_x_shared::protocol::MessageKind::SessionHeartbeat,
+            praxis_shared::protocol::MessageKind::SessionHeartbeat,
             "core",
         );
 
@@ -320,10 +320,10 @@ impl CoreRuntime {
             match self.loop_controller.advance(next_phase) {
                 Ok(_transition) => {
                     self.bus.publish(
-                        project_x_shared::protocol::MessageKind::PhaseChanged(
-                            project_x_shared::protocol::PhaseTransition {
-                                from: project_x_shared::types::Phase::Planning,
-                                to: project_x_shared::types::Phase::Implementing,
+                        praxis_shared::protocol::MessageKind::PhaseChanged(
+                            praxis_shared::protocol::PhaseTransition {
+                                from: praxis_shared::types::Phase::Planning,
+                                to: praxis_shared::types::Phase::Implementing,
                                 condition: "automatic".to_string(),
                                 timestamp: chrono::Utc::now().to_rfc3339(),
                             },
@@ -581,7 +581,7 @@ mod tests {
         let bus = EventBus::new();
         let mut rx = bus.subscribe();
         bus.publish(
-            project_x_shared::protocol::MessageKind::SessionHeartbeat,
+            praxis_shared::protocol::MessageKind::SessionHeartbeat,
             "test",
         );
         let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
@@ -597,7 +597,7 @@ mod tests {
         let mut rx1 = bus.subscribe();
         let mut rx2 = bus.subscribe();
         bus.publish(
-            project_x_shared::protocol::MessageKind::SessionHeartbeat,
+            praxis_shared::protocol::MessageKind::SessionHeartbeat,
             "test",
         );
         let _ = tokio::time::timeout(std::time::Duration::from_secs(1), rx1.recv()).await.expect("timeout").expect("recv error");

@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 /// A registered provider with its metadata.
 struct RegisteredProvider {
-    provider: Arc<dyn project_x_agent_traits::provider::LLMProvider>,
-    tier: project_x_agent_traits::provider::ModelTier,
+    provider: Arc<dyn praxis_agent_traits::provider::LLMProvider>,
+    tier: praxis_agent_traits::provider::ModelTier,
 }
 
 /// Routes model names to the correct provider.
@@ -32,8 +32,8 @@ impl ProviderRouter {
     pub fn register(
         &mut self,
         name: &str,
-        provider: Arc<dyn project_x_agent_traits::provider::LLMProvider>,
-        tier: project_x_agent_traits::provider::ModelTier,
+        provider: Arc<dyn praxis_agent_traits::provider::LLMProvider>,
+        tier: praxis_agent_traits::provider::ModelTier,
     ) {
         self.providers.insert(
             name.to_string(),
@@ -53,7 +53,7 @@ impl ProviderRouter {
     /// 2. Model name prefix match (e.g., "gpt-5" → openai)
     /// 3. Default provider
     /// 4. Error
-    pub fn resolve(&self, model: &str) -> Result<Arc<dyn project_x_agent_traits::provider::LLMProvider>, String> {
+    pub fn resolve(&self, model: &str) -> Result<Arc<dyn praxis_agent_traits::provider::LLMProvider>, String> {
         // 1. Direct provider name
         if let Some(reg) = self.providers.get(model) {
             return Ok(reg.provider.clone());
@@ -78,7 +78,7 @@ impl ProviderRouter {
     }
 
     /// Get the tier for a model.
-    pub fn tier_for(&self, model: &str) -> Option<project_x_agent_traits::provider::ModelTier> {
+    pub fn tier_for(&self, model: &str) -> Option<praxis_agent_traits::provider::ModelTier> {
         if let Some(name) = Self::detect_provider(model) {
             if let Some(reg) = self.providers.get(&name) {
                 return Some(reg.tier.clone());
@@ -123,7 +123,7 @@ impl Default for ProviderRouter {
 mod tests {
     use super::*;
     use crate::MockProvider;
-    use project_x_agent_traits::provider::ModelTier;
+    use praxis_agent_traits::provider::ModelTier;
 
     #[test]
     fn test_detect_provider() {
@@ -140,9 +140,9 @@ mod tests {
     async fn test_router_resolve() {
         let mut router = ProviderRouter::new();
 
-        let openai: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let openai: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("openai response"));
-        let anthropic: Arc<dyn project_x_agent_traits::provider::LLMProvider> =
+        let anthropic: Arc<dyn praxis_agent_traits::provider::LLMProvider> =
             Arc::new(MockProvider::simple("anthropic response"));
 
         router.register("openai", openai, ModelTier::Balanced);

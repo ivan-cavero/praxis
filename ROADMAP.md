@@ -1,4 +1,4 @@
-# Project-X — ROADMAP
+# praxis — ROADMAP
 
 > **30 weeks total** — 6 Phases, 16 Sprints, ~220 tasks  
 > **Stack:** Rust nightly · Tauri v2 · Vue 3 · SQLite · Qdrant embedded · Ractor  
@@ -200,7 +200,7 @@ Workspace Intelligence:
 
 ## Phase 0: Foundation (Weeks 1–3)
 
-**Goal:** `project-x --help` works. An EchoAgent talks to an LLM and saves to SQLite.
+**Goal:** `praxis --help` works. An EchoAgent talks to an LLM and saves to SQLite.
 
 ### Sprint 0.1 — Workspace + Actor Model (Week 1)
 
@@ -348,7 +348,7 @@ Workspace Intelligence:
 
 #### Validation Milestone 🧪
 
-- [ ] **Demo:** `project-x init my-project` → SQLite created. Append 10 events, snapshot, recover.
+- [ ] **Demo:** `praxis init my-project` → SQLite created. Append 10 events, snapshot, recover.
 
 ---
 
@@ -422,7 +422,7 @@ Workspace Intelligence:
 
 ## Phase 1: Smart Loop (Weeks 4–8)
 
-**Goal:** `project-x run --goal "..."` executes an agent with state machine, MCP tools, hot memory, **context budget enforcement**, limits, and divergence detection.
+**Goal:** `praxis run --goal "..."` executes an agent with state machine, MCP tools, hot memory, **context budget enforcement**, limits, and divergence detection.
 
 ### Sprint 1.1 — State Machine + Loop Controller (Week 4)
 
@@ -680,7 +680,7 @@ Workspace Intelligence:
 - [ ] **Implement `logs --tail`** — subscribe to EventBus, filterable
 - [ ] **🧠 Implement `context inspect`** — show current budget allocation per section, pressure, compression history
   ```
-  $ project-x context inspect --session abc
+  $ praxis context inspect --session abc
   ┌─────────────────────────────────────────────┐
   │  CONTEXT BUDGET — Session abc               │
   │  Model: gpt-5 (128k max, 89,600 hard limit) │
@@ -894,13 +894,13 @@ Workspace Intelligence:
 
 - [ ] **Implement `inject` command:**
   ```bash
-  project-x inject --session abc --agent coder --type instruction \
+  praxis inject --session abc --agent coder --type instruction \
     --message "Usa thiserror en vez de anyhow para los errores de dominio"
   
-  project-x inject --session abc --agent all --type correction \
+  praxis inject --session abc --agent all --type correction \
     --message "Paren, hay un bug crítico en producción. Cambien prioridad a: fix issue #142"
   
-  project-x inject --session abc --agent orchestrator --type halt \
+  praxis inject --session abc --agent orchestrator --type halt \
     --message "Cambia el goal a: implementar rate limiting en los endpoints POST"
   ```
 
@@ -1010,7 +1010,7 @@ Workspace Intelligence:
 
 ## Phase 3: Desktop + Dashboard (Weeks 14–19)
 
-**Goal:** `project-x desktop` opens Tauri app. Dashboard shows everything in real time, including context health.
+**Goal:** `praxis desktop` opens Tauri app. Dashboard shows everything in real time, including context health.
 
 ### Sprint 3.1 — Backend API (Week 14)
 
@@ -1156,7 +1156,7 @@ Workspace Intelligence:
 
 #### Scaffold
 
-- [ ] **Initialize Tauri v2 project** — window 1280x800, title "Project-X"
+- [ ] **Initialize Tauri v2 project** — window 1280x800, title "praxis"
 - [ ] **Move core to library crate** — `core/src/lib.rs` exports public API
 
 #### Core Integration
@@ -1612,7 +1612,7 @@ Workspace Intelligence:
 #### API Keys
 
 - [ ] **Implement `ApiKeyService`:**
-  - Generate keys per team: `project-x_xxxxxxxxxxxx`
+  - Generate keys per team: `praxis_xxxxxxxxxxxx`
   - Keys have permissions (scoped to org)
   - Keys can expire
   - Audit log: key used for what, by whom
@@ -1737,7 +1737,7 @@ Workspace Intelligence:
 ## CLI Reference (Final)
 
 ```
-project-x <command> [options]
+praxis <command> [options]
 
 CORE COMMANDS:
   init <name>                   Create a new project

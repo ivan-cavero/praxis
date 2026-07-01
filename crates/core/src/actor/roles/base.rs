@@ -5,7 +5,7 @@
 
 use crate::orchestrator::roles::ResolvedRole;
 use crate::orchestrator::task::{Task, TaskResult};
-use project_x_agent_traits::provider::{ChatConfig, ChatMessage, ChatRole, LLMProvider};
+use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatRole, LLMProvider};
 use std::sync::Arc;
 
 // ─── Helpers ──────────────────────────────────────────────────
