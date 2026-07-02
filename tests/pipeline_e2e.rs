@@ -198,7 +198,7 @@ async fn e2e_pipeline_agent_factory_all_roles() {
 
         let agent = AgentFactory::create(&role);
         let task = Task::new(role_name, "gpt-4o", "test task");
-        let result = agent.execute(&task);
+        let result = agent.execute(&task).await;
 
         assert_eq!(
             result.status,
