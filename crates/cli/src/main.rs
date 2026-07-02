@@ -7,6 +7,7 @@ mod commands;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use praxis_agent_traits::persistence::EventStore;
 use std::path::PathBuf;
 
 /// Load vault service from .forge/credentials.vault.json if it exists.
@@ -203,14 +204,6 @@ enum Commands {
     /// Show version
     Version,
 
-    /// Organization management (Enterprise)
-    #[command(subcommand)]
-    Org(OrgCommands),
-
-    /// Billing (Enterprise)
-    #[command(subcommand)]
-    Billing(BillingCommands),
-
     /// VPS deployment
     #[command(subcommand)]
     Deploy(DeployCommands),
@@ -255,20 +248,6 @@ enum ContextCommands {
     Inspect { session: String },
     History { session: String },
     ForceCompress { session: String },
-}
-
-#[derive(Subcommand)]
-enum OrgCommands {
-    Create { name: String },
-    List,
-    Show,
-    Switch { id: String },
-}
-
-#[derive(Subcommand)]
-enum BillingCommands {
-    Show,
-    Invoices,
 }
 
 #[derive(Subcommand)]
@@ -403,14 +382,30 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     // Normal execution
                     println!("{} {}", "→ Running goal:".cyan(), g.white().bold());
-                    println!("  Press Ctrl+C to stop");
+                    println!("  Press Ctrl+C to stop gracefully");
                     println!();
 
                     println!("{}", "📦 Starting core runtime...".dimmed());
-                    let mut runtime = praxis_core::CoreRuntime::new().await?;
+                    let data_dir = get_data_dir();
+                    std::fs::create_dir_all(&data_dir)?;
+                    let db_path = data_dir.join("state.db");
+
+                    let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    let mut runtime = praxis_core::CoreRuntime::new()
+                        .await?
+                        .with_event_store(store);
 
                     // Load vault if exists
                     let vault = load_vault();
+
+                    // Set up Ctrl+C handler for graceful shutdown
+                    let shutdown_flag = runtime.shutdown_handle();
+                    tokio::spawn(async move {
+                        let _ = tokio::signal::ctrl_c().await;
+                        println!("\n{} Ctrl+C received. Finishing current iteration and saving checkpoint...", "⚠".yellow());
+                        shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                    });
 
                     println!("{}", "🤖 Initializing agent pipeline...".dimmed());
 
@@ -433,6 +428,10 @@ async fn main() -> anyhow::Result<()> {
                     }
                     println!("  {} Total duration: {}ms", "→".cyan(), result.total_duration_ms);
 
+                    if let Some(sid) = runtime.session_id {
+                        println!("  {} Session: {}", "→".cyan(), sid);
+                    }
+
                     println!();
                     println!("{}", "🔌 Shutting down...".dimmed());
                     runtime.shutdown().await?;
@@ -450,13 +449,66 @@ async fn main() -> anyhow::Result<()> {
                 let data_dir = get_data_dir();
                 let db_path = data_dir.join("state.db");
 
-                if db_path.exists() {
-                    println!("  {} Found database at {}", "→".dimmed(), db_path.display());
-                    println!("  {} Resume from checkpoint...", "→".dimmed());
-                    println!("{}", "⚠ Full resume not yet implemented".yellow());
-                } else {
-                    println!("  {} No database found. Run a session first.", "✗".red());
+                if !db_path.exists() {
+                    println!("  {} No database found at {}. Run a session first.", "✗".red(), db_path.display());
+                    std::process::exit(1);
                 }
+
+                let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                // Find the last session
+                let session_ids = store
+                    .list_aggregates("session")
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                let session_id = match session_ids.last() {
+                    Some(id) => *id,
+                    None => {
+                        println!("  {} No sessions found to resume.", "✗".red());
+                        std::process::exit(1);
+                    }
+                };
+
+                println!("  {} Resuming session: {}", "→".dimmed(), session_id);
+
+                let mut runtime = praxis_core::CoreRuntime::new()
+                    .await?
+                    .with_event_store(store);
+
+                let vault = load_vault();
+
+                // Set up Ctrl+C handler
+                let shutdown_flag = runtime.shutdown_handle();
+                tokio::spawn(async move {
+                    let _ = tokio::signal::ctrl_c().await;
+                    println!("\n{} Ctrl+C received. Finishing current iteration and saving checkpoint...", "⚠".yellow());
+                    shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                });
+
+                let result = runtime
+                    .resume_goal(session_id, None, vault.as_ref().map(|v| &**v))
+                    .await?;
+
+                match result {
+                    Some(result) => {
+                        println!();
+                        println!("  {} Goal: {}", "→".cyan(), result.goal.white().bold());
+                        println!("  {} Status: {}", "→".cyan(),
+                            if result.passed { "✅ PASSED".green().bold() } else { "❌ FAILED".red().bold() });
+                        println!("  {} Agents executed: {}", "→".cyan(), result.agent_results.len());
+                        println!("  {} Total duration: {}ms", "→".cyan(), result.total_duration_ms);
+                    }
+                    None => {
+                        println!("  {} No checkpoint found for session {}.", "✗".red(), session_id);
+                    }
+                }
+
+                println!();
+                println!("{}", "🔌 Shutting down...".dimmed());
+                runtime.shutdown().await?;
+                println!("{} Done", "✓".green().bold());
 
             } else {
                 println!("{} Please provide --goal, --file, or --resume", "✗".red());
@@ -860,22 +912,6 @@ async fn main() -> anyhow::Result<()> {
             println!("{} Checking for updates (channel: {})...", "→".cyan(), channel);
             println!("  {} Already up to date (v{})", "✓".green(), env!("CARGO_PKG_VERSION"));
         }
-
-        Commands::Org(cmd) => match cmd {
-            OrgCommands::Create { name } => println!("{} Creating org: {}", "→".cyan(), name),
-            OrgCommands::List => println!("{} No organizations", "→".cyan()),
-            OrgCommands::Show => println!("{} No organization selected", "→".cyan()),
-            OrgCommands::Switch { id } => println!("{} Switched to: {}", "→".cyan(), id),
-        },
-
-        Commands::Billing(cmd) => match cmd {
-            BillingCommands::Show => {
-                println!("{} Billing:", "→".cyan());
-                println!("  Plan: Free");
-                println!("  Usage: 0 tokens");
-            }
-            BillingCommands::Invoices => println!("{} No invoices", "→".cyan()),
-        },
 
         Commands::Deploy(cmd) => match cmd {
             DeployCommands::Setup { host } => {
