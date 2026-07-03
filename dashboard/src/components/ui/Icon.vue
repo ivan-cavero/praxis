@@ -43,7 +43,6 @@ import {
   IconDatabase,
   IconChartLine,
   IconDeviceMobile,
-  IconMenu2,
   type Icon,
 } from '@tabler/icons-vue'
 
@@ -97,7 +96,6 @@ const iconMap: Record<string, Icon> = {
   database: IconDatabase,
   phone: IconDeviceMobile,
   mobile: IconDeviceMobile,
-  menu: IconMenu2,
 }
 
 const props = defineProps<{

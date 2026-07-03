@@ -10,6 +10,7 @@
 //! - No progress: N iterations without state change
 //! - Destructive behavior: process kill/create patterns, file deletion loops
 //! - Token waste: token usage growing without progress
+//! - Cross-model verification: when pathology suspected, ask another model
 
 use std::collections::VecDeque;
 
@@ -84,12 +85,16 @@ pub struct LoopPathologyDetector {
     total_iterations: u32,
     /// Iterations since last meaningful progress.
     iterations_since_progress: u32,
+    /// Rolling window of token counts per iteration (for token waste detection).
+    token_history: VecDeque<(u32, u32)>, // (iteration, token_count)
     /// Maximum window size for hash/phase history.
     window_size: usize,
     /// Maximum allowed repetitions before alert.
     max_repetitions: u32,
     /// Maximum allowed iterations without progress before alert.
     max_no_progress: u32,
+    /// Minimum iterations of rising token usage before token waste alert.
+    max_token_waste_iterations: u32,
     /// All alerts emitted.
     alerts: Vec<PathologyAlert>,
     /// Destructive action patterns to watch for.
@@ -104,9 +109,11 @@ impl LoopPathologyDetector {
             progress_iterations: Vec::new(),
             total_iterations: 0,
             iterations_since_progress: 0,
+            token_history: VecDeque::with_capacity(20),
             window_size: 10,
             max_repetitions: 3,
             max_no_progress: 5,
+            max_token_waste_iterations: 5,
             alerts: Vec::new(),
             destructive_patterns: vec![
                 "kill -9",
@@ -129,12 +136,14 @@ impl LoopPathologyDetector {
 
     /// Record an iteration's output and check for pathology.
     ///
+    /// `token_count` is optional — pass `Some(n)` to enable token waste detection.
     /// Returns an alert if a pathology was detected, `None` if healthy.
     pub fn record_iteration(
         &mut self,
         iteration: u32,
         output: &str,
         phase: &str,
+        token_count: Option<u32>,
     ) -> Option<PathologyAlert> {
         self.total_iterations = iteration + 1;
 
@@ -177,6 +186,14 @@ impl LoopPathologyDetector {
             self.phase_history.pop_front();
         }
 
+        // Track token usage if provided
+        if let Some(count) = token_count {
+            self.token_history.push_back((iteration, count));
+            while self.token_history.len() > 20 {
+                self.token_history.pop_front();
+            }
+        }
+
         // Check for oscillation (A→B→A→B pattern in outputs)
         if let Some(alert) = self.check_oscillation(iteration) {
             self.alerts.push(alert.clone());
@@ -185,6 +202,12 @@ impl LoopPathologyDetector {
 
         // Check for no progress
         if let Some(alert) = self.check_no_progress(iteration) {
+            self.alerts.push(alert.clone());
+            return Some(alert);
+        }
+
+        // Check for token waste (rising token usage without progress)
+        if let Some(alert) = self.check_token_waste(iteration) {
             self.alerts.push(alert.clone());
             return Some(alert);
         }
@@ -296,6 +319,107 @@ impl LoopPathologyDetector {
         None
     }
 
+    /// Check for token waste: token usage rising without progress.
+    ///
+    /// Looks at the last N token counts. If they are monotonically increasing
+    /// and the agent isn't making progress, it's burning tokens with no effect.
+    fn check_token_waste(&self, iteration: u32) -> Option<PathologyAlert> {
+        if self.token_history.len() < self.max_token_waste_iterations as usize {
+            return None;
+        }
+
+        // Check if last N token counts are monotonically increasing
+        let recent: Vec<u32> = self
+            .token_history
+            .iter()
+            .rev()
+            .take(self.max_token_waste_iterations as usize)
+            .map(|&(_, count)| count)
+            .collect();
+
+        if recent.len() < 2 {
+            return None;
+        }
+
+        let is_increasing = recent.windows(2).all(|w| w[1] >= w[0]);
+        let is_no_progress = self.iterations_since_progress > 0;
+
+        if is_increasing && is_no_progress {
+            let total_rise = recent.last().unwrap_or(&0) - recent.first().unwrap_or(&0);
+            return Some(PathologyAlert {
+                kind: PathologyKind::TokenWaste,
+                severity: PathologySeverity::Warning,
+                details: format!(
+                    "Token usage rising for {} iterations ({}→{}, +{} tokens) without progress.",
+                    self.max_token_waste_iterations,
+                    recent.first().unwrap_or(&0),
+                    recent.last().unwrap_or(&0),
+                    total_rise,
+                ),
+                recommended_action: PathologyAction::Log,
+                iteration,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            });
+        }
+
+        None
+    }
+
+    /// Cross-model verification: ask another LLM whether the agent is making progress.
+    ///
+    /// Call this after a pathology alert is detected to get a second opinion.
+    /// Returns the model's response text, or an error message if the call fails.
+    pub async fn verify_with_model(
+        &self,
+        provider: &dyn praxis_agent_traits::provider::LLMProvider,
+        goal: &str,
+        last_output: &str,
+        alert: &PathologyAlert,
+    ) -> String {
+        let prompt = format!(
+            "You are a quality assurance monitor for an autonomous coding agent.\n\n\
+             Goal: {}\n\n\
+             The agent produced this output:\n\
+             ---\n{}\n---\n\n\
+             Pathology detected: {} ({:?})\n\n\
+             Question: Is the agent making meaningful progress toward the goal? \
+             Answer with just YES or NO, followed by a brief reason.",
+            goal,
+            last_output.chars().take(1000).collect::<String>(),
+            alert.details,
+            alert.severity,
+        );
+
+        let config = praxis_agent_traits::provider::ChatConfig {
+            temperature: 0.0,
+            max_tokens: 100,
+            ..Default::default()
+        };
+
+        match provider
+            .chat(
+                &[praxis_agent_traits::provider::ChatMessage {
+                    role: praxis_agent_traits::provider::ChatRole::User,
+                    content: prompt,
+                    tool_calls: None,
+                    tool_call_id: None,
+                }],
+                &config,
+            )
+            .await
+        {
+            Ok(response) => {
+                let content = response.content.trim().to_string();
+                tracing::info!("Cross-model verification: {}", content);
+                content
+            }
+            Err(e) => {
+                tracing::warn!("Cross-model verification failed: {}", e);
+                format!("Verification call failed: {}", e)
+            }
+        }
+    }
+
     /// Simple hash function for output comparison.
     fn hash_output(&self, content: &str) -> u64 {
         use std::hash::{Hash, Hasher};
@@ -331,6 +455,7 @@ impl LoopPathologyDetector {
         self.progress_iterations.clear();
         self.total_iterations = 0;
         self.iterations_since_progress = 0;
+        self.token_history.clear();
         self.alerts.clear();
     }
 }
@@ -353,7 +478,7 @@ mod tests {
 
         for i in 0..10 {
             let output = format!("Unique output number {}", i);
-            let alert = detector.record_iteration(i, &output, "Implementing");
+            let alert = detector.record_iteration(i, &output, "Implementing", None);
             assert!(alert.is_none(), "should not alert on unique outputs: {:?}", alert);
         }
 
@@ -366,9 +491,9 @@ mod tests {
         detector.max_repetitions = 3;
 
         let output = "Same output every time";
-        detector.record_iteration(0, output, "Implementing");
-        detector.record_iteration(1, output, "Implementing");
-        let alert = detector.record_iteration(2, output, "Implementing");
+        detector.record_iteration(0, output, "Implementing", None);
+        detector.record_iteration(1, output, "Implementing", None);
+        let alert = detector.record_iteration(2, output, "Implementing", None);
 
         assert!(alert.is_some());
         let alert = alert.unwrap();
@@ -385,10 +510,10 @@ mod tests {
         let output_a = "Output state A with unique content";
         let output_b = "Output state B with different content";
 
-        detector.record_iteration(0, output_a, "Implementing");
-        detector.record_iteration(1, output_b, "Reviewing");
-        detector.record_iteration(2, output_a, "Implementing");
-        let alert = detector.record_iteration(3, output_b, "Reviewing");
+        detector.record_iteration(0, output_a, "Implementing", None);
+        detector.record_iteration(1, output_b, "Reviewing", None);
+        detector.record_iteration(2, output_a, "Implementing", None);
+        let alert = detector.record_iteration(3, output_b, "Reviewing", None);
 
         assert!(alert.is_some());
         let alert = alert.unwrap();
@@ -405,11 +530,11 @@ mod tests {
         // Each output is different but we're not making real progress
         // (the detector tracks hash changes as progress, so we need same hash)
         let output = "Same output no progress";
-        detector.record_iteration(0, output, "Implementing");
-        detector.record_iteration(1, output, "Implementing");
-        detector.record_iteration(2, output, "Implementing");
+        detector.record_iteration(0, output, "Implementing", None);
+        detector.record_iteration(1, output, "Implementing", None);
+        detector.record_iteration(2, output, "Implementing", None);
 
-        let alert = detector.record_iteration(3, output, "Implementing");
+        let alert = detector.record_iteration(3, output, "Implementing", None);
         // Actually with same output, repetition fires first.
         // Let's test no-progress with different outputs but same phase
         // The no-progress check is about iterations_since_progress which
@@ -422,7 +547,7 @@ mod tests {
         let mut detector = LoopPathologyDetector::new();
 
         let output = "Running command: kill -9 12345";
-        let alert = detector.record_iteration(0, output, "Implementing");
+        let alert = detector.record_iteration(0, output, "Implementing", None);
 
         assert!(alert.is_some());
         let alert = alert.unwrap();
@@ -436,7 +561,7 @@ mod tests {
         let mut detector = LoopPathologyDetector::new();
 
         let output = "Cleaning up: rm -rf /";
-        let alert = detector.record_iteration(0, output, "Implementing");
+        let alert = detector.record_iteration(0, output, "Implementing", None);
 
         assert!(alert.is_some());
         assert_eq!(alert.unwrap().kind, PathologyKind::DestructiveBehavior);
@@ -447,7 +572,7 @@ mod tests {
         let mut detector = LoopPathologyDetector::new();
 
         let output = "DROP TABLE users;";
-        let alert = detector.record_iteration(0, output, "Implementing");
+        let alert = detector.record_iteration(0, output, "Implementing", None);
 
         assert!(alert.is_some());
         assert_eq!(alert.unwrap().kind, PathologyKind::DestructiveBehavior);
@@ -459,8 +584,8 @@ mod tests {
         detector.max_repetitions = 2;
 
         let output = "kill -9 12345";
-        detector.record_iteration(0, output, "Implementing");
-        let alert = detector.record_iteration(1, output, "Implementing");
+        detector.record_iteration(0, output, "Implementing", None);
+        let alert = detector.record_iteration(1, output, "Implementing", None);
 
         // Should be destructive, not repetition
         assert!(alert.is_some());
@@ -470,9 +595,9 @@ mod tests {
     #[test]
     fn test_reset() {
         let mut detector = LoopPathologyDetector::new();
-        detector.record_iteration(0, "output one", "Implementing");
-        detector.record_iteration(1, "output one", "Implementing");
-        detector.record_iteration(2, "output one", "Implementing");
+        detector.record_iteration(0, "output one", "Implementing", None);
+        detector.record_iteration(1, "output one", "Implementing", None);
+        detector.record_iteration(2, "output one", "Implementing", None);
 
         detector.reset();
         assert!(detector.alerts().is_empty());
@@ -484,13 +609,13 @@ mod tests {
         let mut detector = LoopPathologyDetector::new();
         detector.max_repetitions = 100;
 
-        detector.record_iteration(0, "output A", "Implementing");
+        detector.record_iteration(0, "output A", "Implementing", None);
         assert_eq!(detector.iterations_since_progress(), 0);
 
-        detector.record_iteration(1, "output A", "Implementing");
+        detector.record_iteration(1, "output A", "Implementing", None);
         assert_eq!(detector.iterations_since_progress(), 1);
 
-        detector.record_iteration(2, "output B", "Implementing");
+        detector.record_iteration(2, "output B", "Implementing", None);
         assert_eq!(detector.iterations_since_progress(), 0);
     }
 }

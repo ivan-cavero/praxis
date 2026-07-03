@@ -130,6 +130,10 @@ enum Commands {
         #[arg(long)]
         headless: bool,
 
+        /// Completion criterion: "coding" (default), "manual", "stagnant=N"
+        #[arg(long, default_value = "coding")]
+        completion: String,
+
         /// Override agents (comma-separated: coder,reviewer)
         #[arg(long)]
         agents: Option<String>,
@@ -293,7 +297,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // ─── Run ───────────────────────────────────────────
-        Commands::Run { goal, file, resume, session: _, dry_run, headless, agents, agent: agent_overrides, parallel_reviewers: _ } => {
+        Commands::Run { goal, file, resume, session: _, dry_run, headless, completion, agents, agent: agent_overrides, parallel_reviewers: _ } => {
             if let Some(g) = goal {
                 // Parse agent overrides
                 let mut overrides = std::collections::HashMap::new();
@@ -362,6 +366,13 @@ async fn main() -> anyhow::Result<()> {
                     println!("{} Running in headless mode", "→".cyan());
                     let mut runtime = praxis_core::CoreRuntime::new().await?;
 
+                    // Apply completion criterion if set
+                    if completion != "coding" {
+                        if let Some(criterion) = praxis_core::CompletionCriterion::from_string(&completion) {
+                            runtime = runtime.with_completion(criterion);
+                        }
+                    }
+
                     // Load vault if exists
                     let vault = load_vault();
 
@@ -380,7 +391,7 @@ async fn main() -> anyhow::Result<()> {
                     let _ = runtime.shutdown().await;
 
                 } else {
-                    // Normal execution
+                    // Normal execution with live streaming output
                     println!("{} {}", "→ Running goal:".cyan(), g.white().bold());
                     println!("  Press Ctrl+C to stop gracefully");
                     println!();
@@ -396,6 +407,14 @@ async fn main() -> anyhow::Result<()> {
                         .await?
                         .with_event_store(store);
 
+                    // Apply completion criterion if set
+                    if completion != "coding" {
+                        if let Some(criterion) = praxis_core::CompletionCriterion::from_string(&completion) {
+                            runtime = runtime.with_completion(criterion);
+                            println!("  {} Completion: {}", "→".dimmed(), completion);
+                        }
+                    }
+
                     // Load vault if exists
                     let vault = load_vault();
 
@@ -407,10 +426,65 @@ async fn main() -> anyhow::Result<()> {
                         shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                     });
 
+                    // Subscribe to EventBus for live streaming of agent output
+                    let event_bus = runtime.bus.clone();
+                    let event_printer = tokio::spawn(async move {
+                        let mut rx = event_bus.subscribe();
+                        loop {
+                            match rx.recv().await {
+                                Ok(event) => {
+                                    use praxis_shared::protocol::MessageKind;
+                                    match &event.kind {
+                                        MessageKind::AgentStarted { agent, role: _, phase } => {
+                                            println!("  {} {} ({}) started", "→".cyan(), agent.cyan(), format!("{:?}", phase).dimmed());
+                                        }
+                                        MessageKind::AgentOutput { agent: _, delta } => {
+                                            // Print each line of the delta as it arrives
+                                            for line in delta.lines() {
+                                                if !line.is_empty() {
+                                                    println!("    │ {}", line.dimmed());
+                                                }
+                                            }
+                                        }
+                                        MessageKind::AgentCompleted { agent, status, duration_ms, output_preview, .. } => {
+                                            let preview = if output_preview.len() > 80 {
+                                                format!("{}...", &output_preview[..80])
+                                            } else {
+                                                output_preview.clone()
+                                            };
+                                            println!("  {} {} completed — {} ({}ms)", "✓".green(), agent.cyan(), status.dimmed(), duration_ms);
+                                            println!("    {}", preview.dimmed());
+                                        }
+                                        MessageKind::PhaseChanged(transition) => {
+                                            println!("  {} Phase: {:?} → {:?}", "▶".cyan(), transition.from, transition.to);
+                                        }
+                                        MessageKind::PathologyDetected(alert) => {
+                                            println!("  {} Pathology: {} ({})", "⚠".yellow(), alert.details.dimmed(), alert.severity);
+                                        }
+                                        MessageKind::CheckpointSaved(info) => {
+                                            println!("  {} Checkpoint saved (iteration {})", "💾".dimmed(), info.iteration);
+                                        }
+                                        MessageKind::GateResult(result) => {
+                                            println!("  {} Gate: {} — {}", "🔍".dimmed(), result.gate_name, if result.passed { "PASS".green() } else { "FAIL".red() });
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                    tracing::warn!("EventBus subscriber lagged by {} events", n);
+                                }
+                            }
+                        }
+                    });
+
                     println!("{}", "🤖 Initializing agent pipeline...".dimmed());
 
                     // Run through the full agent pipeline
                     let result = runtime.run_goal(&g, None, vault.as_ref().map(|v| &**v)).await?;
+
+                    // Stop the event printer
+                    event_printer.abort();
 
                     println!();
                     println!("  {} Goal: {}", "→".cyan(), result.goal.white().bold());
@@ -726,16 +800,82 @@ async fn main() -> anyhow::Result<()> {
         },
 
         Commands::Session(cmd) => match cmd {
-            SessionCommands::List { .. } => println!("{} No sessions found", "→".cyan()),
-            SessionCommands::Show { id } => println!("{} Session: {}", "→".cyan(), id),
-            SessionCommands::Stop { id } => println!("{} Stopping: {}", "→".cyan(), id),
-            SessionCommands::Logs { id, tail, json } => {
-                if tail {
-                    println!("{} Tailing logs for session {}...", "→".cyan(), id);
-                    println!("  {} (would subscribe to EventBus)", "→".dimmed());
+            SessionCommands::List { project: _ } => {
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
+                if !db_path.exists() {
+                    println!("{} No database found. Run a session first.", "→".cyan());
                 } else {
-                    println!("{} Logs: {} (json: {})", "→".cyan(), id, json);
+                    let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    let session_ids = store
+                        .list_aggregates("session")
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    if session_ids.is_empty() {
+                        println!("{} No sessions found", "→".cyan());
+                    } else {
+                        println!("{} Sessions ({})", "→".cyan(), session_ids.len());
+                        for sid in &session_ids {
+                            // Load snapshot for metadata
+                            let snapshot = store.get_snapshot(*sid).await.map_err(|e| anyhow::anyhow!(e))?;
+                            if let Some(snap) = snapshot {
+                                let goal = snap.state.get("goal").and_then(|v| v.as_str()).unwrap_or("?");
+                                let phase = snap.state.get("phase").and_then(|v| v.as_str()).unwrap_or("?");
+                                let iteration = snap.state.get("iteration").and_then(|v| v.as_u64()).unwrap_or(0);
+                                println!("  {} {} — {} (iter {}) — {}",
+                                    "•".dimmed(),
+                                    sid.to_string().dimmed(),
+                                    goal.cyan(),
+                                    iteration,
+                                    phase.dimmed(),
+                                );
+                            } else {
+                                println!("  {} {} (no checkpoint)", "•".dimmed(), sid);
+                            }
+                        }
+                    }
                 }
+            }
+            SessionCommands::Show { id } => {
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
+                if !db_path.exists() {
+                    println!("{} No database found.", "→".cyan());
+                } else {
+                    let sid = uuid::Uuid::parse_str(&id)
+                        .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
+                    let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    let snapshot = store.get_snapshot(sid).await.map_err(|e| anyhow::anyhow!(e))?;
+                    match snapshot {
+                        Some(snap) => {
+                            println!("  {} Session: {}", "→".cyan(), sid);
+                            println!("  {} Type: {}", "→".cyan(), snap.aggregate_type);
+                            println!("  {} Version: {}", "→".cyan(), snap.version);
+                            println!("  {} Updated: {}", "→".cyan(), snap.updated_at);
+                            if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str()) {
+                                println!("  {} Goal: {}", "→".cyan(), goal);
+                            }
+                            if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
+                                println!("  {} Phase: {}", "→".cyan(), phase);
+                            }
+                            if let Some(iteration) = snap.state.get("iteration").and_then(|v| v.as_u64()) {
+                                println!("  {} Iteration: {}", "→".cyan(), iteration);
+                            }
+                        }
+                        None => {
+                            println!("{} No checkpoint found for session {}", "→".cyan(), id);
+                        }
+                    }
+                }
+            }
+            SessionCommands::Stop { id } => {
+                println!("{} Stop not yet implemented for session {}. Use Ctrl+C during execution.", "→".cyan(), id);
+            }
+            SessionCommands::Logs { id, tail, json } => {
+                println!("{} Logs for session {} (tail: {}, json: {})", "→".cyan(), id, tail, json);
+                println!("  {} (implement via EventBus subscription in future)", "→".dimmed());
             }
         },
 
@@ -866,10 +1006,54 @@ async fn main() -> anyhow::Result<()> {
             println!("{} Injecting to {} ({})", "→".cyan(), agent.cyan(), message_type);
             println!("  Session: {}", session);
             println!("  Message: {}", message.dimmed());
-            println!("  {} (would send via InjectionChannel)", "→".dimmed());
+            println!();
+            println!("  {} Injection works in two ways:", "→".cyan());
+            println!("    1. {} Start the API server ({}), then re-run this command", "•".dimmed(), "praxis server".yellow());
+            println!("       The server will forward the message to the running session.");
+            println!("    2. {} Use WebSocket at ws://localhost:8080/ws to send injection messages directly.", "•".dimmed());
+            println!();
+            println!("  {} This will be streamlined in a future release.", "→".dimmed());
         },
 
-        Commands::Desktop => println!("{} Opening desktop app...", "→".cyan()),
+        Commands::Desktop => {
+            println!("{} Building and launching desktop app...", "→".cyan());
+            println!("{} This may take a moment on first run.", "→".dimmed());
+            println!();
+
+            // Determine the desktop directory path (relative to the binary)
+            let desktop_dir = std::env::current_dir()
+                .map(|d| d.join("desktop"))
+                .unwrap_or_else(|_| PathBuf::from("desktop"));
+
+            // Try `cargo tauri dev` first (HMR + Vite dev server).
+            // `cargo tauri dev` does NOT support --manifest-path, so we must set current_dir.
+            let tauri_result = std::process::Command::new("cargo")
+                .args(["tauri", "dev"])
+                .current_dir(&desktop_dir)
+                .spawn();
+
+            match tauri_result {
+                Ok(mut child) => {
+                    let status = child.wait().map_err(|e| anyhow::anyhow!("Desktop process error: {}", e))?;
+                    if !status.success() {
+                        eprintln!("{} Desktop exited with code: {}", "⚠".yellow(), status.code().unwrap_or(-1));
+                    }
+                }
+                Err(_) => {
+                    // tauri-cli not installed, fall back to `cargo run -p desktop`
+                    println!("{} (tauri-cli not found, using cargo run -p desktop)", "ℹ".dimmed());
+                    let mut child = std::process::Command::new("cargo")
+                        .args(["run", "-p", "desktop"])
+                        .spawn()
+                        .map_err(|e| anyhow::anyhow!("Failed to launch desktop: {}", e))?;
+
+                    let status = child.wait().map_err(|e| anyhow::anyhow!("Desktop process error: {}", e))?;
+                    if !status.success() {
+                        eprintln!("{} Desktop exited with code: {}", "⚠".yellow(), status.code().unwrap_or(-1));
+                    }
+                }
+            }
+        },
         Commands::Dashboard => println!("{} Opening dashboard...", "→".cyan()),
         Commands::Server => {
             // Read vault password from env if set

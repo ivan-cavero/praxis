@@ -5,8 +5,10 @@
 
 use crate::orchestrator::roles::ResolvedRole;
 use crate::orchestrator::task::{Task, TaskResult};
+use crate::bus::EventBus;
 use async_trait::async_trait;
-use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatRole, LLMProvider};
+use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatRole, LLMProvider, StreamChunk};
+use praxis_shared::protocol::MessageKind;
 use std::sync::Arc;
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -50,7 +52,75 @@ fn build_chat_config(role: &ResolvedRole) -> ChatConfig {
     }
 }
 
+/// Call the LLM provider in streaming mode, publishing each delta on the EventBus.
+/// Falls back to non-streaming if streaming fails.
+async fn call_llm_stream_or_mock(
+    provider: &Option<Arc<dyn LLMProvider>>,
+    task: &Task,
+    system_prompt: &str,
+    role: &ResolvedRole,
+    mock_output: &str,
+    bus: &Option<EventBus>,
+    agent_name: &str,
+) -> String {
+    let Some(llm) = provider else {
+        return mock_output.to_string();
+    };
+
+    let messages = build_chat_messages(task, system_prompt);
+    let config = build_chat_config(role);
+
+    // If no EventBus available, fall back to non-streaming
+    let Some(bus_ref) = bus else {
+        return match llm.chat(&messages, &config).await {
+            Ok(response) => response.content,
+            Err(e) => {
+                tracing::warn!("LLM call failed for '{}': {}", agent_name, e);
+                mock_output.to_string()
+            }
+        };
+    };
+
+    // Try streaming with EventBus
+    match llm.stream(&messages, &config).await {
+        Ok(mut rx) => {
+            let mut full = String::new();
+            while let Some(chunk) = rx.recv().await {
+                match chunk {
+                    StreamChunk::Delta(text) => {
+                        bus_ref.publish(
+                            MessageKind::AgentOutput {
+                                agent: agent_name.to_string(),
+                                delta: text.clone(),
+                            },
+                            "agent",
+                        );
+                        full.push_str(&text);
+                    }
+                    StreamChunk::Done(_usage) => {}
+                    StreamChunk::Error(e) => {
+                        tracing::warn!("Stream error for '{}': {}", agent_name, e);
+                    }
+                }
+            }
+            full
+        }
+        Err(e) => {
+            tracing::warn!("Stream failed for '{}', falling back to chat: {}", agent_name, e);
+            match llm.chat(&messages, &config).await {
+                Ok(response) => response.content,
+                Err(e2) => {
+                    tracing::warn!("Chat fallback also failed for '{}': {}", agent_name, e2);
+                    mock_output.to_string()
+                }
+            }
+        }
+    }
+}
+
 /// Call the LLM provider if available, otherwise return mock output.
+/// Replaced by `call_llm_stream_or_mock` — kept for non-streaming fallback.
+#[expect(dead_code, reason = "Available for non-streaming fallback path")]
 async fn call_llm_or_mock(
     provider: &Option<Arc<dyn LLMProvider>>,
     task: &Task,
@@ -101,16 +171,20 @@ pub trait BaseAgent: Send + Sync {
 pub struct Architect {
     pub role: ResolvedRole,
     pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
     pub asi_score: f32,
     pub context_pressure: f32,
 }
 
 impl Architect {
     pub fn new(role: ResolvedRole) -> Self {
-        Self { role, provider: None, asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0 }
     }
     pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
-        Self { role, provider: Some(provider), asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0 }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0 }
     }
 }
 
@@ -127,7 +201,7 @@ impl BaseAgent for Architect {
             "ADR: {}\nStatus: accepted\nContext: The team needs to: {}\nDecision: Implement using the proposed approach\nConsequences: [+Clear architecture, -Upfront design time]",
             task.description, task.description
         );
-        let content = call_llm_or_mock(&self.provider, task, prompt, &self.role, &mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "architect").await;
         make_task_result(task, "architect", "architect", &content, start)
     }
 
@@ -146,6 +220,7 @@ impl BaseAgent for Architect {
 pub struct Coder {
     pub role: ResolvedRole,
     pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
     pub asi_score: f32,
     pub context_pressure: f32,
     pub compilation_errors: Vec<String>,
@@ -153,10 +228,13 @@ pub struct Coder {
 
 impl Coder {
     pub fn new(role: ResolvedRole) -> Self {
-        Self { role, provider: None, asi_score: 100.0, context_pressure: 0.0, compilation_errors: Vec::new() }
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0, compilation_errors: Vec::new() }
     }
     pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
-        Self { role, provider: Some(provider), asi_score: 100.0, context_pressure: 0.0, compilation_errors: Vec::new() }
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0, compilation_errors: Vec::new() }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0, compilation_errors: Vec::new() }
     }
 }
 
@@ -173,7 +251,7 @@ impl BaseAgent for Coder {
             "// Generated code for: {}\nfn main() {{ println!(\"Hello, world!\"); }}",
             task.description
         );
-        let content = call_llm_or_mock(&self.provider, task, prompt, &self.role, &mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "coder").await;
         make_task_result(task, "coder", "coder", &content, start)
     }
 
@@ -186,7 +264,7 @@ impl BaseAgent for Coder {
             "// Fixed code for: {}\n// Applied feedback: {}",
             task.description, feedback
         );
-        let content = call_llm_or_mock(&self.provider, &task_with_feedback, prompt, &self.role, &mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, &task_with_feedback, prompt, &self.role, &mock, &self.bus, "coder").await;
         make_task_result(task, "coder", "coder", &content, start)
     }
 
@@ -202,16 +280,20 @@ impl BaseAgent for Coder {
 pub struct Reviewer {
     pub role: ResolvedRole,
     pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
     pub asi_score: f32,
     pub context_pressure: f32,
 }
 
 impl Reviewer {
     pub fn new(role: ResolvedRole) -> Self {
-        Self { role, provider: None, asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0 }
     }
     pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
-        Self { role, provider: Some(provider), asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0 }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0 }
     }
 }
 
@@ -225,7 +307,7 @@ impl BaseAgent for Reviewer {
         let start = std::time::Instant::now();
         let prompt = "You are a senior code reviewer. Analyze the given code/task critically. Report: pass/fail, issues found (severity, file, line, message), and suggestions for improvement. Be specific.";
         let mock = "Review: PASS\nSummary: Code looks good with minor suggestions\nIssues: 0 critical, 0 major, 1 nit";
-        let content = call_llm_or_mock(&self.provider, task, prompt, &self.role, mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "reviewer").await;
         make_task_result(task, "reviewer", "reviewer", &content, start)
     }
 
@@ -244,16 +326,20 @@ impl BaseAgent for Reviewer {
 pub struct Security {
     pub role: ResolvedRole,
     pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
     pub asi_score: f32,
     pub context_pressure: f32,
 }
 
 impl Security {
     pub fn new(role: ResolvedRole) -> Self {
-        Self { role, provider: None, asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0 }
     }
     pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
-        Self { role, provider: Some(provider), asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0 }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0 }
     }
 }
 
@@ -267,7 +353,7 @@ impl BaseAgent for Security {
         let start = std::time::Instant::now();
         let prompt = "You are a security auditor. Scan the given code for: hardcoded secrets, SQL injection, XSS, unsafe operations, insecure dependencies, and other vulnerabilities. Report findings with severity levels.";
         let mock = "Security Scan: PASS\nFindings: 0 critical, 0 high, 0 medium\nSummary: No security issues detected";
-        let content = call_llm_or_mock(&self.provider, task, prompt, &self.role, mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "security").await;
         make_task_result(task, "security", "security", &content, start)
     }
 
@@ -286,6 +372,7 @@ impl BaseAgent for Security {
 pub struct Tester {
     pub role: ResolvedRole,
     pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
     pub asi_score: f32,
     pub context_pressure: f32,
     pub tests_generated: u32,
@@ -294,10 +381,13 @@ pub struct Tester {
 
 impl Tester {
     pub fn new(role: ResolvedRole) -> Self {
-        Self { role, provider: None, asi_score: 100.0, context_pressure: 0.0, tests_generated: 0, tests_passed: 0 }
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0, tests_generated: 0, tests_passed: 0 }
     }
     pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
-        Self { role, provider: Some(provider), asi_score: 100.0, context_pressure: 0.0, tests_generated: 0, tests_passed: 0 }
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0, tests_generated: 0, tests_passed: 0 }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0, tests_generated: 0, tests_passed: 0 }
     }
 }
 
@@ -311,7 +401,7 @@ impl BaseAgent for Tester {
         let start = std::time::Instant::now();
         let prompt = "You are a QA engineer. Generate comprehensive tests for the given task. Include: unit tests, edge cases, error cases. Use the project's test framework. Output test code only.";
         let mock = format!("// Tests for: {}\n#[test]\nfn test_basic() {{ assert!(true); }}", task.description);
-        let content = call_llm_or_mock(&self.provider, task, prompt, &self.role, &mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "tester").await;
         make_task_result(task, "tester", "tester", &content, start)
     }
 
@@ -332,16 +422,20 @@ impl BaseAgent for Tester {
 pub struct Git {
     pub role: ResolvedRole,
     pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
     pub asi_score: f32,
     pub context_pressure: f32,
 }
 
 impl Git {
     pub fn new(role: ResolvedRole) -> Self {
-        Self { role, provider: None, asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0 }
     }
     pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
-        Self { role, provider: Some(provider), asi_score: 100.0, context_pressure: 0.0 }
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0 }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0 }
     }
     pub fn create_branch(&self, session_id: &str) -> serde_json::Value {
         serde_json::json!({ "action": "branch_created", "branch": format!("feature/session-{}", session_id), "status": "ok" })
@@ -370,7 +464,7 @@ impl BaseAgent for Git {
         let start = std::time::Instant::now();
         let prompt = "You are a Git expert. Generate a conventional commit message for the given task. Format: type(scope): description. Types: feat, fix, refactor, docs, test, chore.";
         let mock = &self.generate_commit_message(task);
-        let content = call_llm_or_mock(&self.provider, task, prompt, &self.role, mock).await;
+        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "git").await;
         make_task_result(task, "git", "git", &content, start)
     }
 
@@ -410,6 +504,18 @@ impl AgentFactory {
             "tester" => Box::new(Tester::with_provider(role.clone(), provider)),
             "git" => Box::new(Git::with_provider(role.clone(), provider)),
             _ => Box::new(Coder::with_provider(role.clone(), provider)),
+        }
+    }
+
+    pub fn create_with_provider_and_bus(role: &ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Box<dyn BaseAgent> {
+        match role.role_name.as_str() {
+            "architect" => Box::new(Architect::with_provider_and_bus(role.clone(), provider, bus)),
+            "coder" => Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus)),
+            "reviewer" => Box::new(Reviewer::with_provider_and_bus(role.clone(), provider, bus)),
+            "security" => Box::new(Security::with_provider_and_bus(role.clone(), provider, bus)),
+            "tester" => Box::new(Tester::with_provider_and_bus(role.clone(), provider, bus)),
+            "git" => Box::new(Git::with_provider_and_bus(role.clone(), provider, bus)),
+            _ => Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus)),
         }
     }
 }

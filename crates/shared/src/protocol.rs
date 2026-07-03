@@ -42,9 +42,28 @@ pub enum MessageKind {
     ReviewResult(ReviewVerdict),
     HealthStatus(HealthStatus),
 
+    // ─── Agent Lifecycle Events ────────────────────────────
+    AgentStarted {
+        agent: String,
+        role: String,
+        phase: Phase,
+    },
+    AgentOutput {
+        agent: String,
+        delta: String,
+    },
+    AgentCompleted {
+        agent: String,
+        role: String,
+        status: String,
+        duration_ms: u64,
+        output_preview: String,
+    },
+
     // ─── System Events ─────────────────────────────────────
     PhaseChanged(PhaseTransition),
     CheckpointSaved(CheckpointInfo),
+    PathologyDetected(PathologyAlert),
     DriftAlert(DriftAlert),
     SessionHeartbeat,
 
@@ -200,6 +219,16 @@ pub enum DriftSeverity {
     Warning,
     Critical,
     Severe,
+}
+
+/// Alert from the loop pathology detector, published on the EventBus.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathologyAlert {
+    pub kind: String,
+    pub severity: String,
+    pub details: String,
+    pub action: String,
+    pub iteration: u32,
 }
 
 /// Wrapper for system-wide events (published on EventBus).

@@ -90,6 +90,25 @@ impl CompletionCriterion {
         }
     }
 
+    /// Parse a completion criterion from a string flag value.
+    ///
+    /// Supported values:
+    /// - `"coding"` or `"default"` — CodingOutcomeVerifier
+    /// - `"manual"` — ManualCompletionVerifier (always NotAchieved)
+    /// - `"stagnant=N"` — coding with custom stagnant limit
+    pub fn from_string(s: &str) -> Option<Self> {
+        match s {
+            "coding" | "default" | "" => Some(default_coding_criterion()),
+            "manual" => Some(CompletionCriterion::new(Arc::new(ManualCompletionVerifier))),
+            _ => {
+                let stagnant = s.strip_prefix("stagnant=").and_then(|n| n.parse::<u32>().ok());
+                stagnant.map(|max| {
+                    CompletionCriterion::with_stagnant_limit(Arc::new(CodingOutcomeVerifier), max)
+                })
+            }
+        }
+    }
+
     /// Evaluate the criterion. Tracks stagnation: if the verifier returns
     /// `NotAchieved` too many times in a row, returns `Exhausted`.
     pub async fn evaluate(&mut self, goal: &str, results: &[TaskResult]) -> OutcomeResult {

@@ -85,8 +85,7 @@ verified, not when an ACTION is executed.
 - [x] **Evidence collection** — when achieved, collects proof (agent outputs)
 - [x] **Exhaustion detection** — if no progress after N iterations, marks as
   `Exhausted` and stops
-- [ ] **Configurable per goal** — in `forge.toml`: `completion = "tests_pass"` or
-  custom verifier
+- [x] **Configurable per goal** — via CLI `--completion="coding"|"manual"|"stagnant=N"`
 
 ### 1.4 Loop Pathology Detection
 
@@ -100,9 +99,12 @@ An agent stuck in a loop can be destructive. praxis detects this.
 - [x] **Destructive behavior detection** — process kill/create patterns, file
   deletion loops → kill session immediately
 - [x] **Integration into `run_goal`** — check after every iteration
-- [ ] **Token waste detection** — token usage growing without progress → throttle
-- [ ] **Cross-model verification** — when pathology suspected, ask a different
-  model: "Is this agent making progress?"
+- [x] **Token waste detection** — token usage growing without progress → throttle
+- [x] **Cross-model verification** — when pathology suspected, ask a different
+  model: "Is this agent making progress?" (via `verify_with_model()`)
+- [x] **Streaming output** — `provider.stream()` → EventBus → CLI. Each agent
+  publishes `AgentOutput` deltas as they arrive from the LLM; CLI displays them
+  in real-time with `│` prefix lines.
 
 ### 1.5 Gates That Actually Block
 
@@ -123,10 +125,13 @@ An agent stuck in a loop can be destructive. praxis detects this.
   SQLite, calls `resume_goal`).
 - [x] **`run --dry-run`** — shows plan without executing.
 - [x] **`run --headless`** — JSON output for CI/CD.
+- [x] **`run --completion`** — choose completion criterion ("coding", "manual", "stagnant=N").
+- [x] **`status`** — no separate command; `session list` and `session show <id>` read from SQLite.
+- [x] **Streaming output** — EventBus events published in `run_goal`, CLI subscribes and shows agent start/complete/phase changes/gate results in real-time.
 - [x] **Graceful shutdown** — Ctrl+C handler saves checkpoint and exits.
-- [ ] **`status`** — status of active sessions.
-- [~] **`session list/show/stop/logs`** — manage sessions (stubs).
-- [~] **`inject`** — mid-loop injection (stub).
+- [x] **`session list/show`** — reads sessions from SQLite event store.
+- [~] **`session stop/logs`** — stubs (stop works via Ctrl+C; logs via EventBus).
+- [~] **`inject`** — infrastructure in CoreRuntime (`inject()`, `drain_injections()`), CLI stub explains API server requirement.
 
 🧪 **Milestone:** `praxis init demo && praxis run --goal "Create a hello world
 in Rust"` → the loop iterates, the coder writes code, the reviewer approves,

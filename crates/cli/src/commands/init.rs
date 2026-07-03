@@ -133,15 +133,3 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// List all projects.
-pub fn list_projects() -> anyhow::Result<Vec<serde_json::Value>> {
-    let data_dir = get_data_dir();
-    let projects_path = data_dir.join("projects.json");
-
-    let content = match std::fs::read_to_string(&projects_path) {
-        Ok(c) => c,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    Ok(serde_json::from_str(&content).unwrap_or_default())
-}

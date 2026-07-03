@@ -68,6 +68,17 @@ pub enum CoreError {
 
 pub type Result<T> = std::result::Result<T, CoreError>;
 
+// ─── Injection ─────────────────────────────────────────────────
+
+/// A message injected mid-loop into a running agent session.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InjectedMessage {
+    pub target_agent: String,  // "coder", "all", etc.
+    pub message_type: String,  // "instruction", "context", "correction", "halt"
+    pub content: String,
+    pub created_at: String,
+}
+
 // ─── Runtime ──────────────────────────────────────────────────
 
 /// The central runtime that manages the entire system.
@@ -85,6 +96,8 @@ pub struct CoreRuntime {
     pub session_id: Option<uuid::Uuid>,
     /// Flag set by Ctrl+C to request graceful shutdown.
     pub shutdown_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Pending mid-loop injections (drained before each agent execution).
+    pub injections: std::sync::Arc<std::sync::RwLock<Vec<InjectedMessage>>>,
 }
 
 impl CoreRuntime {
@@ -108,6 +121,7 @@ impl CoreRuntime {
             event_store: None,
             session_id: None,
             shutdown_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            injections: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
         })
     }
 
@@ -117,10 +131,74 @@ impl CoreRuntime {
         self
     }
 
+    /// Set a custom completion criterion (e.g., from CLI `--completion` flag).
+    pub fn with_completion(mut self, criterion: CompletionCriterion) -> Self {
+        self.completion_criterion = Some(criterion);
+        self
+    }
+
     /// Get a handle to the shutdown flag. Set it to true to request graceful
     /// shutdown from outside the runtime (e.g., Ctrl+C handler).
     pub fn shutdown_handle(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
         self.shutdown_requested.clone()
+    }
+
+    /// Inject a mid-loop message into a running session.
+    ///
+    /// The message will be picked up at the next agent execution boundary.
+    /// Currently works in-process (same `CoreRuntime` instance). Cross-process
+    /// injection requires the API server.
+    pub fn inject(&self, target_agent: &str, message_type: &str, content: &str) {
+        let msg = InjectedMessage {
+            target_agent: target_agent.to_string(),
+            message_type: message_type.to_string(),
+            content: content.to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Ok(mut guard) = self.injections.write() {
+            guard.push(msg);
+            tracing::info!("Injected message for agent '{}' (type: {})", target_agent, message_type);
+        }
+    }
+
+    /// Drain pending injection messages for a given agent.
+    /// Returns formatted context string to prepend to the agent's task.
+    fn drain_injections(&self, agent_name: &str) -> String {
+        let mut guard = match self.injections.write() {
+            Ok(g) => g,
+            Err(_) => return String::new(),
+        };
+        if guard.is_empty() {
+            return String::new();
+        }
+
+        let mut relevant: Vec<InjectedMessage> = Vec::new();
+        guard.retain(|msg| {
+            if msg.target_agent == agent_name || msg.target_agent == "all" {
+                relevant.push(msg.clone());
+                false // remove from pending
+            } else {
+                true // keep for other agents
+            }
+        });
+
+        if relevant.is_empty() {
+            return String::new();
+        }
+
+        let mut parts: Vec<String> = relevant
+            .iter()
+            .map(|msg| {
+                format!(
+                    "[{} from operator]: {}",
+                    msg.message_type.to_uppercase(),
+                    msg.content
+                )
+            })
+            .collect();
+        parts.insert(0, "─── OPERATOR INJECTION ───".to_string());
+        parts.push("─── END INJECTION ───".to_string());
+        parts.join("\n")
     }
 
     /// Save a checkpoint of the current session state to the event store.
@@ -442,13 +520,25 @@ impl CoreRuntime {
                     task.context = feedback.clone();
                 }
 
+                // Drain pending injection messages for this agent
+                let injection = self.drain_injections(&role_config.name);
+                if !injection.is_empty() {
+                    if task.context.is_empty() {
+                        task.context = injection;
+                    } else {
+                        task.context = format!("{}\n\n{}", task.context, injection);
+                    }
+                    tracing::info!("Injected message into task for agent '{}'", role_config.name);
+                }
+
                 let resolved_role =
                     orchestrator::roles::ResolvedRole::resolve(role_config, None);
                 let agent = match provider_router.resolve(&role_config.model) {
                     Ok(provider) => {
-                        crate::actor::roles::AgentFactory::create_with_provider(
+                        crate::actor::roles::AgentFactory::create_with_provider_and_bus(
                             &resolved_role,
                             provider,
+                            self.bus.clone(),
                         )
                     }
                     Err(_) => {
@@ -461,11 +551,33 @@ impl CoreRuntime {
                     }
                 };
 
+                // Publish agent start event for live streaming
+                self.bus.publish(
+                    praxis_shared::protocol::MessageKind::AgentStarted {
+                        agent: role_config.name.clone(),
+                        role: role_config.name.clone(),
+                        phase: current_phase,
+                    },
+                    "core",
+                );
+
                 let result = if has_feedback {
                     agent.handle_feedback(&task, &feedback).await
                 } else {
                     agent.execute(&task).await
                 };
+
+                // Publish agent completion event for live streaming
+                self.bus.publish(
+                    praxis_shared::protocol::MessageKind::AgentCompleted {
+                        agent: result.agent_id.clone(),
+                        role: result.role.clone(),
+                        status: format!("{:?}", result.status),
+                        duration_ms: result.duration_ms,
+                        output_preview: result.content.chars().take(200).collect(),
+                    },
+                    "core",
+                );
 
                 tracing::info!(
                     "Agent {} completed: status={:?}, duration={}ms",
@@ -538,11 +650,26 @@ impl CoreRuntime {
             // Check the last agent's output for destructive/stuck patterns.
             if let Some(last_result) = results.last() {
                 let phase_str = format!("{:?}", current_phase);
+                let token_count = last_result.token_usage.output;
                 if let Some(alert) = self.pathology_detector.record_iteration(
                     self.loop_controller.iteration,
                     &last_result.content,
                     &phase_str,
+                    Some(token_count),
                 ) {
+                    // Publish pathology alert on the EventBus
+                    self.bus.publish(
+                        praxis_shared::protocol::MessageKind::PathologyDetected(
+                            praxis_shared::protocol::PathologyAlert {
+                                kind: format!("{:?}", alert.kind),
+                                severity: format!("{:?}", alert.severity),
+                                details: alert.details.clone(),
+                                action: format!("{:?}", alert.recommended_action),
+                                iteration: alert.iteration,
+                            },
+                        ),
+                        "core",
+                    );
                     tracing::error!(
                         "Loop pathology detected: {:?} — {}",
                         alert.kind,
@@ -765,13 +892,25 @@ impl CoreRuntime {
                     task.context = feedback.clone();
                 }
 
+                // Drain pending injection messages for this agent
+                let injection = self.drain_injections(&role_config.name);
+                if !injection.is_empty() {
+                    if task.context.is_empty() {
+                        task.context = injection;
+                    } else {
+                        task.context = format!("{}\n\n{}", task.context, injection);
+                    }
+                    tracing::info!("Injected message into task for agent '{}'", role_config.name);
+                }
+
                 let resolved_role =
                     orchestrator::roles::ResolvedRole::resolve(role_config, None);
                 let agent = match provider_router.resolve(&role_config.model) {
                     Ok(provider) => {
-                        crate::actor::roles::AgentFactory::create_with_provider(
+                        crate::actor::roles::AgentFactory::create_with_provider_and_bus(
                             &resolved_role,
                             provider,
+                            self.bus.clone(),
                         )
                     }
                     Err(_) => {
@@ -813,10 +952,12 @@ impl CoreRuntime {
 
             if let Some(last_result) = results.last() {
                 let phase_str = format!("{:?}", current_phase);
+                let token_count = last_result.token_usage.output;
                 if let Some(alert) = self.pathology_detector.record_iteration(
                     self.loop_controller.iteration,
                     &last_result.content,
                     &phase_str,
+                    Some(token_count),
                 ) {
                     tracing::error!(
                         "Loop pathology detected: {:?} — {}",
@@ -927,7 +1068,7 @@ impl CoreRuntime {
 // ─── Goal Result ──────────────────────────────────────────────
 
 /// Result of running a goal through the pipeline.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct GoalResult {
     pub goal: String,
     pub passed: bool,
