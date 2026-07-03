@@ -12,6 +12,7 @@ members = [
     "crates/shared",
     "desktop",
     "tests",
+    "mcp-servers/filesystem",
 ]
 
 [workspace.dependencies]
