@@ -1,0 +1,32 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+description = "praxis Desktop — Tauri v2 binary"
+edition = "2024"
+default-run = "desktop"
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+praxis-core = { path = "../crates/core", version = "0.1.0" }
+praxis-agent-traits = { path = "../crates/agent-traits", version = "0.1.0" }
+praxis-persistence = { path = "../crates/persistence", version = "0.1.0" }
+praxis-vault = { path = "../crates/vault", version = "0.1.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+dirs = "6"
+axum = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+# Release profile inherited from workspace (Cargo.toml root).
+# Tauri-specific overrides like panic=abort can be added in root profile if needed.

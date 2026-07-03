@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from './stores/app'
+import { setApiPort } from './composables/useApi'
 import Icon from './components/ui/Icon.vue'
 import LoginView from './views/LoginView.vue'
 import SettingsView from './views/SettingsView.vue'
@@ -11,22 +12,28 @@ const currentView = ref<'chat' | 'settings'>('chat')
 const selectedProject = ref<string | null>(null)
 const chatMessage = ref('')
 const selectedModel = ref('GLM-5.2')
-const sidebarOpen = ref(false)
-const isMobile = ref(false)
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-function checkMobile() {
-  isMobile.value = window.innerWidth < 768
-  if (!isMobile.value) {
-    sidebarOpen.value = false
+// Listen for Tauri `api:ready` event (port number)
+// Falls back gracefully in browser dev mode (Vite proxies /api)
+async function listenTauriEvents() {
+  try {
+    const { listen } = await import('@tauri-apps/api/event')
+    await listen<number>('api:ready', (event) => {
+      setApiPort(event.payload)
+    })
+    await listen('core:ready', () => {
+      // Core runtime ready — can start making API calls
+    })
+  } catch {
+    // Not in Tauri — running in browser dev mode
   }
 }
 
-onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
-  
+onMounted(async () => {
+  await listenTauriEvents()
+
   const token = localStorage.getItem('praxis-token')
   if (token) {
     isAuthenticated.value = true
@@ -35,7 +42,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMobile)
   if (refreshInterval) clearInterval(refreshInterval)
 })
 
@@ -60,9 +66,6 @@ const greeting = computed(() => {
 function selectProject(id: string) {
   selectedProject.value = id
   store.selectProject(id)
-  if (isMobile.value) {
-    sidebarOpen.value = false
-  }
 }
 
 function handleSendMessage() {
@@ -70,30 +73,14 @@ function handleSendMessage() {
   // TODO: Send message to backend
   chatMessage.value = ''
 }
-
-function toggleSidebar() {
-  sidebarOpen.value = !sidebarOpen.value
-}
-
-function closeSidebar() {
-  sidebarOpen.value = false
-}
 </script>
 
 <template>
   <LoginView v-if="!isAuthenticated" @login="handleLogin" />
 
   <div v-else class="layout">
-    <!-- ═══ SIDEBAR OVERLAY (Mobile) ═══ -->
-    <div 
-      v-if="isMobile" 
-      class="sidebar-overlay" 
-      :class="{ visible: sidebarOpen }"
-      @click="closeSidebar"
-    />
-
     <!-- ═══ SIDEBAR ═══ -->
-    <aside class="sidebar" :class="{ open: sidebarOpen }">
+    <aside class="sidebar">
       <!-- Logo -->
       <div class="sidebar-header">
         <div class="logo-mark">P</div>
@@ -183,17 +170,6 @@ function closeSidebar() {
 
     <!-- ═══ MAIN CONTENT ═══ -->
     <div class="main-content">
-      <!-- ═══ MOBILE HEADER ═══ -->
-      <header v-if="isMobile" class="mobile-header">
-        <button class="mobile-menu-btn" @click="toggleSidebar">
-          <Icon name="menu" :size="20" />
-        </button>
-        <span class="mobile-title">praxis</span>
-        <button class="mobile-menu-btn" @click="currentView = 'settings'">
-          <Icon name="settings" :size="20" />
-        </button>
-      </header>
-
       <!-- ═══ CHAT VIEW ═══ -->
       <template v-if="currentView === 'chat'">
         <!-- Greeting area -->

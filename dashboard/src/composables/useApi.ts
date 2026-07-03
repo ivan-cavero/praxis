@@ -1,8 +1,32 @@
 /**
  * useApi — Backend API communication composable.
+ *
+ * Works in two modes:
+ * 1. Tauri desktop: uses the API port emitted via `api:ready` event
+ * 2. Browser dev (standalone Vite): uses `/api` proxy (localhost:8080)
+ *
+ * The `setApiPort()` function is called by App.vue when the Tauri backend
+ * emits the `api:ready` event with the port number.
  */
 
-const API_BASE = '/api'
+import { ref } from 'vue'
+
+// In Tauri, this gets updated via `api:ready` event.
+// In browser dev mode, Vite proxies `/api` to the API server.
+const apiPort = ref<number | null>(null)
+
+/** Compute the API base URL dynamically. */
+function apiBase(): string {
+  if (apiPort.value !== null) {
+    return `http://127.0.0.1:${apiPort.value}/api`
+  }
+  return '/api'
+}
+
+/** Set the API port (called from Tauri event listener). */
+export function setApiPort(port: number) {
+  apiPort.value = port
+}
 
 export interface HealthStatus {
   status: string; version: string; uptime_seconds: number
@@ -54,7 +78,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  const base = apiBase()
+  const url = `${base}${path}`
+  const res = await fetch(url, { ...options, headers })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`API ${res.status}: ${body || res.statusText}`)

@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dashboard/dist",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "npm run dev --prefix ../dashboard",
-    "beforeBuildCommand": "npm run build --prefix ../dashboard"
+    "beforeDevCommand": "cd ../dashboard && bun run dev",
+    "beforeBuildCommand": "cd ../dashboard && bun run build"
   },
   "app": {
     "windows": [

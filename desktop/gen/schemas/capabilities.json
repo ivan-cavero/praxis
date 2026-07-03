@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for praxis desktop","local":true,"windows":["main"],"permissions":["core:default","core:window:default","core:event:default","core:app:default","core:path:default","core:resources:default","core:menu:default","core:tray:default"]}}
