@@ -67,6 +67,7 @@ async fn init_backend(handle: &tauri::AppHandle) {
     let state = handle.state::<AppState>();
     match CoreRuntime::new().await {
         Ok(mut runtime) => {
+            runtime = runtime.with_data_dir(data_dir.clone());
             match SqliteEventStore::new(&db_path) {
                 Ok(store) => {
                     runtime = runtime.with_event_store(store);

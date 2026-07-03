@@ -1002,17 +1002,42 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
-        Commands::Inject { session, agent, message_type, message } => {
-            println!("{} Injecting to {} ({})", "→".cyan(), agent.cyan(), message_type);
-            println!("  Session: {}", session);
-            println!("  Message: {}", message.dimmed());
-            println!();
-            println!("  {} Injection works in two ways:", "→".cyan());
-            println!("    1. {} Start the API server ({}), then re-run this command", "•".dimmed(), "praxis server".yellow());
-            println!("       The server will forward the message to the running session.");
-            println!("    2. {} Use WebSocket at ws://localhost:8080/ws to send injection messages directly.", "•".dimmed());
-            println!();
-            println!("  {} This will be streamlined in a future release.", "→".dimmed());
+        Commands::Inject { session: _, agent, message_type, message } => {
+            let data_dir = get_data_dir();
+            let injections_dir = data_dir.join("injections");
+            match std::fs::create_dir_all(&injections_dir) {
+                Ok(()) => {
+                    let injection = serde_json::json!({
+                        "target_agent": agent,
+                        "message_type": message_type,
+                        "content": message,
+                        "created_at": chrono::Utc::now().to_rfc3339(),
+                    });
+                    let filename = format!(
+                        "{}_{}.json",
+                        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+                        agent
+                    );
+                    let path = injections_dir.join(&filename);
+                    match std::fs::write(&path, serde_json::to_string_pretty(&injection).unwrap()) {
+                        Ok(()) => {
+                            println!("{} Injection written for agent '{}'", "✓".green(), agent.cyan());
+                            println!("  File: {}", path.display());
+                            println!("  Type: {}", message_type.dimmed());
+                            println!("  Message: {}", message.dimmed());
+                            println!();
+                            println!("  {} The running session will pick it up on the next iteration.", "→".cyan());
+                        }
+                        Err(e) => {
+                            println!("{} Failed to write injection: {}", "✗".red(), e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("{} Failed to create injections directory: {}", "✗".red(), e);
+                    println!("  Tried: {}", injections_dir.display());
+                }
+            }
         },
 
         Commands::Desktop => {

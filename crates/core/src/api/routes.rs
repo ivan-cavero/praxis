@@ -81,6 +81,7 @@ impl ApiServer {
             .route("/api/vault/keys", get(vault::list_keys))
             .route("/api/vault/keys", post(vault::set_key))
             .route("/api/vault/keys/{provider}", delete(vault::delete_key))
+            .route("/api/inject", post(routes::inject))
             .route("/ws/global", get(super::ws::ws_handler))
             .with_state(Arc::new(state));
 
@@ -659,6 +660,15 @@ pub struct ErrorResponse {
     pub code: u16,
 }
 
+// ─── Inject Request ────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct InjectRequest {
+    pub target_agent: String,
+    pub message_type: String,
+    pub content: String,
+}
+
 // ─── Route Handlers ───────────────────────────────────────────
 
 pub mod routes {
@@ -688,6 +698,43 @@ pub mod routes {
             avg_pressure: 0.0, max_pressure: 0.0,
             total_compressions: 0, active_sessions: 0,
         })
+    }
+
+    pub async fn inject(
+        State(state): State<Arc<AppState>>,
+        Json(req): Json<InjectRequest>,
+    ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+        // Write injection to {data_dir}/injections/ as a JSON file
+        let injections_dir = state.data_dir.join("injections");
+        std::fs::create_dir_all(&injections_dir)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create injections dir: {}", e)))?;
+
+        let msg = serde_json::json!({
+            "target_agent": req.target_agent,
+            "message_type": req.message_type,
+            "content": req.content,
+            "created_at": chrono::Utc::now().to_rfc3339(),
+        });
+
+        let filename = format!(
+            "{}_{}.json",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+            req.target_agent
+        );
+        let path = injections_dir.join(&filename);
+        let content = serde_json::to_string_pretty(&msg)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize: {}", e)))?;
+        std::fs::write(&path, &content)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write injection: {}", e)))?;
+
+        tracing::info!("Injection written to: {:?}", path);
+
+        Ok(Json(serde_json::json!({
+            "status": "injected",
+            "file": filename,
+            "target_agent": req.target_agent,
+            "message_type": req.message_type,
+        })))
     }
 
     pub async fn metrics_summary(State(state): State<Arc<AppState>>) -> Json<MetricsSummaryResponse> {

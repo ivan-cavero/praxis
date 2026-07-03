@@ -98,6 +98,8 @@ pub struct CoreRuntime {
     pub shutdown_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Pending mid-loop injections (drained before each agent execution).
     pub injections: std::sync::Arc<std::sync::RwLock<Vec<InjectedMessage>>>,
+    /// Data directory for file-based injections and persistence.
+    pub data_dir: Option<std::path::PathBuf>,
 }
 
 impl CoreRuntime {
@@ -122,6 +124,7 @@ impl CoreRuntime {
             session_id: None,
             shutdown_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             injections: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+            data_dir: None,
         })
     }
 
@@ -134,6 +137,12 @@ impl CoreRuntime {
     /// Set a custom completion criterion (e.g., from CLI `--completion` flag).
     pub fn with_completion(mut self, criterion: CompletionCriterion) -> Self {
         self.completion_criterion = Some(criterion);
+        self
+    }
+
+    /// Set the data directory for file-based injections and persistence.
+    pub fn with_data_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.data_dir = Some(dir);
         self
     }
 
@@ -163,24 +172,47 @@ impl CoreRuntime {
 
     /// Drain pending injection messages for a given agent.
     /// Returns formatted context string to prepend to the agent's task.
+    ///
+    /// Checks both in-memory queue and file-based injections (from the data
+    /// directory) so injections work cross-process (CLI inject → file → runtime).
     fn drain_injections(&self, agent_name: &str) -> String {
-        let mut guard = match self.injections.write() {
-            Ok(g) => g,
-            Err(_) => return String::new(),
-        };
-        if guard.is_empty() {
-            return String::new();
+        let mut relevant: Vec<InjectedMessage> = Vec::new();
+
+        // 1. Drain in-memory queue
+        if let Ok(mut guard) = self.injections.write() {
+            guard.retain(|msg| {
+                if msg.target_agent == agent_name || msg.target_agent == "all" {
+                    relevant.push(msg.clone());
+                    false
+                } else {
+                    true
+                }
+            });
         }
 
-        let mut relevant: Vec<InjectedMessage> = Vec::new();
-        guard.retain(|msg| {
-            if msg.target_agent == agent_name || msg.target_agent == "all" {
-                relevant.push(msg.clone());
-                false // remove from pending
-            } else {
-                true // keep for other agents
+        // 2. Read file-based injections from data_dir/injections/
+        if let Some(ref data_dir) = self.data_dir {
+            let injections_dir = data_dir.join("injections");
+            if injections_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&injections_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().is_some_and(|ext| ext == "json") {
+                            if let Ok(content) = std::fs::read_to_string(&path) {
+                                if let Ok(msg) = serde_json::from_str::<InjectedMessage>(&content) {
+                                    if msg.target_agent == agent_name || msg.target_agent == "all" {
+                                        tracing::info!("Picked up file injection for '{}': {}", agent_name, msg.content);
+                                        relevant.push(msg);
+                                    }
+                                }
+                            }
+                            // Remove file after reading (whether parsed or not)
+                            let _ = std::fs::remove_file(&path);
+                        }
+                    }
+                }
             }
-        });
+        }
 
         if relevant.is_empty() {
             return String::new();
