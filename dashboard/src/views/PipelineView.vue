@@ -1,0 +1,228 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import Icon from '../components/ui/Icon.vue'
+
+const phases = computed(() => [
+  { id: 'planning', label: 'Planning', icon: 'brain', color: '#22c55e', active: true },
+  { id: 'designing', label: 'Designing', icon: 'code', color: '#3b82f6', active: true },
+  { id: 'implementing', label: 'Implementing', icon: 'terminal', color: '#eab308', active: true },
+  { id: 'reviewing', label: 'Reviewing', icon: 'eye', color: '#f97316', active: false },
+  { id: 'testing', label: 'Testing', icon: 'check', color: '#a855f7', active: false },
+  { id: 'security', label: 'Security', icon: 'shield', color: '#ef4444', active: false },
+  { id: 'finalizing', label: 'Finalizing', icon: 'server', color: '#22c55e', active: false },
+])
+</script>
+
+<template>
+  <div class="pipeline-view">
+    <div class="pipeline-header">
+      <h1 class="pipeline-title">Pipeline</h1>
+      <p class="pipeline-subtitle">Live agent workflow</p>
+    </div>
+
+    <div class="pipeline-flow">
+      <div
+        v-for="(phase, index) in phases"
+        :key="phase.id"
+        class="phase-node"
+        :class="{ active: phase.active }"
+      >
+        <div class="phase-node-connector" v-if="index > 0" :class="{ active: phases[index - 1].active }">
+          <div class="connector-line" />
+          <Icon name="chevron-right" :size="14" class="connector-arrow" />
+        </div>
+
+        <div class="phase-node-card" :style="{ '--phase-color': phase.color }">
+          <div class="phase-node-icon">
+            <Icon :name="phase.icon" :size="24" />
+          </div>
+          <div class="phase-node-label">{{ phase.label }}</div>
+          <div class="phase-node-status">
+            <span v-if="phase.active" class="status-dot live" :style="{ background: phase.color }" />
+            <span v-else class="status-dot" />
+            {{ phase.active ? 'In Progress' : 'Pending' }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent activity log -->
+    <div class="pipeline-log">
+      <div class="log-header">
+        <h2 class="log-title">Activity Log</h2>
+      </div>
+      <div class="log-empty">
+        <Icon name="terminal" :size="24" class="empty-icon" />
+        <p>Agent activity will appear here during a session.</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.pipeline-view {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.pipeline-header {
+  margin-bottom: var(--space-4);
+}
+
+.pipeline-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.pipeline-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+.pipeline-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: relative;
+}
+
+.phase-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.phase-node-connector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 40px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.connector-line {
+  width: 2px;
+  height: 24px;
+  background: var(--border-subtle);
+  margin: 0 auto;
+  transition: background var(--transition-slow);
+}
+
+.phase-node-connector.active .connector-line {
+  background: var(--primary);
+}
+
+.connector-arrow {
+  color: var(--text-muted);
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.phase-node-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  flex: 1;
+  transition: all var(--transition-slow);
+  border-left: 3px solid transparent;
+}
+
+.phase-node.active .phase-node-card {
+  border-color: var(--border-default);
+  border-left-color: var(--phase-color);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--phase-color) 10%, transparent);
+}
+
+.phase-node-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.phase-node.active .phase-node-icon {
+  color: var(--phase-color);
+  background: color-mix(in srgb, var(--phase-color) 15%, transparent);
+}
+
+.phase-node-label {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.phase-node-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-default);
+}
+
+.status-dot.live {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.pipeline-log {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.log-header {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.log-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.log-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-12);
+  color: var(--text-muted);
+  gap: var(--space-3);
+}
+
+.empty-icon {
+  opacity: 0.3;
+}
+</style>

@@ -1,0 +1,16 @@
+[Unit]
+Description=praxis — Neural Command Center
+Documentation=https://praxis.dev/docs
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/praxis server
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+Environment=PRAXIS_CONFIG_DIR=%h/.config/praxis
+Environment=PRAXIS_DATA_DIR=%h/.local/share/praxis
+
+[Install]
+WantedBy=multi-user.target

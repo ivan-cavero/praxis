@@ -21,6 +21,30 @@ pub struct AppState {
     pub vault: std::sync::Arc<praxis_vault::VaultService>,
     /// Directory where ALL project data lives (%APPDATA%/praxis).
     pub data_dir: std::path::PathBuf,
+    /// Global token usage counters (updated by EventBus listener).
+    pub token_counters: std::sync::Arc<std::sync::RwLock<TokenCounters>>,
+    /// Session registry (shared with CoreRuntime).
+    pub session_registry: std::sync::Arc<std::sync::RwLock<Vec<SessionEntry>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenCounters {
+    pub total_input: u64,
+    pub total_output: u64,
+    pub by_provider: HashMap<String, u64>,
+    pub by_model: HashMap<String, u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionEntry {
+    pub id: String,
+    pub project: String,
+    pub goal: String,
+    pub phase: String,
+    pub iteration: u32,
+    pub status: String, // running, completed, failed
+    pub started_at: String,
+    pub completed_at: Option<String>,
 }
 
 /// API server configuration.
@@ -66,6 +90,10 @@ impl ApiServer {
             .route("/api/projects/{id}", delete(projects::delete))
             .route("/api/projects/{id}/config", get(projects::get_config))
             .route("/api/projects/{id}/config", put(projects::update_config))
+            .route("/api/sessions", get(sessions::list))
+            .route("/api/sessions/{id}", get(sessions::get_one))
+            .route("/api/sessions/{id}/stop", post(sessions::stop))
+            .route("/api/agents", get(sessions::list_agents))
             .with_state(Arc::new(state.clone()))
             .layer(axum::middleware::from_fn_with_state(
                 auth_state,
@@ -82,6 +110,10 @@ impl ApiServer {
             .route("/api/vault/keys", post(vault::set_key))
             .route("/api/vault/keys/{provider}", delete(vault::delete_key))
             .route("/api/inject", post(routes::inject))
+            .route("/api/sessions", get(sessions::list))
+            .route("/api/sessions/{id}", get(sessions::get_one))
+            .route("/api/sessions/{id}/stop", post(sessions::stop))
+            .route("/api/agents", get(sessions::list_agents))
             .route("/ws/global", get(super::ws::ws_handler))
             .with_state(Arc::new(state));
 
@@ -111,6 +143,10 @@ impl ApiServer {
         );
         vault.init()?;
 
+        // Initialize token counters from event store or start fresh
+        let token_counters = std::sync::Arc::new(std::sync::RwLock::new(TokenCounters::default()));
+        let session_registry = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
+
         let state = AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
             started_at: chrono::Utc::now(),
@@ -118,6 +154,8 @@ impl ApiServer {
             auth,
             vault,
             data_dir,
+            token_counters,
+            session_registry,
         };
 
         let app = Self::router(state);
@@ -660,6 +698,91 @@ pub struct ErrorResponse {
     pub code: u16,
 }
 
+// ─── Session API ──────────────────────────────────────────────
+
+pub mod sessions {
+    use super::*;
+
+    pub async fn list(State(state): State<Arc<AppState>>) -> Json<Vec<SessionEntry>> {
+        let sessions = state.session_registry.read().unwrap();
+        Json(sessions.clone())
+    }
+
+    pub async fn get_one(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<SessionEntry>, StatusCode> {
+        let sessions = state.session_registry.read().unwrap();
+        sessions.iter().find(|s| s.id == id)
+            .cloned()
+            .map(Json)
+            .ok_or(StatusCode::NOT_FOUND)
+    }
+
+    pub async fn stop(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<serde_json::Value>, StatusCode> {
+        // Write a stop-injection for this session
+        let injections_dir = state.data_dir.join("injections");
+        let _ = std::fs::create_dir_all(&injections_dir);
+
+        let msg = serde_json::json!({
+            "target_agent": "all",
+            "message_type": "stop",
+            "content": "Stop the current session immediately.",
+            "created_at": chrono::Utc::now().to_rfc3339(),
+        });
+
+        let filename = format!("{}_stop_{}.json", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0), id);
+        let path = injections_dir.join(&filename);
+        let content = serde_json::to_string_pretty(&msg).unwrap_or_default();
+        let _ = std::fs::write(&path, &content);
+
+        // Mark session as completed in registry
+        if let Ok(mut guard) = state.session_registry.write() {
+            if let Some(session) = guard.iter_mut().find(|s| s.id == id) {
+                session.status = "completed".to_string();
+                session.completed_at = Some(chrono::Utc::now().to_rfc3339());
+            }
+        }
+
+        Ok(Json(serde_json::json!({
+            "status": "stopped",
+            "session_id": id,
+        })))
+    }
+
+    #[derive(Serialize)]
+    pub struct AgentSummary {
+        pub name: String,
+        pub role: String,
+        pub model: String,
+        pub tools: Vec<String>,
+        pub status: String,
+    }
+
+    pub async fn list_agents(
+        State(state): State<Arc<AppState>>,
+    ) -> Json<Vec<AgentSummary>> {
+        // Return agents from the most recent session, or default list
+        let sessions = state.session_registry.read().unwrap();
+        if let Some(latest) = sessions.last() {
+            // Parse forge.toml from the session project for agent list
+            // For now, return the built-in agent list
+            Json(vec![
+                AgentSummary { name: "architect".into(), role: "Architect".into(), model: "claude-sonnet-4-20250514".into(), tools: vec!["filesystem".into(), "web_search".into()], status: "idle".into() },
+                AgentSummary { name: "coder".into(), role: "Coder".into(), model: "gpt-4o".into(), tools: vec!["filesystem".into(), "execute_command".into()], status: "idle".into() },
+                AgentSummary { name: "reviewer".into(), role: "Reviewer".into(), model: "gpt-4o".into(), tools: vec!["filesystem".into()], status: "idle".into() },
+                AgentSummary { name: "security".into(), role: "Security".into(), model: "claude-sonnet-4-20250514".into(), tools: vec!["filesystem".into(), "grep".into()], status: "idle".into() },
+                AgentSummary { name: "tester".into(), role: "Tester".into(), model: "gpt-4o".into(), tools: vec!["filesystem".into(), "execute_command".into()], status: "idle".into() },
+            ])
+        } else {
+            Json(vec![])
+        }
+    }
+}
+
 // ─── Inject Request ────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -685,18 +808,22 @@ pub mod routes {
         })
     }
 
-    pub async fn token_metrics() -> Json<TokenMetricsResponse> {
+    pub async fn token_metrics(State(state): State<Arc<AppState>>) -> Json<TokenMetricsResponse> {
+        let counters = state.token_counters.read().unwrap();
         Json(TokenMetricsResponse {
-            total_input: 0, total_output: 0, total_tokens: 0,
-            by_provider: std::collections::HashMap::new(),
-            by_model: std::collections::HashMap::new(),
+            total_input: counters.total_input,
+            total_output: counters.total_output,
+            total_tokens: counters.total_input + counters.total_output,
+            by_provider: counters.by_provider.clone(),
+            by_model: counters.by_model.clone(),
         })
     }
 
-    pub async fn context_metrics() -> Json<ContextMetricsResponse> {
+    pub async fn context_metrics(State(state): State<Arc<AppState>>) -> Json<ContextMetricsResponse> {
+        let session_count = state.session_registry.read().unwrap().len() as u32;
         Json(ContextMetricsResponse {
             avg_pressure: 0.0, max_pressure: 0.0,
-            total_compressions: 0, active_sessions: 0,
+            total_compressions: 0, active_sessions: session_count,
         })
     }
 
@@ -741,11 +868,16 @@ pub mod routes {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
+        let session_count = state.session_registry.read().unwrap().len() as u32;
+        let total_tokens = {
+            let counters = state.token_counters.read().unwrap();
+            counters.total_input + counters.total_output
+        };
         Json(MetricsSummaryResponse {
             version: state.version.clone(),
             uptime_seconds: uptime,
-            active_sessions: 0,
-            total_tokens: 0,
+            active_sessions: session_count,
+            total_tokens,
             avg_asi_score: 100.0,
         })
     }

@@ -135,11 +135,49 @@ export function useApi() {
     apiFetch<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const del = <T,>(path: string): Promise<T> => apiFetch<T>(path, { method: 'DELETE' })
 
+  // Sessions
+  const getSessions = () => apiFetch<SessionEntry[]>('/sessions')
+  const getSession = (id: string) => apiFetch<SessionEntry>(`/sessions/${id}`)
+  const stopSession = (id: string) => apiFetch<{ status: string; session_id: string }>(`/sessions/${id}/stop`, { method: 'POST' })
+
+  // Agents
+  const getAgents = () => apiFetch<AgentSummary[]>('/agents')
+
+  // Inject
+  const sendInject = (targetAgent: string, messageType: string, content: string) =>
+    apiFetch<{ status: string; file: string; target_agent: string; message_type: string }>('/inject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_agent: targetAgent, message_type: messageType, content }),
+    })
+
   return {
     getHealth, getMetricsSummary,
     getProjects, getProject, createProject, updateProject, deleteProject,
     getProjectConfig, updateProjectConfig,
     getVaultKeys, setVaultKey, deleteVaultKey,
+    getSessions, getSession, stopSession,
+    getAgents,
+    sendInject,
     get, post, del,
   }
+}
+
+export interface SessionEntry {
+  id: string
+  project: string
+  goal: string
+  phase: string
+  iteration: number
+  status: string
+  started_at: string
+  completed_at: string | null
+}
+
+export interface AgentSummary {
+  name: string
+  role: string
+  model: string
+  tools: string[]
+  status: string
 }

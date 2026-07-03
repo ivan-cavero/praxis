@@ -1,0 +1,21 @@
+# praxis configuration
+# Located at ~/.config/praxis/config.toml
+
+[server]
+port = 8080
+host = "0.0.0.0"
+
+[auth]
+# JWT secret is auto-generated on first run and stored in
+# the data directory. You can override it here:
+# jwt_secret = "your-256-bit-secret"
+
+[data]
+# Directory for projects, sessions, and vault data
+dir = "~/.local/share/praxis"
+
+[limits]
+max_iterations_per_goal = 50
+max_iterations_per_phase = 5
+session_ttl_seconds = 3600
+phase_timeout_seconds = 300
