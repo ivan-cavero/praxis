@@ -278,6 +278,122 @@ impl CoreRuntime {
         }
     }
 
+    /// Prepare a context string describing available MCP tools for an agent.
+    /// Used to inject tool descriptions into the agent's task context so the
+    /// LLM knows what tools are available.
+    fn prepare_tool_context(&self, tool_names: &[String]) -> String {
+        if tool_names.is_empty() {
+            return String::new();
+        }
+
+        let all_tools = self.mcp_host.all_tools();
+        if all_tools.is_empty() {
+            return String::new();
+        }
+
+        let mut lines: Vec<String> = Vec::new();
+        lines.push("─── AVAILABLE TOOLS ───".to_string());
+        lines.push(
+            "You have access to the following tools. To call a tool, output a JSON block "
+            .to_string() + "on its own line in this format:\n"
+            + "```tool\n{\"server\": \"<server>\", \"tool\": \"<tool_name>\", \"arguments\": {...}}\n```\n"
+            + "The tool results will be returned to you."
+        );
+
+        // Filter tools relevant to this agent (by server name matching tool_names)
+        for tool_name in tool_names {
+            let server_tools = self.mcp_host.tools_for(tool_name);
+            for tool in &server_tools {
+                lines.push(format!(
+                    "  - [{}/{}] {}: {}",
+                    tool.server_name, tool.name, tool.name, tool.description
+                ));
+            }
+        }
+
+        lines.push("─── END TOOLS ───".to_string());
+        lines.join("\n")
+    }
+
+    /// Parse and execute tool calls from agent output.
+    /// Returns the output with tool results appended.
+    ///
+    /// Agents invoke tools by outputting a JSON block between ```tool and ```
+    /// markers. For example:
+    /// ```tool
+    /// {"server": "filesystem", "tool": "write", "arguments": {"path": "src/main.rs", "content": "fn main() {}"}}
+    /// ```
+    /// Each block is parsed, the tool is called via the MCP host, and the
+    /// result is appended to the output.
+    async fn execute_tool_calls(&mut self, output: &str) -> String {
+        let mut result = output.to_string();
+        let mut search_start = 0;
+
+        loop {
+            // Find the next ```tool marker
+            let open_start = match output[search_start..].find("```tool") {
+                Some(pos) => search_start + pos,
+                None => break,
+            };
+
+            // Find the opening newline after ```tool
+            let content_start = match output[open_start..].find('\n') {
+                Some(pos) => open_start + pos + 1,
+                None => break,
+            };
+
+            // Find the closing ```
+            let close_marker = match output[content_start..].find("```") {
+                Some(pos) => content_start + pos,
+                None => break,
+            };
+
+            let json_str = &output[content_start..close_marker];
+            match serde_json::from_str::<serde_json::Value>(json_str) {
+                Ok(tool_call) => {
+                    let server = tool_call["server"].as_str().unwrap_or("");
+                    let tool_name = tool_call["tool"].as_str().unwrap_or("");
+                    let args = tool_call
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({}));
+
+                    if server.is_empty() || tool_name.is_empty() {
+                        search_start = close_marker + 3;
+                        continue;
+                    }
+
+                    tracing::info!(
+                        "Agent called tool: {}/{} with args: {:?}",
+                        server, tool_name, args
+                    );
+
+                    let tool_result = match self.mcp_host.call_tool(server, tool_name, args).await
+                    {
+                        Ok(value) => {
+                            serde_json::to_string_pretty(&value)
+                                .unwrap_or_else(|_| "{}".to_string())
+                        }
+                        Err(e) => format!("ERROR: {}", e),
+                    };
+
+                    result = format!(
+                        "{}\n\n─── TOOL RESULT: {}/{} ───\n{}\n─── END TOOL RESULT ───",
+                        result, server, tool_name, tool_result
+                    );
+
+                    search_start = close_marker + 3;
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse tool call JSON: {}", e);
+                    search_start = close_marker + 3;
+                }
+            }
+        }
+
+        result
+    }
+
     /// Initialize a ProviderRouter from forge.toml providers + vault/env.
     ///
     /// For each provider in forge.toml, resolves the API key from:
@@ -449,6 +565,9 @@ impl CoreRuntime {
 
         let provider_router = self.init_providers(&config, vault).await;
 
+        // Connect MCP servers defined in forge.toml
+        self.connect_mcp_servers(&config).await;
+
         if config.roles.is_empty() {
             tracing::info!("No roles defined in config. Using default coder role.");
         }
@@ -531,6 +650,17 @@ impl CoreRuntime {
                     tracing::info!("Injected message into task for agent '{}'", role_config.name);
                 }
 
+                // Inject MCP tool context into the task so the LLM knows
+                // what tools are available and how to call them
+                let tool_context = self.prepare_tool_context(&role_config.tools);
+                if !tool_context.is_empty() {
+                    if task.context.is_empty() {
+                        task.context = tool_context;
+                    } else {
+                        task.context = format!("{}\n\n{}", task.context, tool_context);
+                    }
+                }
+
                 let resolved_role =
                     orchestrator::roles::ResolvedRole::resolve(role_config, None);
                 let agent = match provider_router.resolve(&role_config.model) {
@@ -561,10 +691,21 @@ impl CoreRuntime {
                     "core",
                 );
 
-                let result = if has_feedback {
+                let raw_result = if has_feedback {
                     agent.handle_feedback(&task, &feedback).await
                 } else {
                     agent.execute(&task).await
+                };
+
+                // Execute any tool calls found in the agent's output
+                let tool_output = self.execute_tool_calls(&raw_result.content).await;
+                let result = if tool_output != raw_result.content {
+                    TaskResult {
+                        content: tool_output,
+                        ..raw_result
+                    }
+                } else {
+                    raw_result
                 };
 
                 // Publish agent completion event for live streaming
