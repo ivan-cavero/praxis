@@ -67,6 +67,13 @@ pub enum MessageKind {
     DriftAlert(DriftAlert),
     SessionHeartbeat,
 
+    // ─── Injection Events ──────────────────────────────────
+    InjectionTriggered {
+        target: String,
+        phase: Phase,
+        iteration: u32,
+    },
+
     // ─── Metrics Events ────────────────────────────────────
     TokenUsed {
         provider: String,

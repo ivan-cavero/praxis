@@ -1,0 +1,9 @@
+[package]
+name = "praxis-mcp-git-local"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server providing local Git operations (status, add, commit, log, diff, branch, push/pull)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

@@ -13,6 +13,9 @@ members = [
     "desktop",
     "tests",
     "mcp-servers/filesystem",
+    "mcp-servers/git-local",
+    "mcp-servers/github",
+    "mcp-servers/web-search",
 ]
 
 [workspace.dependencies]

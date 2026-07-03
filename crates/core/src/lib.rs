@@ -657,7 +657,9 @@ impl CoreRuntime {
                 self.loop_controller.iteration
             );
 
-            let phase_agents = get_agents_for_phase(&current_phase, &config);
+            // Check for parallel_reviewers in goal config (first matching goal)
+            let parallel_count = config.goals.first().and_then(|g| g.parallel_reviewers);
+            let phase_agents = get_agents_for_phase(&current_phase, &config, parallel_count);
 
             if phase_agents.len() > 1 && matches!(current_phase, machine::phase::Phase::Reviewing) {
                 // ── Parallel execution for review phases ──
@@ -795,7 +797,20 @@ impl CoreRuntime {
                         } else {
                             task.context = format!("{}\n\n{}", task.context, injection);
                         }
-                        tracing::info!("Injected message into task for agent '{}'", role_config.name);
+                        tracing::info!(
+                            "Injected mid-loop message into task for agent '{}' at phase {:?}, iteration {}",
+                            role_config.name,
+                            current_phase,
+                            self.loop_controller.iteration,
+                        );
+                        self.bus.publish(
+                            praxis_shared::protocol::MessageKind::InjectionTriggered {
+                                target: role_config.name.clone(),
+                                phase: current_phase,
+                                iteration: self.loop_controller.iteration,
+                            },
+                            "core",
+                        );
                     }
 
                     // Inject MCP tool context into the task so the LLM knows
@@ -891,7 +906,17 @@ impl CoreRuntime {
                 let gates_pass = self.loop_controller.all_gates_pass();
 
                 if !gates_pass {
-                    feedback = consolidate_feedback(&results);
+                    // Use CrossModelFeedbackLoop for structured feedback,
+                    // fall back to consolidate_feedback for simple cases
+                    if results.len() > 1 {
+                        let fake_task = orchestrator::Task::new("reviewer", "", goal);
+                        feedback = crate::orchestrator::verification::CrossModelFeedbackLoop::generate_feedback(
+                            &results,
+                            &fake_task,
+                        );
+                    } else {
+                        feedback = consolidate_feedback(&results);
+                    }
 
                     // Check if any gate has exceeded its retry limit
                     let phase = self.loop_controller.state_machine.current();
@@ -1168,7 +1193,8 @@ impl CoreRuntime {
                 self.loop_controller.iteration
             );
 
-            let phase_agents = get_agents_for_phase(&current_phase, &config);
+            let parallel_count = config.goals.first().and_then(|g| g.parallel_reviewers);
+            let phase_agents = get_agents_for_phase(&current_phase, &config, parallel_count);
 
             for role_config in &phase_agents {
                 let mut task = orchestrator::Task::new(
@@ -1499,6 +1525,7 @@ pub fn load_forge_config(path: &std::path::Path) -> Result<ForgeConfig> {
 fn get_agents_for_phase(
     phase: &machine::phase::Phase,
     config: &ForgeConfig,
+    parallel_reviewers: Option<u32>,
 ) -> Vec<orchestrator::RoleConfig> {
     let lookup = |name: &str| -> Option<orchestrator::RoleConfig> {
         config.roles.get(name).cloned().or_else(|| {
@@ -1518,7 +1545,33 @@ fn get_agents_for_phase(
             lookup("coder").into_iter().collect()
         }
         machine::phase::Phase::Reviewing | machine::phase::Phase::Fixing => {
-            lookup("reviewer").into_iter().collect()
+            let mut agents: Vec<orchestrator::RoleConfig> = Vec::new();
+            if let Some(count) = parallel_reviewers.filter(|c| *c > 0) {
+                // Create N parallel reviewer copies with slightly different prompts
+                for index in 0..count {
+                    let mut role = lookup("reviewer").unwrap_or_else(|| default_role("reviewer"));
+                    role.name = format!("reviewer-{}", index + 1);
+                    // Add a unique suffix to the prompt so each reviewer
+                    // approaches the review from a different angle
+                    let angles = [
+                        "Focus on correctness, edge cases, and logic errors.",
+                        "Focus on code style, readability, and best practices.",
+                        "Focus on performance, resource usage, and optimization opportunities.",
+                        "Focus on security vulnerabilities and unsafe code patterns.",
+                        "Focus on test coverage and maintainability.",
+                    ];
+                    let angle = angles[index as usize % angles.len()];
+                    role.system_prompt = role.system_prompt
+                        .or_else(|| Some(default_role("reviewer").system_prompt.unwrap_or_default()))
+                        .map(|p| format!("{}\n\nYour specific focus: {}", p, angle));
+                    agents.push(role);
+                }
+            } else {
+                if let Some(role) = lookup("reviewer") {
+                    agents.push(role);
+                }
+            }
+            agents
         }
         machine::phase::Phase::Testing | machine::phase::Phase::SecurityScan => {
             vec![lookup("tester"), lookup("security")]

@@ -1,0 +1,9 @@
+[package]
+name = "praxis-mcp-github"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server providing GitHub API operations (PRs, issues, branches, code search)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

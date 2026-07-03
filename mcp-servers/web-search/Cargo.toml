@@ -1,0 +1,9 @@
+[package]
+name = "praxis-mcp-web-search"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server providing web search capabilities using DuckDuckGo (Lite HTML)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

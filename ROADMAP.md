@@ -14,7 +14,7 @@
 
 ## Current State
 
-What ALREADY exists and compiles (262 tests pass):
+What ALREADY exists and compiles (291 tests pass):
 
 | Component | Status |
 |---|---|
@@ -150,21 +150,21 @@ mid-loop injection.
 - [x] **MCP servers connected** — `connect_mcp_servers()` called in `run_goal`.
 - [x] **Tool context injected** — `prepare_tool_context()` adds available tool descriptions to each agent's task context.
 - [x] **Tool calls executed** — `execute_tool_calls()` parses ` ```tool JSON blocks` from agent output, calls tools via `McpHost`, and appends results.
-- [ ] **Agent receives tool results** — tool output is appended to agent result so the LLM can see it in the next iteration.
+- [x] **Agent receives tool results** — tool output is appended to agent result so the LLM can see it in the next iteration.
 
 ### 2.2 Cross-Verification
 
-- [ ] **Parallel execution** — `tokio::join!` for parallel reviewers.
-- [ ] **`parallel_reviewers` config** — spawn N instances with different models.
-- [ ] **ConsensusConsolidator** — all_pass, majority, weighted, escalate.
-- [ ] **Cross-model feedback loop** — consolidate comments → coder → fix.
+- [x] **Parallel execution** — `tokio::JoinSet` for parallel reviewers in review phases.
+- [x] **`parallel_reviewers` config** — `get_agents_for_phase` creates N reviewers with unique focus angles, configurable via `GoalConfig.parallel_reviewers`.
+- [x] **ConsensusConsolidator** — implemented (AllPass, MajorityPass, Weighted, EscalateToBest) and integrated into the main loop.
+- [x] **Cross-model feedback loop** — `CrossModelFeedbackLoop::generate_feedback` integrated into gate evaluation for multi-reviewer phases.
 
 ### 2.3 MCP Tools
 
 - [x] **Filesystem MCP server** — read/write/edit/list/search/glob, path sandboxing.
-- [ ] **Git MCP server** — init/add/commit/branch/diff/log/push.
-- [ ] **GitHub MCP server** — PR create/list/comment, issues, checks.
-- [ ] **WebSearch MCP server** — search, fetch (for ResearcherAgent).
+- [x] **Git MCP server** — status/add/commit/log/diff/branch/checkout/push/pull (9 tools).
+- [x] **GitHub MCP server** — create_pr/list_issues/create_issue/list_prs/list_branches/search_code (6 tools, gh CLI or direct API).
+- [x] **WebSearch MCP server** — search (DuckDuckGo + Brave API) and extract (URL fetch + HTML strip).
 
 ### 2.4 Mid-Loop Injection
 
@@ -172,7 +172,7 @@ mid-loop injection.
 - [x] **Agent checks pending injections** — drained before each agent execution in `run_goal`.
 - [x] **Injections have CRITICAL priority** — never compressed/dropped.
 - [x] **`inject` CLI command** — writes to `{data_dir}/injections/`, runtime picks up on next iteration.
-- [ ] **Audit** — all injections are logged.
+- [x] **Audit** — all injections are logged via `tracing::info!` on inject/drain/apply, plus `InjectionTriggered` event bus message.
 
 🧪 **Milestone:** Goal → Architect designs → Coder implements → 2 Reviewers
 (GPT-5 + Claude) review in parallel → consensus → Security scans → Tester runs
