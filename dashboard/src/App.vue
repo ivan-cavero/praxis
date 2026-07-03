@@ -75,6 +75,18 @@ async function refreshSessions() {
   }
 }
 
+async function stopSession(sessionId: string) {
+  const stopped = await ipc.stopSession(sessionId)
+  if (stopped) {
+    messages.value = [...messages.value, {
+      role: 'assistant',
+      content: `Session ${sessionId.slice(0, 8)} stopped.`,
+      timestamp: Date.now(),
+    }]
+    await refreshSessions()
+  }
+}
+
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour < 12) return 'Morning'
@@ -231,9 +243,19 @@ async function handleSendMessage() {
         <div v-if="sessions.length > 0" class="sessions-bar">
           <Icon name="activity" :size="14" />
           <span>{{ sessions.length }} session{{ sessions.length !== 1 ? 's' : '' }}</span>
-          <span v-for="s in sessions" :key="s.session_id" class="session-badge" :class="s.status">
-            {{ s.project }}:{{ s.phase }}
-          </span>
+          <div class="session-badges">
+            <span
+              v-for="s in sessions"
+              :key="s.session_id"
+              class="session-badge"
+              :class="s.status"
+              @click="stopSession(s.session_id)"
+              :title="'Click to stop: ' + s.session_id"
+            >
+              {{ s.project }}:{{ s.phase }}
+              <Icon v-if="s.status === 'running'" name="x" :size="10" class="session-stop-icon" />
+            </span>
+          </div>
         </div>
 
         <!-- Message history -->
@@ -367,9 +389,26 @@ async function handleSendMessage() {
   background: var(--surface-raised);
 }
 
-.session-badge.running { color: var(--accent); }
+.session-badge.running { color: var(--accent); cursor: pointer; }
+.session-badge.running:hover { background: var(--surface-raised); }
 .session-badge.completed { color: var(--text-success, #4ade80); }
 .session-badge.failed { color: var(--text-danger, #f87171); }
+
+.session-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.session-stop-icon {
+  margin-left: 0.25rem;
+  opacity: 0.6;
+}
+
+.session-badge:hover .session-stop-icon {
+  opacity: 1;
+}
 
 /* Messages area */
 .messages-area {

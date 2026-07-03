@@ -95,6 +95,19 @@ async function saveKey() {
   }
 }
 
+async function deleteKey(provider: string) {
+  saving.value = provider
+  try {
+    await api.del(`/vault/keys/${provider}`)
+    if (selectedProvider.value === provider) selectedProvider.value = null
+    await loadProviders()
+  } catch (e) {
+    console.error('Failed to delete key:', e)
+  } finally {
+    saving.value = null
+  }
+}
+
 function selectKnownProvider(name: string) {
   newProvider.value = name
   if (!showInput.value) showInput.value = true
@@ -165,6 +178,14 @@ onMounted(() => {
                   <div class="provider-status-dot" :class="provider.has_key ? 'enabled' : 'disabled'" />
                   <span class="provider-card-name">{{ provider.provider }}</span>
                 </div>
+                <button
+                  class="provider-card-delete"
+                  :disabled="saving === provider.provider"
+                  @click.stop="deleteKey(provider.provider)"
+                  title="Delete key"
+                >
+                  <Icon name="x" :size="14" />
+                </button>
               </div>
 
               <div
@@ -541,6 +562,31 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 500;
   color: var(--clr-text);
+}
+
+.provider-card-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  background: none;
+  border: none;
+  color: var(--clr-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s var(--ease);
+  font-family: inherit;
+}
+
+.provider-card:hover .provider-card-delete {
+  opacity: 1;
+}
+
+.provider-card-delete:hover {
+  color: var(--clr-danger, #f87171);
+  background: var(--clr-surface-hover);
 }
 
 .add-provider-btn {
