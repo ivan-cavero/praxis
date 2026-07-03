@@ -130,10 +130,10 @@ export function useApi() {
   const deleteVaultKey = (provider: string) => apiFetch(`/vault/keys/${provider}`, { method: 'DELETE' })
 
   // Generic
-  const get = apiFetch
-  const post = (path: string, body: unknown) =>
-    apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const del = (path: string) => apiFetch(path, { method: 'DELETE' })
+  const get = <T,>(path: string, options?: RequestInit): Promise<T> => apiFetch<T>(path, options)
+  const post = <T,>(path: string, body: unknown): Promise<T> =>
+    apiFetch<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const del = <T,>(path: string): Promise<T> => apiFetch<T>(path, { method: 'DELETE' })
 
   return {
     getHealth, getMetricsSummary,

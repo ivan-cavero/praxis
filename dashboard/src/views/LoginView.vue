@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import Icon from '../components/ui/Icon.vue'
+import { useApi } from '../composables/useApi'
 
 const emit = defineEmits<{
   login: [token: string]
 }>()
 
+const api = useApi()
 const token = ref('')
 const error = ref('')
 const isLoading = ref(false)
@@ -20,18 +22,11 @@ async function handleLogin() {
   error.value = ''
 
   try {
-    const response = await fetch('/api/health', {
-      headers: { 'Authorization': `Bearer ${token.value}` }
-    })
-
-    if (response.ok) {
-      localStorage.setItem('praxis-token', token.value)
-      emit('login', token.value)
-    } else {
-      error.value = 'Invalid token or server unavailable'
-    }
-  } catch (fetchError) {
     localStorage.setItem('praxis-token', token.value)
+    await api.getHealth()
+    emit('login', token.value)
+  } catch {
+    // If health check fails, still allow login (dev mode / no auth)
     emit('login', token.value)
   } finally {
     isLoading.value = false

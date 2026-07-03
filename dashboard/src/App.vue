@@ -2,18 +2,26 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from './stores/app'
 import { setApiPort } from './composables/useApi'
+import { useTauriIpc, type DesktopSession, type RunGoalResult } from './composables/useTauriIpc'
 import Icon from './components/ui/Icon.vue'
 import LoginView from './views/LoginView.vue'
 import SettingsView from './views/SettingsView.vue'
 
 const store = useAppStore()
+const ipc = useTauriIpc()
+
 const isAuthenticated = ref(false)
 const currentView = ref<'chat' | 'settings'>('chat')
 const selectedProject = ref<string | null>(null)
 const chatMessage = ref('')
 const selectedModel = ref('GLM-5.2')
+const isRunning = ref(false)
+const sessions = ref<DesktopSession[]>([])
+const messages = ref<{ role: 'user' | 'assistant'; content: string; timestamp: number }[]>([])
+const runResult = ref<RunGoalResult | null>(null)
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+let sessionsInterval: ReturnType<typeof setInterval> | null = null
 
 // Listen for Tauri `api:ready` event (port number)
 // Falls back gracefully in browser dev mode (Vite proxies /api)
@@ -43,6 +51,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (refreshInterval) clearInterval(refreshInterval)
+  if (sessionsInterval) clearInterval(sessionsInterval)
 })
 
 function handleLogin(token: string) {
@@ -54,6 +63,16 @@ function handleLogin(token: string) {
 function startApp() {
   store.refreshAll()
   refreshInterval = setInterval(() => store.refreshAll(), 10000)
+  refreshSessions()
+  sessionsInterval = setInterval(() => refreshSessions(), 5000)
+}
+
+async function refreshSessions() {
+  try {
+    sessions.value = await ipc.getSessions()
+  } catch {
+    // ignore polling errors
+  }
 }
 
 const greeting = computed(() => {
@@ -68,10 +87,45 @@ function selectProject(id: string) {
   store.selectProject(id)
 }
 
-function handleSendMessage() {
-  if (!chatMessage.value.trim()) return
-  // TODO: Send message to backend
+async function handleSendMessage() {
+  const message = chatMessage.value.trim()
+  if (!message) return
+
+  // Add user message to local history
+  messages.value = [...messages.value, {
+    role: 'user',
+    content: message,
+    timestamp: Date.now(),
+  }]
   chatMessage.value = ''
+  isRunning.value = true
+  runResult.value = null
+
+  try {
+    const project = store.activeProject?.name || 'default'
+    const result = await ipc.runGoal(project, message, selectedModel.value)
+    runResult.value = result
+
+    // Add assistant response
+    messages.value = [...messages.value, {
+      role: 'assistant',
+      content: result.outcome === 'Achieved'
+        ? `Goal completed in ${result.iterations} iterations.\n${result.message}`
+        : `Goal ${result.outcome.toLowerCase()} after ${result.iterations} iterations.\n${result.message}`,
+      timestamp: Date.now(),
+    }]
+
+    // Refresh sessions list
+    await refreshSessions()
+  } catch (caughtError: any) {
+    messages.value = [...messages.value, {
+      role: 'assistant',
+      content: `Error: ${caughtError.message || 'Failed to run goal'}`,
+      timestamp: Date.now(),
+    }]
+  } finally {
+    isRunning.value = false
+  }
 }
 </script>
 
@@ -172,8 +226,31 @@ function handleSendMessage() {
     <div class="main-content">
       <!-- ═══ CHAT VIEW ═══ -->
       <template v-if="currentView === 'chat'">
-        <!-- Greeting area -->
-        <div class="main-greeting">
+
+        <!-- Sessions indicator -->
+        <div v-if="sessions.length > 0" class="sessions-bar">
+          <Icon name="activity" :size="14" />
+          <span>{{ sessions.length }} session{{ sessions.length !== 1 ? 's' : '' }}</span>
+          <span v-for="s in sessions" :key="s.session_id" class="session-badge" :class="s.status">
+            {{ s.project }}:{{ s.phase }}
+          </span>
+        </div>
+
+        <!-- Message history -->
+        <div v-if="messages.length > 0" class="messages-area">
+          <div
+            v-for="(msg, index) in messages"
+            :key="index"
+            class="message-bubble"
+            :class="msg.role"
+          >
+            <div class="message-avatar">{{ msg.role === 'user' ? 'U' : 'P' }}</div>
+            <div class="message-content">{{ msg.content }}</div>
+          </div>
+        </div>
+
+        <!-- Greeting area (shown when no messages yet) -->
+        <div v-else class="main-greeting">
           <!-- Logo placeholder -->
           <svg class="greeting-logo" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="20" y="40" width="80" height="50" rx="8" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -239,10 +316,11 @@ function handleSendMessage() {
                 </button>
                 <button
                   class="btn-icon-send"
-                  :disabled="!chatMessage.trim()"
+                  :disabled="!chatMessage.trim() || isRunning"
                   @click="handleSendMessage"
                 >
-                  <Icon name="send" :size="16" />
+                  <span v-if="isRunning" class="loading-spinner" />
+                  <Icon v-else name="send" :size="16" />
                 </button>
               </div>
             </div>
@@ -268,5 +346,93 @@ function handleSendMessage() {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* Sessions bar */
+.sessions-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.session-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.675rem;
+  background: var(--surface-raised);
+}
+
+.session-badge.running { color: var(--accent); }
+.session-badge.completed { color: var(--text-success, #4ade80); }
+.session-badge.failed { color: var(--text-danger, #f87171); }
+
+/* Messages area */
+.messages-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.message-bubble {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 80%;
+}
+
+.message-bubble.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-bubble.assistant {
+  align-self: flex-start;
+}
+
+.message-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.message-bubble.user .message-avatar {
+  background: var(--accent);
+  color: white;
+}
+
+.message-bubble.assistant .message-avatar {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.message-content {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.message-bubble.user .message-content {
+  background: var(--accent);
+  color: white;
+}
+
+.message-bubble.assistant .message-content {
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 </style>
