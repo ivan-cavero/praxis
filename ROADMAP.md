@@ -171,7 +171,7 @@ mid-loop injection.
 - [x] **InjectionChannel** — `inject()`/`drain_injections()` in `CoreRuntime`.
 - [x] **Agent checks pending injections** — drained before each agent execution in `run_goal`.
 - [x] **Injections have CRITICAL priority** — never compressed/dropped.
-- [ ] **`inject` CLI command** — works for real (stub explains API server requirement).
+- [x] **`inject` CLI command** — writes to `{data_dir}/injections/`, runtime picks up on next iteration.
 - [ ] **Audit** — all injections are logged.
 
 🧪 **Milestone:** Goal → Architect designs → Coder implements → 2 Reviewers

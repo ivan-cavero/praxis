@@ -659,107 +659,224 @@ impl CoreRuntime {
 
             let phase_agents = get_agents_for_phase(&current_phase, &config);
 
-            for role_config in &phase_agents {
-                let mut task = orchestrator::Task::new(
-                    &role_config.name,
-                    &role_config.model,
-                    goal,
-                );
+            if phase_agents.len() > 1 && matches!(current_phase, machine::phase::Phase::Reviewing) {
+                // ── Parallel execution for review phases ──
+                let mut join_set = tokio::task::JoinSet::new();
 
-                let has_feedback = !feedback.is_empty() && role_config.name == "coder";
-                if has_feedback {
-                    task.context = feedback.clone();
-                }
+                for role_config in &phase_agents {
+                    let mut task = orchestrator::Task::new(
+                        &role_config.name,
+                        &role_config.model,
+                        goal,
+                    );
 
-                // Drain pending injection messages for this agent
-                let injection = self.drain_injections(&role_config.name);
-                if !injection.is_empty() {
-                    if task.context.is_empty() {
-                        task.context = injection;
-                    } else {
-                        task.context = format!("{}\n\n{}", task.context, injection);
-                    }
-                    tracing::info!("Injected message into task for agent '{}'", role_config.name);
-                }
-
-                // Inject MCP tool context into the task so the LLM knows
-                // what tools are available and how to call them
-                let tool_context = self.prepare_tool_context(&role_config.tools);
-                if !tool_context.is_empty() {
-                    if task.context.is_empty() {
+                    // Inject MCP tool context
+                    let tool_context = self.prepare_tool_context(&role_config.tools);
+                    if !tool_context.is_empty() {
                         task.context = tool_context;
-                    } else {
-                        task.context = format!("{}\n\n{}", task.context, tool_context);
+                    }
+
+                    // Inject pending injections
+                    let injection = self.drain_injections(&role_config.name);
+                    if !injection.is_empty() {
+                        if task.context.is_empty() {
+                            task.context = injection;
+                        } else {
+                            task.context = format!("{}\n\n{}", task.context, injection);
+                        }
+                    }
+
+                    let resolved_role =
+                        orchestrator::roles::ResolvedRole::resolve(role_config, None);
+                    let agent = match provider_router.resolve(&role_config.model) {
+                        Ok(provider) => {
+                            crate::actor::roles::AgentFactory::create_with_provider_and_bus(
+                                &resolved_role,
+                                provider,
+                                self.bus.clone(),
+                            )
+                        }
+                        Err(_) => {
+                            tracing::warn!(
+                                "No provider for model '{}'. Using mock agent for '{}'.",
+                                role_config.model,
+                                role_config.name
+                            );
+                            crate::actor::roles::AgentFactory::create(&resolved_role)
+                        }
+                    };
+
+                    let agent_name = role_config.name.clone();
+                    self.bus.publish(
+                        praxis_shared::protocol::MessageKind::AgentStarted {
+                            agent: agent_name.clone(),
+                            role: agent_name.clone(),
+                            phase: current_phase,
+                        },
+                        "core",
+                    );
+
+                    // Spawn agent in parallel
+                    join_set.spawn(async move {
+                        let result = agent.execute(&task).await;
+                        result
+                    });
+                }
+
+                // Collect parallel results
+                while let Some(join_result) = join_set.join_next().await {
+                    match join_result {
+                        Ok(raw_result) => {
+                            let tool_output = self.execute_tool_calls(&raw_result.content).await;
+                            let result = if tool_output != raw_result.content {
+                                TaskResult {
+                                    content: tool_output,
+                                    ..raw_result
+                                }
+                            } else {
+                                raw_result
+                            };
+
+                            self.bus.publish(
+                                praxis_shared::protocol::MessageKind::AgentCompleted {
+                                    agent: result.agent_id.clone(),
+                                    role: result.role.clone(),
+                                    status: format!("{:?}", result.status),
+                                    duration_ms: result.duration_ms,
+                                    output_preview: result.content.chars().take(200).collect(),
+                                },
+                                "core",
+                            );
+
+                            tracing::info!(
+                                "Agent {} completed: status={:?}, duration={}ms",
+                                result.agent_id,
+                                result.status,
+                                result.duration_ms
+                            );
+
+                            results.push(result);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Agent in parallel execution panicked: {}", e);
+                        }
                     }
                 }
 
-                let resolved_role =
-                    orchestrator::roles::ResolvedRole::resolve(role_config, None);
-                let agent = match provider_router.resolve(&role_config.model) {
-                    Ok(provider) => {
-                        crate::actor::roles::AgentFactory::create_with_provider_and_bus(
-                            &resolved_role,
-                            provider,
-                            self.bus.clone(),
-                        )
-                    }
-                    Err(_) => {
-                        tracing::warn!(
-                            "No provider for model '{}'. Using mock agent for '{}'.",
-                            role_config.model,
-                            role_config.name
-                        );
-                        crate::actor::roles::AgentFactory::create(&resolved_role)
-                    }
-                };
-
-                // Publish agent start event for live streaming
-                self.bus.publish(
-                    praxis_shared::protocol::MessageKind::AgentStarted {
-                        agent: role_config.name.clone(),
-                        role: role_config.name.clone(),
-                        phase: current_phase,
-                    },
-                    "core",
+                // Apply ConsensusConsolidator for multi-reviewer phases
+                let review_results = extract_review_results(&results);
+                let verdict = crate::orchestrator::verification::ConsensusConsolidator::consolidate(
+                    results.clone(),
+                    &crate::orchestrator::verification::ConsensusStrategy::AllPass,
                 );
-
-                let raw_result = if has_feedback {
-                    agent.handle_feedback(&task, &feedback).await
-                } else {
-                    agent.execute(&task).await
-                };
-
-                // Execute any tool calls found in the agent's output
-                let tool_output = self.execute_tool_calls(&raw_result.content).await;
-                let result = if tool_output != raw_result.content {
-                    TaskResult {
-                        content: tool_output,
-                        ..raw_result
-                    }
-                } else {
-                    raw_result
-                };
-
-                // Publish agent completion event for live streaming
-                self.bus.publish(
-                    praxis_shared::protocol::MessageKind::AgentCompleted {
-                        agent: result.agent_id.clone(),
-                        role: result.role.clone(),
-                        status: format!("{:?}", result.status),
-                        duration_ms: result.duration_ms,
-                        output_preview: result.content.chars().take(200).collect(),
-                    },
-                    "core",
-                );
-
                 tracing::info!(
-                    "Agent {} completed: status={:?}, duration={}ms",
-                    result.agent_id,
-                    result.status,
-                    result.duration_ms
+                    "Consensus verdict: passed={}, confidence={:.1}%, reviewers={}",
+                    verdict.passed, verdict.confidence, review_results.len()
                 );
+            } else {
+                // ── Sequential execution (single agent or non-review phases) ──
+                for role_config in &phase_agents {
+                    let mut task = orchestrator::Task::new(
+                        &role_config.name,
+                        &role_config.model,
+                        goal,
+                    );
 
-                results.push(result);
+                    let has_feedback = !feedback.is_empty() && role_config.name == "coder";
+                    if has_feedback {
+                        task.context = feedback.clone();
+                    }
+
+                    // Drain pending injection messages for this agent
+                    let injection = self.drain_injections(&role_config.name);
+                    if !injection.is_empty() {
+                        if task.context.is_empty() {
+                            task.context = injection;
+                        } else {
+                            task.context = format!("{}\n\n{}", task.context, injection);
+                        }
+                        tracing::info!("Injected message into task for agent '{}'", role_config.name);
+                    }
+
+                    // Inject MCP tool context into the task so the LLM knows
+                    // what tools are available and how to call them
+                    let tool_context = self.prepare_tool_context(&role_config.tools);
+                    if !tool_context.is_empty() {
+                        if task.context.is_empty() {
+                            task.context = tool_context;
+                        } else {
+                            task.context = format!("{}\n\n{}", task.context, tool_context);
+                        }
+                    }
+
+                    let resolved_role =
+                        orchestrator::roles::ResolvedRole::resolve(role_config, None);
+                    let agent = match provider_router.resolve(&role_config.model) {
+                        Ok(provider) => {
+                            crate::actor::roles::AgentFactory::create_with_provider_and_bus(
+                                &resolved_role,
+                                provider,
+                                self.bus.clone(),
+                            )
+                        }
+                        Err(_) => {
+                            tracing::warn!(
+                                "No provider for model '{}'. Using mock agent for '{}'.",
+                                role_config.model,
+                                role_config.name
+                            );
+                            crate::actor::roles::AgentFactory::create(&resolved_role)
+                        }
+                    };
+
+                    // Publish agent start event for live streaming
+                    self.bus.publish(
+                        praxis_shared::protocol::MessageKind::AgentStarted {
+                            agent: role_config.name.clone(),
+                            role: role_config.name.clone(),
+                            phase: current_phase,
+                        },
+                        "core",
+                    );
+
+                    let raw_result = if has_feedback {
+                        agent.handle_feedback(&task, &feedback).await
+                    } else {
+                        agent.execute(&task).await
+                    };
+
+                    // Execute any tool calls found in the agent's output
+                    let tool_output = self.execute_tool_calls(&raw_result.content).await;
+                    let result = if tool_output != raw_result.content {
+                        TaskResult {
+                            content: tool_output,
+                            ..raw_result
+                        }
+                    } else {
+                        raw_result
+                    };
+
+                    // Execute tool calls in the agent's output
+                    self.bus.publish(
+                        praxis_shared::protocol::MessageKind::AgentCompleted {
+                            agent: result.agent_id.clone(),
+                            role: result.role.clone(),
+                            status: format!("{:?}", result.status),
+                            duration_ms: result.duration_ms,
+                            output_preview: result.content.chars().take(200).collect(),
+                        },
+                        "core",
+                    );
+
+                    tracing::info!(
+                        "Agent {} completed: status={:?}, duration={}ms",
+                        result.agent_id,
+                        result.status,
+                        result.duration_ms
+                    );
+
+                    results.push(result);
+                }
             }
 
             // Evaluate gates for quality-check phases
