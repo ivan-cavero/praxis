@@ -144,14 +144,13 @@ tests pass, goal verified complete. With real LLM (or mock if no API key).
 **Goal:** Multiple agents with different models, cross-verification, MCP tools,
 mid-loop injection.
 
-### 2.1 Agent Roles
+### 2.1 Agent Roles + Tool Integration
 
-- [ ] **ArchitectAgent** — designs, generates ADRs. Profile: `generous`.
-- [ ] **CoderAgent** — implements, compiles, iterates on errors. Profile: `balanced`.
-- [ ] **ReviewerAgent** — reviews code, pass/fail + comments. Profile: `aggressive`.
-- [ ] **SecurityAgent** — scans secrets, unsafe, injection. Profile: `aggressive`.
-- [ ] **TesterAgent** — generates tests, runs `cargo test`. Profile: `balanced`.
-- [ ] **GitAgent** — commit, branch, PR.
+- [x] **6 agent types** — Architect, Coder, Reviewer, Security, Tester, Git.
+- [x] **MCP servers connected** — `connect_mcp_servers()` called in `run_goal`.
+- [x] **Tool context injected** — `prepare_tool_context()` adds available tool descriptions to each agent's task context.
+- [x] **Tool calls executed** — `execute_tool_calls()` parses ` ```tool JSON blocks` from agent output, calls tools via `McpHost`, and appends results.
+- [ ] **Agent receives tool results** — tool output is appended to agent result so the LLM can see it in the next iteration.
 
 ### 2.2 Cross-Verification
 
@@ -162,17 +161,17 @@ mid-loop injection.
 
 ### 2.3 MCP Tools
 
-- [ ] **Filesystem MCP server** — read/write/edit/list/search, path sandboxing.
+- [x] **Filesystem MCP server** — read/write/edit/list/search/glob, path sandboxing.
 - [ ] **Git MCP server** — init/add/commit/branch/diff/log/push.
 - [ ] **GitHub MCP server** — PR create/list/comment, issues, checks.
 - [ ] **WebSearch MCP server** — search, fetch (for ResearcherAgent).
 
 ### 2.4 Mid-Loop Injection
 
-- [ ] **InjectionChannel** — broadcast channel for mid-loop instructions.
-- [ ] **Agent checks pending injections** before each LLM call.
-- [ ] **Injections have CRITICAL priority** — never compressed/dropped.
-- [ ] **`inject` CLI command** — works for real.
+- [x] **InjectionChannel** — `inject()`/`drain_injections()` in `CoreRuntime`.
+- [x] **Agent checks pending injections** — drained before each agent execution in `run_goal`.
+- [x] **Injections have CRITICAL priority** — never compressed/dropped.
+- [ ] **`inject` CLI command** — works for real (stub explains API server requirement).
 - [ ] **Audit** — all injections are logged.
 
 🧪 **Milestone:** Goal → Architect designs → Coder implements → 2 Reviewers
