@@ -10,6 +10,7 @@ use axum::{Router, routing::{get, post, delete, put}, Json, extract::State, http
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::collections::HashMap;
+use praxis_agent_traits::persistence::EventStore;
 
 /// Shared state for the API server.
 #[derive(Clone)]
@@ -25,6 +26,9 @@ pub struct AppState {
     pub token_counters: std::sync::Arc<std::sync::RwLock<TokenCounters>>,
     /// Session registry (shared with CoreRuntime).
     pub session_registry: std::sync::Arc<std::sync::RwLock<Vec<SessionEntry>>>,
+    /// Persistent event store (SQLite) shared with `praxis run --goal`.
+    /// Used to read persisted sessions from other processes.
+    pub event_store: Option<std::sync::Arc<praxis_persistence::SqliteEventStore>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -147,6 +151,42 @@ impl ApiServer {
         let token_counters = std::sync::Arc::new(std::sync::RwLock::new(TokenCounters::default()));
         let session_registry = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
 
+        // Open shared event store for reading sessions from other processes
+        let db_path = data_dir.join("state.db");
+        let event_store = if db_path.exists() {
+            tracing::info!("Opening shared event store at {}", db_path.display());
+            praxis_persistence::SqliteEventStore::new(&db_path)
+                .ok()
+                .map(std::sync::Arc::new)
+        } else {
+            tracing::info!("No shared event store found ({}), sessions from other processes won't appear", db_path.display());
+            None
+        };
+
+        // Spawn EventBus listener: update token counters from live events.
+        // Clone BEFORE moving originals into AppState.
+        let token_counters_listener = token_counters.clone();
+        let mut bus_rx = bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match bus_rx.recv().await {
+                    Ok(event) => {
+                        if let praxis_shared::protocol::MessageKind::TokenUsed { provider, model, input, output } = event.kind {
+                            let mut counters = token_counters_listener.write().unwrap();
+                            counters.total_input += input as u64;
+                            counters.total_output += output as u64;
+                            *counters.by_provider.entry(provider).or_insert(0) += (input + output) as u64;
+                            *counters.by_model.entry(model).or_insert(0) += (input + output) as u64;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::debug!("Token counter listener lagged by {} events", n);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+
         let state = AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
             started_at: chrono::Utc::now(),
@@ -156,6 +196,7 @@ impl ApiServer {
             data_dir,
             token_counters,
             session_registry,
+            event_store,
         };
 
         let app = Self::router(state);
@@ -704,19 +745,83 @@ pub mod sessions {
     use super::*;
 
     pub async fn list(State(state): State<Arc<AppState>>) -> Json<Vec<SessionEntry>> {
-        let sessions = state.session_registry.read().unwrap();
-        Json(sessions.clone())
+        // Collect sessions from the in-memory registry (same-process active sessions)
+        let mut all: Vec<SessionEntry> = {
+            let registry = state.session_registry.read().unwrap();
+            registry.clone()
+        };
+
+        // Merge sessions from the event store (persisted sessions from other processes)
+        if let Some(store) = &state.event_store {
+            if let Ok(session_ids) = store.list_aggregates("session").await {
+                for sid in &session_ids {
+                    let sid_str = sid.to_string();
+                    // Skip if already in the in-memory registry
+                    if all.iter().any(|s| s.id == sid_str) {
+                        continue;
+                    }
+                    if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
+                        let phase = snap.state["phase"].as_str().unwrap_or("unknown");
+                        let status = if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
+                            phase.to_lowercase()
+                        } else {
+                            "running".to_string()
+                        };
+                        all.push(SessionEntry {
+                            id: sid_str,
+                            project: snap.state["project"].as_str().unwrap_or("default").to_string(),
+                            goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
+                            phase: phase.to_string(),
+                            iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
+                            status,
+                            started_at: snap.updated_at.clone(),
+                            completed_at: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        Json(all)
     }
 
     pub async fn get_one(
         State(state): State<Arc<AppState>>,
         axum::extract::Path(id): axum::extract::Path<String>,
     ) -> Result<Json<SessionEntry>, StatusCode> {
-        let sessions = state.session_registry.read().unwrap();
-        sessions.iter().find(|s| s.id == id)
-            .cloned()
-            .map(Json)
-            .ok_or(StatusCode::NOT_FOUND)
+        // First check the in-memory registry
+        {
+            let sessions = state.session_registry.read().unwrap();
+            if let Some(session) = sessions.iter().find(|s| s.id == id) {
+                return Ok(Json(session.clone()));
+            }
+        }
+
+        // Fall back to the event store
+        if let Some(store) = &state.event_store {
+            if let Ok(sid) = id.parse::<uuid::Uuid>() {
+                if let Ok(Some(snap)) = store.get_snapshot(sid).await {
+                    let phase = snap.state["phase"].as_str().unwrap_or("unknown");
+                    let status = if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
+                        phase.to_lowercase()
+                    } else {
+                        "running".to_string()
+                    };
+                    return Ok(Json(SessionEntry {
+                        id,
+                        project: snap.state["project"].as_str().unwrap_or("default").to_string(),
+                        goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
+                        phase: phase.to_string(),
+                        iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
+                        status,
+                        started_at: snap.updated_at.clone(),
+                        completed_at: None,
+                    }));
+                }
+            }
+        }
+
+        Err(StatusCode::NOT_FOUND)
     }
 
     pub async fn stop(
@@ -767,7 +872,7 @@ pub mod sessions {
     ) -> Json<Vec<AgentSummary>> {
         // Return agents from the most recent session, or default list
         let sessions = state.session_registry.read().unwrap();
-        if let Some(latest) = sessions.last() {
+        if let Some(_latest) = sessions.last() {
             // Parse forge.toml from the session project for agent list
             // For now, return the built-in agent list
             Json(vec![

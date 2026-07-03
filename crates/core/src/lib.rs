@@ -757,6 +757,19 @@ impl CoreRuntime {
                                 result.duration_ms
                             );
 
+                            // Publish token usage for live tracking
+                            if result.token_usage.total > 0 {
+                                self.bus.publish(
+                                    praxis_shared::protocol::MessageKind::TokenUsed {
+                                        provider: "unknown".into(),
+                                        model: result.agent_id.clone(),
+                                        input: result.token_usage.input,
+                                        output: result.token_usage.output,
+                                    },
+                                    "core",
+                                );
+                            }
+
                             results.push(result);
                         }
                         Err(e) => {
@@ -889,6 +902,19 @@ impl CoreRuntime {
                         result.status,
                         result.duration_ms
                     );
+
+                    // Publish token usage for live tracking
+                    if result.token_usage.total > 0 {
+                        self.bus.publish(
+                            praxis_shared::protocol::MessageKind::TokenUsed {
+                                provider: "unknown".into(),
+                                model: result.agent_id.clone(),
+                                input: result.token_usage.input,
+                                output: result.token_usage.output,
+                            },
+                            "core",
+                        );
+                    }
 
                     results.push(result);
                 }

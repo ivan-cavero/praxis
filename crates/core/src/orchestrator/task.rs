@@ -74,6 +74,32 @@ impl TaskResult {
         }
     }
 
+    /// Create a success result with actual token usage from the LLM.
+    pub fn success_with_usage(
+        task_id: &str,
+        agent_id: &str,
+        role: &str,
+        content: &str,
+        duration_ms: u64,
+        input_tokens: u32,
+        output_tokens: u32,
+    ) -> Self {
+        Self {
+            task_id: task_id.to_string(),
+            agent_id: agent_id.to_string(),
+            role: role.to_string(),
+            status: TaskStatus::Completed,
+            content: content.to_string(),
+            tool_calls: Vec::new(),
+            token_usage: TokenUsage {
+                input: input_tokens,
+                output: output_tokens,
+                total: input_tokens + output_tokens,
+            },
+            duration_ms,
+        }
+    }
+
     pub fn failure(task_id: &str, agent_id: &str, role: &str, reason: &str) -> Self {
         Self {
             task_id: task_id.to_string(),

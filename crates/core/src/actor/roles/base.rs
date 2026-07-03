@@ -54,6 +54,7 @@ fn build_chat_config(role: &ResolvedRole) -> ChatConfig {
 
 /// Call the LLM provider in streaming mode, publishing each delta on the EventBus.
 /// Falls back to non-streaming if streaming fails.
+/// Returns (content, token_usage).
 async fn call_llm_stream_or_mock(
     provider: &Option<Arc<dyn LLMProvider>>,
     task: &Task,
@@ -62,9 +63,10 @@ async fn call_llm_stream_or_mock(
     mock_output: &str,
     bus: &Option<EventBus>,
     agent_name: &str,
-) -> String {
+    ) -> (String, praxis_shared::types::TokenUsage) {
+    let zero_usage = praxis_shared::types::TokenUsage::new(0, 0);
     let Some(llm) = provider else {
-        return mock_output.to_string();
+        return (mock_output.to_string(), zero_usage);
     };
 
     let messages = build_chat_messages(task, system_prompt);
@@ -73,10 +75,13 @@ async fn call_llm_stream_or_mock(
     // If no EventBus available, fall back to non-streaming
     let Some(bus_ref) = bus else {
         return match llm.chat(&messages, &config).await {
-            Ok(response) => response.content,
+            Ok(response) => {
+                let usage = response.usage;
+                (response.content, usage)
+            }
             Err(e) => {
                 tracing::warn!("LLM call failed for '{}': {}", agent_name, e);
-                mock_output.to_string()
+                (mock_output.to_string(), zero_usage)
             }
         };
     };
@@ -85,6 +90,7 @@ async fn call_llm_stream_or_mock(
     match llm.stream(&messages, &config).await {
         Ok(mut rx) => {
             let mut full = String::new();
+            let mut final_usage = zero_usage;
             while let Some(chunk) = rx.recv().await {
                 match chunk {
                     StreamChunk::Delta(text) => {
@@ -97,21 +103,26 @@ async fn call_llm_stream_or_mock(
                         );
                         full.push_str(&text);
                     }
-                    StreamChunk::Done(_usage) => {}
+                    StreamChunk::Done(usage) => {
+                        final_usage = usage;
+                    }
                     StreamChunk::Error(e) => {
                         tracing::warn!("Stream error for '{}': {}", agent_name, e);
                     }
                 }
             }
-            full
+            (full, final_usage)
         }
         Err(e) => {
             tracing::warn!("Stream failed for '{}', falling back to chat: {}", agent_name, e);
             match llm.chat(&messages, &config).await {
-                Ok(response) => response.content,
+                Ok(response) => {
+                    let usage = response.usage;
+                    (response.content, usage)
+                }
                 Err(e2) => {
                     tracing::warn!("Chat fallback also failed for '{}': {}", agent_name, e2);
-                    mock_output.to_string()
+                    (mock_output.to_string(), praxis_shared::types::TokenUsage::new(0, 0))
                 }
             }
         }
@@ -150,8 +161,14 @@ fn make_task_result(
     role: &str,
     content: &str,
     start: std::time::Instant,
+    input_tokens: u32,
+    output_tokens: u32,
 ) -> TaskResult {
-    TaskResult::success(&task.id, agent_id, role, content, start.elapsed().as_millis() as u64)
+    TaskResult::success_with_usage(
+        &task.id, agent_id, role, content,
+        start.elapsed().as_millis() as u64,
+        input_tokens, output_tokens,
+    )
 }
 
 // ─── BaseAgent Trait ──────────────────────────────────────────
@@ -201,8 +218,8 @@ impl BaseAgent for Architect {
             "ADR: {}\nStatus: accepted\nContext: The team needs to: {}\nDecision: Implement using the proposed approach\nConsequences: [+Clear architecture, -Upfront design time]",
             task.description, task.description
         );
-        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "architect").await;
-        make_task_result(task, "architect", "architect", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "architect").await;
+        make_task_result(task, "architect", "architect", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -251,8 +268,8 @@ impl BaseAgent for Coder {
             "// Generated code for: {}\nfn main() {{ println!(\"Hello, world!\"); }}",
             task.description
         );
-        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "coder").await;
-        make_task_result(task, "coder", "coder", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "coder").await;
+        make_task_result(task, "coder", "coder", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, feedback: &str) -> TaskResult {
@@ -264,8 +281,8 @@ impl BaseAgent for Coder {
             "// Fixed code for: {}\n// Applied feedback: {}",
             task.description, feedback
         );
-        let content = call_llm_stream_or_mock(&self.provider, &task_with_feedback, prompt, &self.role, &mock, &self.bus, "coder").await;
-        make_task_result(task, "coder", "coder", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, &task_with_feedback, prompt, &self.role, &mock, &self.bus, "coder").await;
+        make_task_result(task, "coder", "coder", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     fn reset_context(&mut self) {
@@ -307,8 +324,8 @@ impl BaseAgent for Reviewer {
         let start = std::time::Instant::now();
         let prompt = "You are a senior code reviewer. Analyze the given code/task critically. Report: pass/fail, issues found (severity, file, line, message), and suggestions for improvement. Be specific.";
         let mock = "Review: PASS\nSummary: Code looks good with minor suggestions\nIssues: 0 critical, 0 major, 1 nit";
-        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "reviewer").await;
-        make_task_result(task, "reviewer", "reviewer", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "reviewer").await;
+        make_task_result(task, "reviewer", "reviewer", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -353,8 +370,8 @@ impl BaseAgent for Security {
         let start = std::time::Instant::now();
         let prompt = "You are a security auditor. Scan the given code for: hardcoded secrets, SQL injection, XSS, unsafe operations, insecure dependencies, and other vulnerabilities. Report findings with severity levels.";
         let mock = "Security Scan: PASS\nFindings: 0 critical, 0 high, 0 medium\nSummary: No security issues detected";
-        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "security").await;
-        make_task_result(task, "security", "security", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "security").await;
+        make_task_result(task, "security", "security", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -401,8 +418,8 @@ impl BaseAgent for Tester {
         let start = std::time::Instant::now();
         let prompt = "You are a QA engineer. Generate comprehensive tests for the given task. Include: unit tests, edge cases, error cases. Use the project's test framework. Output test code only.";
         let mock = format!("// Tests for: {}\n#[test]\nfn test_basic() {{ assert!(true); }}", task.description);
-        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "tester").await;
-        make_task_result(task, "tester", "tester", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "tester").await;
+        make_task_result(task, "tester", "tester", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -464,8 +481,8 @@ impl BaseAgent for Git {
         let start = std::time::Instant::now();
         let prompt = "You are a Git expert. Generate a conventional commit message for the given task. Format: type(scope): description. Types: feat, fix, refactor, docs, test, chore.";
         let mock = &self.generate_commit_message(task);
-        let content = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "git").await;
-        make_task_result(task, "git", "git", &content, start)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "git").await;
+        make_task_result(task, "git", "git", &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {

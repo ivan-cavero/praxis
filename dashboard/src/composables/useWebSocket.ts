@@ -1,5 +1,14 @@
 /**
  * useWebSocket — Real-time event streaming from backend EventBus.
+ *
+ * Singleton pattern: the FIRST call creates the connection; subsequent
+ * calls return the same shared refs. Always use within setup().
+ *
+ * The `kind` field is a structured JSON object mirroring the Rust
+ * `MessageKind` enum — e.g.:
+ *   { "TokenUsed": { "provider": "openai", "model": "gpt-5", "input": 100, "output": 50 } }
+ *   { "PhaseChanged": { "from": "Planning", "to": "Implementing", ... } }
+ *   { "AgentCompleted": { "agent": "coder", "status": "success", ... } }
  */
 
 import { ref, onUnmounted } from 'vue'
@@ -7,80 +16,146 @@ import { ref, onUnmounted } from 'vue'
 export interface SystemEvent {
   id: string
   timestamp: string
-  kind: string
+  /** Structured JSON mirroring the Rust MessageKind enum */
+  kind: Record<string, unknown>
   source: string
   metadata: Record<string, unknown>
 }
 
-export function useWebSocket() {
-  const isConnected = ref(false)
-  const events = ref<SystemEvent[]>([])
-  const maxEvents = 200
+// ─── Event kind type aliases for TypeScript convenience ─────────
 
-  // Mutable state wrapped in refs so no `let` is needed
-  const wsRef = ref<WebSocket | null>(null)
-  const reconnectTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null)
-  const reconnectDelayRef = ref(1000)
+export interface TokenUsedEvent {
+  provider: string
+  model: string
+  input: number
+  output: number
+}
 
-  function connect() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    const url = `${protocol}//${host}/ws/global`
+export interface PhaseChangedEvent {
+  from: string
+  to: string
+  condition?: string
+  timestamp?: string
+}
 
-    const ws = new WebSocket(url)
-    wsRef.value = ws
+export interface AgentCompletedEvent {
+  agent: string
+  role: string
+  status: string
+  duration_ms: number
+  output_preview: string
+}
 
-    ws.onopen = () => {
-      isConnected.value = true
-      reconnectDelayRef.value = 1000
-    }
+export interface AgentStartedEvent {
+  agent: string
+  role: string
+  phase: string
+}
 
-    ws.onmessage = (message) => {
-      try {
-        const data = JSON.parse(message.data) as SystemEvent
-        events.value = [...events.value, data]
-        if (events.value.length > maxEvents) {
-          events.value = events.value.slice(-maxEvents)
-        }
-      } catch (parseError) {
-        console.warn('[WS] Failed to parse event:', parseError)
+export interface ContextPressureEvent {
+  pressure: number
+  agent_id: string
+  action: string
+}
+
+export interface ContextCompressionEvent {
+  before_tokens: number
+  after_tokens: number
+  ratio: number
+  technique: string
+}
+
+/**
+ * Extract typed payload from a SystemEvent by kind variant name.
+ * Returns `undefined` if the event doesn't match.
+ */
+export function getEventPayload<T>(event: SystemEvent, kindName: string): T | undefined {
+  const payload = event.kind[kindName]
+  if (payload && typeof payload === 'object') {
+    return payload as T
+  }
+  return undefined
+}
+
+// ─── Module-level singleton state ───────────────────────────────
+const isConnected = ref(false)
+const events = ref<SystemEvent[]>([])
+const maxEvents = 500
+
+let ws: WebSocket | null = null
+let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+let reconnectDelay = 1000
+let referenceCount = 0
+
+function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  const url = `${protocol}//${host}/ws/global`
+
+  ws = new WebSocket(url)
+
+  ws.onopen = () => {
+    isConnected.value = true
+    reconnectDelay = 1000
+  }
+
+  ws.onmessage = (message) => {
+    try {
+      const data = JSON.parse(message.data) as SystemEvent
+      events.value = [...events.value, data]
+      if (events.value.length > maxEvents) {
+        events.value = events.value.slice(-maxEvents)
       }
-    }
-
-    ws.onclose = () => {
-      isConnected.value = false
-
-      reconnectTimeoutRef.value = setTimeout(() => {
-        reconnectDelayRef.value = Math.min(reconnectDelayRef.value * 2, 30000)
-        connect()
-      }, reconnectDelayRef.value)
-    }
-
-    ws.onerror = (connectionError) => {
-      console.error('[WS] Error:', connectionError)
+    } catch {
+      // skip malformed messages
     }
   }
 
-  function disconnect() {
-    if (reconnectTimeoutRef.value) {
-      clearTimeout(reconnectTimeoutRef.value)
-      reconnectTimeoutRef.value = null
-    }
-    if (wsRef.value) {
-      wsRef.value.close()
-      wsRef.value = null
-    }
+  ws.onclose = () => {
+    isConnected.value = false
+    reconnectTimeout = setTimeout(() => {
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000)
+      connect()
+    }, reconnectDelay)
   }
 
-  function clearEvents() {
-    events.value = []
+  ws.onerror = () => {
+    // onclose will fire after onerror, triggering reconnect
   }
+}
 
-  // Auto-connect
-  connect()
+function disconnect() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout)
+    reconnectTimeout = null
+  }
+  if (ws) {
+    ws.close()
+    ws = null
+  }
+  isConnected.value = false
+}
+
+function clearEvents() {
+  events.value = []
+}
+
+// ─── Public API ─────────────────────────────────────────────────
+
+export function useWebSocket() {
+  // First call connects
+  if (referenceCount === 0) {
+    connect()
+  }
+  referenceCount++
 
   onUnmounted(() => {
-    disconnect()
+    referenceCount--
+    // Don't disconnect on unmount — keep alive for the whole SPA session
   })
 
   return {

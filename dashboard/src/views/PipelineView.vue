@@ -1,17 +1,79 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, watch } from 'vue'
 import Icon from '../components/ui/Icon.vue'
+import { useWebSocket, getEventPayload, type PhaseChangedEvent, type AgentCompletedEvent, type AgentStartedEvent } from '../composables/useWebSocket'
 
-const phases = computed(() => [
-  { id: 'planning', label: 'Planning', icon: 'brain', color: '#22c55e', active: true },
-  { id: 'designing', label: 'Designing', icon: 'code', color: '#3b82f6', active: true },
-  { id: 'implementing', label: 'Implementing', icon: 'terminal', color: '#eab308', active: true },
+const ws = useWebSocket()
+
+type PhaseDef = {
+  id: string
+  label: string
+  icon: string
+  color: string
+  active: boolean
+}
+
+const phases = ref<PhaseDef[]>([
+  { id: 'planning', label: 'Planning', icon: 'brain', color: '#22c55e', active: false },
+  { id: 'designing', label: 'Designing', icon: 'code', color: '#3b82f6', active: false },
+  { id: 'implementing', label: 'Implementing', icon: 'terminal', color: '#eab308', active: false },
   { id: 'reviewing', label: 'Reviewing', icon: 'eye', color: '#f97316', active: false },
   { id: 'testing', label: 'Testing', icon: 'check', color: '#a855f7', active: false },
   { id: 'security', label: 'Security', icon: 'shield', color: '#ef4444', active: false },
   { id: 'finalizing', label: 'Finalizing', icon: 'server', color: '#22c55e', active: false },
 ])
-</script>
+
+interface LogEntry {
+  timestamp: string
+  text: string
+  kind: 'phase' | 'agent' | 'gate'
+}
+
+const log = ref<LogEntry[]>([])
+
+// Watch for PhaseChanged events via WebSocket
+watch(() => ws.events.value, (allEvents) => {
+  // Walk backwards — only process new events
+  for (let i = allEvents.length - 1; i >= 0; i--) {
+    const event = allEvents[i]
+    const phaseChange = getEventPayload<PhaseChangedEvent>(event, 'PhaseChanged')
+    if (phaseChange) {
+        const toLower = (phaseChange.to || '').toLowerCase()
+
+      // Deactivate all, then activate the target phase
+      phases.value = phases.value.map((p) => ({
+        ...p,
+        active: p.id === toLower,
+      }))
+
+      log.value = [...log.value, {
+        timestamp: event.timestamp,
+        text: `Phase changed: ${phaseChange.from} → ${phaseChange.to}`,
+        kind: 'phase' as const,
+      }]
+      continue
+    }
+
+    const agentStart = getEventPayload<AgentStartedEvent>(event, 'AgentStarted')
+    if (agentStart) {
+      log.value = [...log.value, {
+        timestamp: event.timestamp,
+        text: `${agentStart.role} (${agentStart.agent}) started in ${agentStart.phase}`,
+        kind: 'agent' as const,
+      }]
+      continue
+    }
+
+    const agentDone = getEventPayload<AgentCompletedEvent>(event, 'AgentCompleted')
+    if (agentDone) {
+      log.value = [...log.value, {
+        timestamp: event.timestamp,
+        text: `${agentDone.role} (${agentDone.agent}) ${agentDone.status} in ${agentDone.duration_ms}ms`,
+        kind: 'agent' as const,
+      }]
+    }
+  }
+}, { deep: true })</script>
 
 <template>
   <div class="pipeline-view">
@@ -27,7 +89,7 @@ const phases = computed(() => [
         class="phase-node"
         :class="{ active: phase.active }"
       >
-        <div class="phase-node-connector" v-if="index > 0" :class="{ active: phases[index - 1].active }">
+        <div v-if="index > 0" class="phase-node-connector" :class="{ active: phases[index - 1].active }">
           <div class="connector-line" />
           <Icon name="chevron-right" :size="14" class="connector-arrow" />
         </div>
@@ -46,14 +108,20 @@ const phases = computed(() => [
       </div>
     </div>
 
-    <!-- Agent activity log -->
+    <!-- Activity log -->
     <div class="pipeline-log">
       <div class="log-header">
         <h2 class="log-title">Activity Log</h2>
       </div>
-      <div class="log-empty">
+      <div v-if="log.length === 0" class="log-empty">
         <Icon name="terminal" :size="24" class="empty-icon" />
         <p>Agent activity will appear here during a session.</p>
+      </div>
+      <div v-else class="log-list">
+        <div v-for="(entry, idx) in log" :key="idx" class="log-entry" :class="entry.kind">
+          <span class="log-time">{{ entry.timestamp.slice(11, 19) }}</span>
+          <span class="log-text">{{ entry.text }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -224,5 +292,46 @@ const phases = computed(() => [
 
 .empty-icon {
   opacity: 0.3;
+}
+
+.log-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-time {
+  color: var(--text-disabled);
+  flex-shrink: 0;
+  width: 60px;
+}
+
+.log-text {
+  color: var(--text-primary);
+}
+
+.log-entry.phase .log-text {
+  color: var(--primary);
+}
+
+.log-entry.agent .log-text {
+  color: var(--text-secondary);
+}
+
+.log-entry.gate .log-text {
+  color: var(--warning);
 }
 </style>

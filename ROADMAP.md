@@ -34,7 +34,7 @@ What ALREADY exists and compiles (291 tests pass):
 | API server (axum: REST + WebSocket + JWT auth) | `[x]` |
 | CLI (clap): init, run, status, server, test... | `[~]` (many commands are stubs) |
 | Desktop (Tauri v2) | `[~]` (minimal shell) |
-| Dashboard (Vue 3) | `[~]` (minimal: login + settings) |
+| Dashboard (Vue 3) | `[x]` (full: 5 views, 6 components, router, WS, Pinia) |
 
 ---
 
@@ -187,34 +187,33 @@ monitor and manage.
 
 ### 3.1 Easy VPS Installation
 
-- [ ] **Install script** — `curl -fsSL https://praxis.dev/install.sh | bash`.
-  OS detection, download binary, verify checksum.
-- [ ] **systemd service** — `praxis server` as a service, auto-restart.
-- [ ] **Config file** — `~/.config/praxis/config.toml` (port, data dir, auth).
-- [ ] **Single binary** — release build with LTO + strip (~15-20 MB).
+- [x] **Install script** — `curl -fsSL https://praxis.dev/install.sh | bash`.
+  OS detection, download binary, verify checksum. (`scripts/install.sh`)
+- [x] **systemd service** — `praxis server` as a service, auto-restart. (`deploy/praxis.service`)
+- [x] **Config file** — `~/.config/praxis/config.toml` (port, data dir, auth). (`deploy/praxis-config.toml`)
+- [x] **Single binary** — release build with LTO + strip (~15-20 MB). (already in Cargo.toml)
 
 ### 3.2 API Server (refine)
 
-- [ ] **REST endpoints** — projects, sessions, agents, metrics, context, inject.
-  `[~]` partial, complete the missing ones.
-- [ ] **WebSocket** — real-time events (phase changes, token usage, drift,
-  compression, injections). `[~]` partial.
-- [ ] **Auth JWT** — first-run token, 24h expiry. `[x]` done, verify.
-- [ ] **CORS** — configurable for remote dashboard. `[x]` done.
+- [x] **REST endpoints** — projects, sessions, agents, metrics, context, inject.
+  Sessions read from shared SQLite event store (cross-process).
+- [~] **WebSocket** — real-time events (phase changes, token usage, drift,
+  compression, injections). Handler exists, broadcast works same-process.
+- [x] **Auth JWT** — first-run token, 24h expiry. Done.
+- [x] **CORS** — configurable for remote dashboard. Done.
 
 ### 3.3 Vue 3 Dashboard — Modern Dark Mode
 
-- [ ] **Design system** — Tailwind 4, dark palette (black/zinc), clean typography,
-      clean components.
-- [ ] **DashboardView** — overview: active sessions, total tokens, health.
-- [ ] **PipelineView** — phase graph with colors, animated edges (Vue Flow).
-- [ ] **SessionView** — session detail: agents, iterations, live logs.
-- [ ] **TokenChart** — real-time area chart, breakdown by agent/model.
-- [ ] **AgentHealth** — table: model, status, ASI, latency, error rate.
-- [ ] **ContextPanel** — pressure gauge, budget breakdown, compression history.
-- [ ] **InjectPanel** — target selector, type, message, send, history.
-- [ ] **ProjectConfig** — TOML editor with validation.
-- [ ] **useWebSocket** composable — auto-reconnect, backoff, event buffering.
+- [x] **Design system** — Tailwind 4, dark palette (zinc), CSS custom properties.
+- [x] **DashboardView** — metric cards, sessions table, agent grid.
+- [x] **PipelineView** — 7-phase flow visualization (CSS animated).
+- [x] **SessionView** — session detail + SessionsView list.
+- [x] **TokenChart** — token usage bar chart (CSS, no canvas).
+- [x] **AgentHealth** — agent status table with status badges.
+- [x] **ContextPanel** — pressure gauge (SVG arc), budget bar.
+- [x] **InjectPanel** — target selector, type, message, send.
+- [x] **ProjectConfig** — TOML editor with save support.
+- [x] **useWebSocket** composable — auto-reconnect, backoff, event buffering.
 - [ ] **Responsive** — 3-col desktop, 2-col tablet, 1-col mobile.
 
 🧪 **Milestone:** `praxis server` on VPS → browser to `http://vps:8080` → modern

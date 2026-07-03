@@ -24,10 +24,11 @@ pub fn start_event_forwarder(bus: &crate::EventBus, clients: broadcast::Sender<S
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    let kind_value = serde_json::to_value(&event.kind).unwrap_or_default();
                     let msg = serde_json::json!({
                         "id": event.id,
                         "timestamp": chrono::Utc::now().to_rfc3339(),
-                        "kind": format!("{:?}", event.kind),
+                        "kind": kind_value,
                         "source": event.source,
                         "metadata": event.metadata,
                     });
@@ -62,10 +63,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    let kind_value = serde_json::to_value(&event.kind).unwrap_or_default();
                     let msg = serde_json::json!({
                         "id": event.id,
                         "timestamp": chrono::Utc::now().to_rfc3339(),
-                        "kind": format!("{:?}", event.kind),
+                        "kind": kind_value,
                         "source": event.source,
                         "metadata": event.metadata,
                     });
