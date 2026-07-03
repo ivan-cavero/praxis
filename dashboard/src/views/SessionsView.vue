@@ -73,43 +73,76 @@ onUnmounted(() => {
       <p>No sessions yet.</p>
     </div>
 
-    <div v-else class="sessions-table">
-      <div class="table-header">
-        <span class="col-id">ID</span>
-        <span class="col-goal">Goal</span>
-        <span class="col-project">Project</span>
-        <span class="col-phase">Phase</span>
-        <span class="col-iteration">Iteration</span>
-        <span class="col-status">Status</span>
-        <span class="col-actions">Actions</span>
+    <div v-else class="sessions-table-wrapper">
+      <!-- Desktop table -->
+      <div class="sessions-table table-layout">
+        <div class="table-header">
+          <span class="col-id">ID</span>
+          <span class="col-goal">Goal</span>
+          <span class="col-project">Project</span>
+          <span class="col-phase">Phase</span>
+          <span class="col-iteration">Iteration</span>
+          <span class="col-status">Status</span>
+          <span class="col-actions">Actions</span>
+        </div>
+
+        <div
+          v-for="session in sessions"
+          :key="session.id"
+          class="table-row"
+          @click="router.push(`/sessions/${session.id}`)"
+        >
+          <span class="col-id mono">{{ session.id.slice(0, 8) }}</span>
+          <span class="col-goal">{{ session.goal }}</span>
+          <span class="col-project">{{ session.project }}</span>
+          <span class="col-phase">{{ session.phase }}</span>
+          <span class="col-iteration">{{ session.iteration }}</span>
+          <span class="col-status">
+            <Badge :variant="getStatusColor(session.status)" size="sm">
+              {{ session.status }}
+            </Badge>
+          </span>
+          <span class="col-actions" @click.stop>
+            <button
+              v-if="session.status === 'running'"
+              class="btn-icon"
+              @click="handleStop(session.id)"
+              title="Stop session"
+            >
+              <Icon name="stop" :size="14" />
+            </button>
+          </span>
+        </div>
       </div>
 
-      <div
-        v-for="session in sessions"
-        :key="session.id"
-        class="table-row"
-        @click="router.push(`/sessions/${session.id}`)"
-      >
-        <span class="col-id mono">{{ session.id.slice(0, 8) }}</span>
-        <span class="col-goal">{{ session.goal }}</span>
-        <span class="col-project">{{ session.project }}</span>
-        <span class="col-phase">{{ session.phase }}</span>
-        <span class="col-iteration">{{ session.iteration }}</span>
-        <span class="col-status">
-          <Badge :variant="getStatusColor(session.status)" size="sm">
-            {{ session.status }}
-          </Badge>
-        </span>
-        <span class="col-actions" @click.stop>
-          <button
-            v-if="session.status === 'running'"
-            class="btn-icon"
-            @click="handleStop(session.id)"
-            title="Stop session"
-          >
-            <Icon name="stop" :size="14" />
-          </button>
-        </span>
+      <!-- Mobile cards -->
+      <div class="sessions-cards">
+        <div
+          v-for="session in sessions"
+          :key="session.id"
+          class="session-card"
+          @click="router.push(`/sessions/${session.id}`)"
+        >
+          <div class="session-card-header">
+            <span class="session-card-id mono">{{ session.id.slice(0, 8) }}</span>
+            <Badge :variant="getStatusColor(session.status)" size="sm">
+              {{ session.status }}
+            </Badge>
+          </div>
+          <div class="session-card-goal">{{ session.goal }}</div>
+          <div class="session-card-meta">
+            <span>{{ session.project }}</span>
+            <span>&middot;</span>
+            <span>{{ session.phase }}</span>
+            <span>&middot;</span>
+            <span>Iter {{ session.iteration }}</span>
+          </div>
+          <div v-if="session.status === 'running'" class="session-card-actions" @click.stop>
+            <button class="btn-icon" @click="handleStop(session.id)" title="Stop session">
+              <Icon name="stop" :size="14" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -200,7 +233,12 @@ onUnmounted(() => {
   opacity: 0.3;
 }
 
-.sessions-table {
+.sessions-table-wrapper {
+  width: 100%;
+}
+
+/* Desktop table — hidden on mobile */
+.table-layout {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -263,5 +301,75 @@ onUnmounted(() => {
 .btn-icon:hover {
   color: var(--error);
   background: rgba(239, 68, 68, 0.1);
+}
+
+/* Mobile cards — hidden on desktop */
+.session-card {
+  display: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.session-card:hover {
+  border-color: var(--border-default);
+}
+
+.session-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.session-card-id {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.session-card-goal {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.session-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.session-card-actions {
+  margin-top: var(--space-3);
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+  .table-layout {
+    display: none;
+  }
+
+  .sessions-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .session-card {
+    display: block;
+  }
+}
+
+@media (min-width: 768px) {
+  .sessions-cards {
+    display: none;
+  }
 }
 </style>
