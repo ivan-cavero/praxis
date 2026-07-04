@@ -101,14 +101,8 @@ button { font-family: inherit; }
 .project-item.active .project-name { color: var(--text-primary); }
 .project-hint { font-size: 12px; color: var(--text-muted); padding: var(--space-1) var(--space-3) var(--space-2) var(--space-8); }
 
-.sidebar-footer { padding: var(--space-3); border-top: 1px solid var(--border-subtle); }
-.sidebar-user { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2); border-radius: var(--radius-md); cursor: pointer; transition: background var(--transition-fast); }
-.sidebar-user:hover { background: var(--bg-hover); }
 .user-avatar { width: 28px; height: 28px; border-radius: var(--radius-full); background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--bg-base); flex-shrink: 0; }
 .user-name { font-size: 13px; font-weight: 500; color: var(--text-primary); flex: 1; }
-.sidebar-footer-actions { display: flex; gap: var(--space-1); }
-.sidebar-footer-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); cursor: pointer; transition: all var(--transition-fast); }
-.sidebar-footer-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 
 /* Main Content */
 .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-base); overflow: hidden; }
@@ -293,9 +287,7 @@ button { font-family: inherit; }
   .nav-label,
   .nav-shortcut,
   .sidebar-divider,
-  .sidebar-projects,
-  .sidebar-footer .user-name,
-  .sidebar-status .status-label {
+  .sidebar-projects {
     display: none;
   }
   .sidebar-nav {
@@ -320,18 +312,13 @@ button { font-family: inherit; }
     justify-content: center;
     padding: var(--space-1);
   }
+  .sidebar-user .user-name,
+  .sidebar-user .sidebar-gear-btn {
+    display: none;
+  }
   .user-avatar {
     width: 32px;
     height: 32px;
-  }
-  .sidebar-status {
-    display: flex;
-    justify-content: center;
-    padding: var(--space-2);
-  }
-  .status-item {
-    justify-content: center;
-    padding: var(--space-1);
   }
 
   /* Settings layout */
@@ -382,9 +369,6 @@ button { font-family: inherit; }
     padding: var(--space-2);
   }
   .nav-label {
-    display: none;
-  }
-  .sidebar-status {
     display: none;
   }
   .sidebar-footer {

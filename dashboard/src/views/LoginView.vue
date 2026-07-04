@@ -90,14 +90,11 @@ async function handleLogin() {
         </div>
       </div>
 
-      <!-- Skip (dev mode) -->
+      <!-- Hint -->
       <div class="text-center mt-4">
-        <button
-          @click="emit('login', 'dev-mode')"
-          class="skip-link"
-        >
-          Skip authentication (dev mode)
-        </button>
+        <p class="skip-link" style="cursor: default;">
+          Token expires in 24 hours — run <code>praxis server</code> again to get a new one
+        </p>
       </div>
     </div>
   </div>

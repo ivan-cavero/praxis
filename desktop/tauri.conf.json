@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
   "productName": "praxis",
   "identifier": "com.praxis.desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "build": {
     "frontendDist": "../dashboard/dist",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "cd ../dashboard && bun run dev",
-    "beforeBuildCommand": "cd ../dashboard && bun run build"
+"beforeDevCommand": "cd dashboard && bun run dev",
+"beforeBuildCommand": "cd dashboard && bun run build"
   },
   "bundle": {
     "active": true,

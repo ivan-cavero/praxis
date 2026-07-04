@@ -5,11 +5,54 @@
  * Provides a drag region and native window controls (minimize, maximize/restore, close).
  * Gracefully degrades in browser dev mode (no window controls).
  */
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import Icon from '../ui/Icon.vue'
+import { useAppStore } from '../../stores/app'
+import { useWebSocket } from '../../composables/useWebSocket'
+import { useApi } from '../../composables/useApi'
+
+const store = useAppStore()
 
 const isTauri = ref(false)
 const isMaximized = ref(false)
+const ws = useWebSocket()
+const api = useApi()
+let unlistenResize: (() => void) | null = null
+
+const sessions = ref<number>(0)
+const agentsRunning = ref<number>(0)
+
+const connectionLabel = computed(() =>
+  ws.connected.value ? 'Online' : 'Offline'
+)
+
+onMounted(async () => {
+  // Load counts periodically
+  async function loadCounts() {
+    try {
+      const allSessions = await api.getSessions()
+      sessions.value = allSessions.length
+      agentsRunning.value = allSessions.filter(s => s.status === 'running').length
+    } catch {
+      // silent
+    }
+  }
+  loadCounts()
+  setInterval(loadCounts, 15000)
+
+  // Tauri window controls
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    isTauri.value = true
+    isMaximized.value = await getCurrentWindow().isMaximized()
+
+    unlistenResize = await getCurrentWindow().onResized(async () => {
+      isMaximized.value = await getCurrentWindow().isMaximized()
+    })
+  } catch {
+    // Not in Tauri — browser dev mode
+  }
+})
 
 async function handleMinimize() {
   if (!isTauri.value) return
@@ -35,14 +78,16 @@ onMounted(async () => {
     isTauri.value = true
     isMaximized.value = await getCurrentWindow().isMaximized()
 
-    // Listen for resize events to update maximize button state
-    const unlisten = await getCurrentWindow().onResized(async () => {
+    unlistenResize = await getCurrentWindow().onResized(async () => {
       isMaximized.value = await getCurrentWindow().isMaximized()
     })
-    onUnmounted(() => { unlisten() })
   } catch {
     // Not in Tauri — running in browser dev mode
   }
+})
+
+onUnmounted(() => {
+  if (unlistenResize) unlistenResize()
 })
 </script>
 
@@ -52,10 +97,28 @@ onMounted(async () => {
     <div class="titlebar-left" data-tauri-drag-region>
       <span class="titlebar-logo">P</span>
       <span class="titlebar-appname">praxis</span>
+      <span class="titlebar-version" v-if="store.version">v{{ store.version }}</span>
     </div>
 
-    <!-- Center: drag region (empty, just for dragging) -->
-    <div class="titlebar-center" data-tauri-drag-region />
+    <!-- Center: connection status + live data + drag region -->
+    <div class="titlebar-center" data-tauri-drag-region>
+      <div class="titlebar-status">
+        <span class="tb-status-dot" :class="{ online: ws.connected.value }" />
+        <span class="tb-status-label">{{ connectionLabel }}</span>
+        <span class="tb-separator">|</span>
+        <span class="tb-metric">
+          <Icon name="server" :size="12" />
+          {{ sessions }} sessions
+        </span>
+        <template v-if="agentsRunning > 0">
+          <span class="tb-separator">|</span>
+          <span class="tb-metric tb-metric-running">
+            <Icon name="refresh" :size="12" class="tb-spin" />
+            {{ agentsRunning }} running
+          </span>
+        </template>
+      </div>
+    </div>
 
     <!-- Right: Window controls (Tauri only) -->
     <div v-if="isTauri" class="titlebar-controls">
@@ -139,9 +202,70 @@ onMounted(async () => {
   letter-spacing: -0.01em;
 }
 
+.titlebar-version {
+  font-size: 11px;
+  color: var(--text-disabled);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
 .titlebar-center {
   flex: 1;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titlebar-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.tb-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-disabled);
+  flex-shrink: 0;
+}
+
+.tb-status-dot.online {
+  background: var(--primary);
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+
+.tb-status-label {
+  font-weight: 500;
+}
+
+.tb-separator {
+  color: var(--border-default);
+  font-size: 10px;
+}
+
+.tb-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.6;
+}
+
+.tb-metric-running {
+  color: var(--primary);
+  opacity: 1;
+}
+
+.tb-spin {
+  animation: tbSpin 2s linear infinite;
+}
+
+@keyframes tbSpin {
+  to { transform: rotate(360deg); }
 }
 
 .titlebar-controls {

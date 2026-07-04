@@ -48,6 +48,7 @@ import {
   IconLoader,
   IconAlertCircle,
   IconGlobe,
+  IconGitBranch,
   type Icon,
 } from '@tabler/icons-vue'
 
@@ -105,6 +106,7 @@ const iconMap: Record<string, Icon> = {
   mobile: IconDeviceMobile,
   info: IconInfoCircle,
   globe: IconGlobe,
+  'git-branch': IconGitBranch,
   loader: IconLoader,
 }
 

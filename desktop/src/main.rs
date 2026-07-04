@@ -217,6 +217,26 @@ async fn init_backend(handle: &tauri::AppHandle) {
     );
     let _ = vault.init();
 
+    let auth = std::sync::Arc::new(
+        praxis_core::api::auth::AuthState::from_file_or_create(
+            &data_dir.join("jwt.secret"),
+        ),
+    );
+
+    // Generate and display first-run admin token
+    if let Ok(token) = praxis_core::api::auth::generate_first_run_token(&auth) {
+        println!();
+        println!("╔══════════════════════════════════════════════════════════╗");
+        println!("║     🔑 FIRST-RUN ADMIN TOKEN                           ║");
+        println!("║  Copy this token and paste it in the dashboard login:  ║");
+        println!("║                                                          ║");
+        println!("║  {}", token);
+        println!("║                                                          ║");
+        println!("║  Expires in 24 hours                                     ║");
+        println!("╚══════════════════════════════════════════════════════════╝");
+        println!();
+    }
+
     let app = praxis_core::api::ApiServer::router(
         praxis_core::api::AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -224,11 +244,7 @@ async fn init_backend(handle: &tauri::AppHandle) {
             hostname: gethostname::gethostname().to_string_lossy().to_string(),
             started_at: chrono::Utc::now(),
             bus: praxis_core::EventBus::new(),
-            auth: std::sync::Arc::new(
-                praxis_core::api::auth::AuthState::from_file_or_create(
-                    &data_dir.join("jwt.secret"),
-                ),
-            ),
+            auth,
             vault,
             data_dir: data_dir.clone(),
             token_counters: std::sync::Arc::new(

@@ -6,8 +6,8 @@
  * Close via Esc, backdrop click, or the close button.
  */
 
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useApi } from '../composables/useApi'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useApi, type LimitsDetail } from '../composables/useApi'
 import { useAppStore } from '../stores/app'
 import { useUpdater } from '../composables/useUpdater'
 import { storeToRefs } from 'pinia'
@@ -24,23 +24,86 @@ const store = useAppStore()
 const updater = useUpdater()
 const { version, uptime } = storeToRefs(store)
 
-// ─── Tabs ────────────────────────────────────────────────────────
+// ─── Tabs (computed — 'limits' only shows when a project is active) ──
 
 const activeTab = ref('general')
 
-const tabs = [
-  { id: 'general', label: 'General', icon: 'settings' },
-  { id: 'code-preview', label: 'Code Preview', icon: 'code' },
-  { id: 'model-settings', label: 'Model Settings', icon: 'server' },
-  { id: 'skills', label: 'Skills', icon: 'terminal' },
-  { id: 'subagents', label: 'Subagents', icon: 'robot' },
-  { id: 'remote', label: 'Remote', icon: 'globe' },
-  { id: 'mcp-servers', label: 'MCP Servers', icon: 'plug' },
-  { id: 'plugins', label: 'Plugins', icon: 'plugin' },
-  { id: 'commands', label: 'Commands', icon: 'command' },
-  { id: 'indexing', label: 'Indexing', icon: 'search' },
-  { id: 'usage', label: 'Usage', icon: 'chart' },
-]
+const tabs = computed(() => {
+  const base = [
+    { id: 'general', label: 'General', icon: 'settings' },
+    { id: 'code-preview', label: 'Code Preview', icon: 'code' },
+    { id: 'model-settings', label: 'Model Settings', icon: 'server' },
+    { id: 'skills', label: 'Skills', icon: 'terminal' },
+    { id: 'subagents', label: 'Subagents', icon: 'robot' },
+    ...(store.activeProject?.id
+      ? [{ id: 'limits', label: 'Limits', icon: 'database' }]
+      : []),
+    { id: 'remote', label: 'Remote', icon: 'globe' },
+    { id: 'mcp-servers', label: 'MCP Servers', icon: 'plug' },
+    { id: 'plugins', label: 'Plugins', icon: 'plugin' },
+    { id: 'commands', label: 'Commands', icon: 'command' },
+    { id: 'indexing', label: 'Indexing', icon: 'search' },
+    { id: 'usage', label: 'Usage', icon: 'chart' },
+  ]
+  return base
+})
+
+// ─── Project Limits ──────────────────────────────────────────────
+
+const limitsForm = ref<LimitsDetail>({
+  max_iterations_per_goal: 25,
+  max_iterations_per_phase: 10,
+  session_ttl_seconds: 3600,
+  phase_timeout_seconds: 300,
+})
+const limitsSaving = ref(false)
+const limitsSaved = ref(false)
+const limitsError = ref<string | null>(null)
+
+/** Load limits from the active project's config. */
+function loadLimits() {
+  if (store.activeConfig?.limits) {
+    limitsForm.value = { ...store.activeConfig.limits }
+  }
+}
+
+/** Update the `[limits]` section in the forge TOML and save. */
+async function saveLimits() {
+  if (!store.activeProject?.id) return
+  limitsSaving.value = true
+  limitsSaved.value = false
+  limitsError.value = null
+
+  const newLimits = limitsForm.value
+  const toml = store.activeConfig?.raw || store.activeProject.forge_toml || ''
+  const limitsSection =
+    `[limits]\n` +
+    `max_iterations_per_goal = ${newLimits.max_iterations_per_goal}\n` +
+    `max_iterations_per_phase = ${newLimits.max_iterations_per_phase}\n` +
+    `session_ttl_seconds = ${newLimits.session_ttl_seconds}\n` +
+    `phase_timeout_seconds = ${newLimits.phase_timeout_seconds}\n`
+
+  let updatedToml: string
+  if (/\[limits\]/.test(toml)) {
+    updatedToml = toml.replace(/\[limits\][\s\S]*?(?=\n\[|$)/, limitsSection)
+  } else {
+    updatedToml = toml + '\n' + limitsSection + '\n'
+  }
+
+  try {
+    await store.saveProjectConfig(store.activeProject.id, updatedToml)
+    // Refresh in-memory limits from the saved config
+    if (store.activeConfig?.limits) {
+      limitsForm.value = { ...store.activeConfig.limits }
+    }
+    limitsSaved.value = true
+    setTimeout(() => { limitsSaved.value = false }, 2000)
+  } catch (caughtError: unknown) {
+    limitsError.value = caughtError instanceof Error ? caughtError.message : 'Failed to save limits'
+  } finally {
+    limitsSaving.value = false
+  }
+}
 
 // ─── Providers ────────────────────────────────────────────────────
 
@@ -132,6 +195,7 @@ function handleKeydown(event: KeyboardEvent) {
 
 onMounted(() => {
   loadProviders()
+  if (store.activeProject?.id) loadLimits()
   document.addEventListener('keydown', handleKeydown)
 })
 
@@ -420,9 +484,36 @@ async function handleCheckUpdate() {
               <h1 class="content-title">Subagents</h1>
               <p class="content-subtitle">Configure specialized sub-agent roles</p>
             </div>
-            <div class="placeholder-state">
-              <Icon name="robot" :size="48" class="placeholder-icon" />
-              <p>Subagent configuration coming soon</p>
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="robot" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">Subagent System</h3>
+                  <p class="section-desc">Delegated agents with specialized capabilities</p>
+                </div>
+              </div>
+              <div class="info-grid">
+                <div class="info-row">
+                  <span class="info-label">Status</span>
+                  <span class="info-value">
+                    <span class="badge badge-amber">In Development</span>
+                  </span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Backend</span>
+                  <span class="info-value">✅ Implemented in praxis-core (ractor actors)</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">UI</span>
+                  <span class="info-value">⚠️ Settings UI pending</span>
+                </div>
+              </div>
+              <p class="section-note">
+                Subagents are implemented in the Rust core as ractor actors.
+                Each subagent runs in its own mailbox and can be assigned
+                specific tools and models. The settings UI to configure them
+                will be added in the next release.
+              </p>
             </div>
           </template>
 
@@ -480,6 +571,121 @@ async function handleCheckUpdate() {
             <div class="placeholder-state">
               <Icon name="search" :size="48" class="placeholder-icon" />
               <p>Indexing settings coming soon</p>
+            </div>
+          </template>
+
+          <!-- ═══ Limits (per-project) ═══ -->
+          <template v-else-if="activeTab === 'limits'">
+            <div class="content-header">
+              <h1 class="content-title">Project Limits</h1>
+              <p class="content-subtitle">
+                Execution boundaries for
+                <strong>{{ store.activeProject?.name || 'current project' }}</strong>
+              </p>
+            </div>
+
+            <!-- Success Toast -->
+            <div v-if="limitsSaved" class="toast toast-success">
+              <Icon name="check" :size="14" />
+              <span>Limits saved!</span>
+            </div>
+
+            <!-- Error Toast -->
+            <div v-if="limitsError" class="toast toast-error">
+              <Icon name="alert-circle" :size="14" />
+              <span>{{ limitsError }}</span>
+              <button class="toast-dismiss" @click="limitsError = null">
+                <Icon name="x" :size="12" />
+              </button>
+            </div>
+
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="database" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">Iteration Limits</h3>
+                  <p class="section-desc">Control how many cycles each goal and phase can run</p>
+                </div>
+              </div>
+              <div class="limits-form">
+                <div class="input-group">
+                  <label class="input-label">Max iterations per goal</label>
+                  <input
+                    v-model.number="limitsForm.max_iterations_per_goal"
+                    type="number"
+                    class="input"
+                    min="1"
+                    max="999"
+                  />
+                  <p class="input-hint">Total iterations before a goal is considered complete</p>
+                </div>
+                <div class="input-group">
+                  <label class="input-label">Max iterations per phase</label>
+                  <input
+                    v-model.number="limitsForm.max_iterations_per_phase"
+                    type="number"
+                    class="input"
+                    min="1"
+                    max="100"
+                  />
+                  <p class="input-hint">Iterations per phase (plan → implement → review → etc.)</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="clock" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">Timeouts</h3>
+                  <p class="section-desc">Session and phase time limits</p>
+                </div>
+              </div>
+              <div class="limits-form">
+                <div class="input-group">
+                  <label class="input-label">Session TTL (seconds)</label>
+                  <input
+                    v-model.number="limitsForm.session_ttl_seconds"
+                    type="number"
+                    class="input"
+                    min="60"
+                    max="86400"
+                    step="60"
+                  />
+                  <p class="input-hint">How long a session lives before being recycled (1h – 24h)</p>
+                </div>
+                <div class="input-group">
+                  <label class="input-label">Phase timeout (seconds)</label>
+                  <input
+                    v-model.number="limitsForm.phase_timeout_seconds"
+                    type="number"
+                    class="input"
+                    min="30"
+                    max="3600"
+                    step="10"
+                  />
+                  <p class="input-hint">Max wall-clock time for a single phase before timeout</p>
+                </div>
+              </div>
+
+              <div class="limits-actions">
+                <button
+                  class="btn btn-primary"
+                  :disabled="limitsSaving"
+                  @click="saveLimits"
+                >
+                  <Icon v-if="limitsSaving" name="refresh" :size="14" class="animate-spin" />
+                  <Icon v-else name="check" :size="14" />
+                  {{ limitsSaving ? 'Saving...' : 'Save Limits' }}
+                </button>
+                <button
+                  class="btn btn-ghost"
+                  @click="loadLimits()"
+                >
+                  <Icon name="refresh" :size="14" />
+                  Reset
+                </button>
+              </div>
             </div>
           </template>
 
@@ -695,6 +901,17 @@ async function handleCheckUpdate() {
   color: var(--text-muted);
 }
 
+.section-note {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  padding: var(--space-3);
+  margin-top: var(--space-2);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
 .info-grid {
   display: flex;
   flex-direction: column;
@@ -766,6 +983,12 @@ async function handleCheckUpdate() {
   background: rgba(239, 68, 68, 0.1);
   color: var(--error);
   border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.toast-success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success, #22c55e);
+  border: 1px solid rgba(34, 197, 94, 0.2);
 }
 
 .toast-dismiss {
@@ -1107,6 +1330,30 @@ async function handleCheckUpdate() {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+.input-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ═══ Limits Form ═══ */
+
+.limits-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+}
+
+.limits-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .input-label {

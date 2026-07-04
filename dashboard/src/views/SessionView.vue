@@ -186,8 +186,7 @@ onMounted(async () => {
 <style scoped>
 .session-view {
   padding: var(--space-6);
-  max-width: 1000px;
-  margin: 0 auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);

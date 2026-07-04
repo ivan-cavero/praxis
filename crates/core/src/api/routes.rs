@@ -130,10 +130,6 @@ impl ApiServer {
             .route("/api/vault/keys", post(vault::set_key))
             .route("/api/vault/keys/{provider}", delete(vault::delete_key))
             .route("/api/inject", post(routes::inject))
-            .route("/api/sessions", get(sessions::list))
-            .route("/api/sessions/{id}", get(sessions::get_one))
-            .route("/api/sessions/{id}/stop", post(sessions::stop))
-            .route("/api/agents", get(sessions::list_agents))
             .route("/ws/global", get(super::ws::ws_handler))
             .with_state(Arc::new(state));
 
@@ -239,6 +235,22 @@ impl ApiServer {
                 println!("{}", qr_string);
                 println!();
             }
+        }
+
+        // Generate and display first-run admin token
+        let first_run_token = super::auth::generate_first_run_token(&auth)
+            .ok();
+        if let Some(ref token) = first_run_token {
+            println!();
+            println!("╔══════════════════════════════════════════════════════════╗");
+            println!("║     🔑 FIRST-RUN ADMIN TOKEN                           ║");
+            println!("║  Copy this token and paste it in the dashboard login:  ║");
+            println!("║                                                          ║");
+            println!("║  {}", token);
+            println!("║                                                          ║");
+            println!("║  Expires in 24 hours                                     ║");
+            println!("╚══════════════════════════════════════════════════════════╝");
+            println!();
         }
 
         let state = AppState {

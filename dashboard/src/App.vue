@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, provide, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from './stores/app'
-import { setApiPort } from './composables/useApi'
-import { useWebSocket } from './composables/useWebSocket'
+import { useApi, apiPort, setApiPort } from './composables/useApi'
 import { useUpdater } from './composables/useUpdater'
 import TitleBar from './components/layout/TitleBar.vue'
 import Icon from './components/ui/Icon.vue'
@@ -14,7 +13,7 @@ import SettingsDialog from './views/SettingsDialog.vue'
 const router = useRouter()
 const route = useRoute()
 const store = useAppStore()
-const ws = useWebSocket()
+const api = useApi()
 const updater = useUpdater()
 
 // ─── Store refs ───────────────────────────────────────────────────
@@ -33,6 +32,8 @@ function openSettings() {
 function closeSettings() {
   showSettings.value = false
 }
+
+provide('openSettings', openSettings)
 
 // ─── New Project ─────────────────────────────────────────────────
 const showNewProject = ref(false)
@@ -105,22 +106,61 @@ async function restartApp() {
 // ─── Project selection ────────────────────────────────────────────
 function handleProjectClick(projectId: string) {
   store.selectProject(projectId)
-  // Could navigate to project detail or just select
+  router.push(`/projects/${projectId}/chat`)
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+let authCheckAttempts = 0
+const MAX_AUTH_RETRIES = 15
+
+// When the API port becomes available (Tauri api:ready event), retry auth immediately
+watch(apiPort, (port) => {
+  if (port !== null && !isAuthenticated.value) {
+    authCheckAttempts = 0
+    attemptAuth()
+  }
+})
+
+/** Try to authenticate with the saved token. Returns 'valid', 'invalid', or 'retry'. */
+async function checkSavedToken(): Promise<'valid' | 'invalid' | 'retry'> {
+  const token = localStorage.getItem('praxis-token')
+  if (!token) return 'invalid'
+
+  try {
+    // A protected endpoint call validates the token
+    await api.getProjects()
+    return 'valid'
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : ''
+    if (message.startsWith('API 401')) {
+      // Token expired or invalid — clear it
+      localStorage.removeItem('praxis-token')
+      return 'invalid'
+    }
+    // Network error — API might not be ready yet (Tauri mode)
+    return 'retry'
+  }
+}
+
+/** Attempt auth with retry logic (handles Tauri api:ready delay). */
+async function attemptAuth() {
+  const result = await checkSavedToken()
+  if (result === 'valid') {
+    isAuthenticated.value = true
+    store.refreshAll()
+    refreshInterval = setInterval(() => store.refreshAll(), 10000)
+  } else if (result === 'retry' && authCheckAttempts < MAX_AUTH_RETRIES) {
+    authCheckAttempts++
+    setTimeout(attemptAuth, 800)
+  }
+  // 'invalid' or exhausted retries → login screen stays visible
+}
 
 onMounted(async () => {
   await listenTauriEvents()
   updater.checkForUpdates()
-
-  const token = localStorage.getItem('praxis-token')
-  if (token) {
-    isAuthenticated.value = true
-    store.refreshAll()
-    refreshInterval = setInterval(() => store.refreshAll(), 10000)
-  }
+  attemptAuth()
 })
 
 onUnmounted(() => {
@@ -240,25 +280,13 @@ function handleLogin(token: string) {
           <!-- Spacer -->
           <div class="sidebar-spacer" />
 
-          <!-- Settings & Status -->
-          <div class="sidebar-status">
-            <button
-              class="nav-item settings-btn"
-              @click="openSettings()"
-            >
-              <Icon name="settings" :size="18" class="nav-icon" />
-              <span class="nav-label">Settings</span>
-            </button>
-          </div>
-
           <div class="sidebar-footer">
-            <div class="status-row" :class="{ online: ws.connected.value }">
-              <span class="status-dot" />
-              <span class="status-label">{{ ws.connected.value ? 'Connected' : 'Offline' }}</span>
-            </div>
-            <div class="sidebar-user">
+            <div class="sidebar-user" @click="openSettings()">
               <div class="user-avatar">I</div>
               <span class="user-name">Ivan</span>
+              <button class="sidebar-gear-btn" title="Settings">
+                <Icon name="settings" :size="16" />
+              </button>
             </div>
           </div>
         </aside>
@@ -277,7 +305,7 @@ function handleLogin(token: string) {
     />
 
     <!-- New Project Modal -->
-    <div v-if="showNewProject" class="modal-overlay" @click.self="showNewProject = false" @keydown.esc="showNewProject = false">
+    <div v-if="showNewProject" class="modal-overlay" @click.self="showNewProject = false">
       <div class="modal-card modal-card-sm">
         <div class="modal-header">
           <h3 class="modal-title">New Project</h3>
@@ -427,42 +455,46 @@ function handleLogin(token: string) {
   flex: 1;
 }
 
-.sidebar-status {
-  padding: var(--space-1) var(--space-3) 0;
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
 }
 
-.settings-btn {
-  border: 1px solid transparent;
-}
-
-.settings-btn:hover {
-  border-color: var(--border-subtle);
-}
-
-.status-row {
+.sidebar-user {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  width: 100%;
+}
+
+.sidebar-user:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-gear-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.status-row.online {
-  color: var(--primary);
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-disabled);
-  flex-shrink: 0;
-}
-
-.status-row.online .status-dot {
-  background: var(--primary);
-  box-shadow: 0 0 6px var(--primary-glow);
+.sidebar-gear-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 /* ─── Update Banner ──────────────────────────────────────────── */

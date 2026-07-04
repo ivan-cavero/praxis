@@ -151,8 +151,7 @@ onUnmounted(() => {
 <style scoped>
 .sessions-view {
   padding: var(--space-6);
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
   flex: 1;
   overflow-y: auto;
   min-height: 0;

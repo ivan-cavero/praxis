@@ -16,7 +16,7 @@ import { ref } from 'vue'
 
 // In Tauri, this gets updated via `api:ready` event.
 // In browser dev mode, Vite proxies `/api` to the API server.
-const apiPort = ref<number | null>(null)
+export const apiPort = ref<number | null>(null)
 
 /** Remote API override (set when connected to a remote server). */
 const remoteApi = ref<{ host: string; port: number; token: string } | null>(null)
