@@ -79,20 +79,28 @@ jobs:
           bun install
           bun run build
 
-      - name: Install cargo-tauri CLI
-        run: cargo install tauri-cli --version "^2"
+      - name: Install Tauri CLI (npm — prebuilt binary)
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: Install AppImage tooling (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get install -y libfuse2
+          pip3 install --break-system-packages appimage-tools 2>/dev/null || true
 
       - name: Build Tauri app (with updater artifacts)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          # The `cargo tauri build` generates updater artifacts (.sig + .tar.gz)
+          # The `tauri build` generates updater artifacts (.sig + .tar.gz)
           # when the updater plugin is configured in tauri.conf.json.
           #
           # The TAURI_SIGNING_* env vars are picked up automatically by
           # the Tauri bundler to sign the update artifacts.
-          cargo tauri build --bundles ${{ matrix.bundle }}
+          # Run from desktop/ so tauri finds tauri.conf.json
+          cd desktop
+          tauri build --bundles ${{ matrix.bundle }}
 
       - name: Collect artifacts
         shell: bash
