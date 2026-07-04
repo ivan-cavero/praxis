@@ -93,14 +93,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          # The `tauri build` generates updater artifacts (.sig + .tar.gz)
-          # when the updater plugin is configured in tauri.conf.json.
-          #
-          # The TAURI_SIGNING_* env vars are picked up automatically by
-          # the Tauri bundler to sign the update artifacts.
-          # Run from desktop/ so tauri finds tauri.conf.json
-          cd desktop
-          tauri build --bundles ${{ matrix.bundle }}
+          # Dashboard is already built in the previous step.
+          # CI runs beforeBuildCommand from repo root (not from app_dir),
+          # so we override it to empty to skip rebuilding.
+          echo '{"build":{"beforeBuildCommand":""}}' > /tmp/tauri-ci.json
+          tauri build \
+            --config desktop/tauri.conf.json \
+            --config /tmp/tauri-ci.json \
+            --bundles ${{ matrix.bundle }}
 
       - name: Collect artifacts
         shell: bash
