@@ -14,6 +14,7 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconX,
+  IconMinus,
   IconPlayerPlay,
   IconPlayerStop,
   IconRefresh,
@@ -43,6 +44,10 @@ import {
   IconDatabase,
   IconChartLine,
   IconDeviceMobile,
+  IconInfoCircle,
+  IconLoader,
+  IconAlertCircle,
+  IconGlobe,
   type Icon,
 } from '@tabler/icons-vue'
 
@@ -60,8 +65,10 @@ const iconMap: Record<string, Icon> = {
   circle: IconCircleDot,
   dot: IconCircleDot,
   alert: IconAlertTriangle,
+  'alert-circle': IconAlertCircle,
   check: IconCheck,
   x: IconX,
+  minus: IconMinus,
   play: IconPlayerPlay,
   stop: IconPlayerStop,
   refresh: IconRefresh,
@@ -96,6 +103,9 @@ const iconMap: Record<string, Icon> = {
   database: IconDatabase,
   phone: IconDeviceMobile,
   mobile: IconDeviceMobile,
+  info: IconInfoCircle,
+  globe: IconGlobe,
+  loader: IconLoader,
 }
 
 const props = defineProps<{

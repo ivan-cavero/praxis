@@ -191,6 +191,9 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .back-btn {

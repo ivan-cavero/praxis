@@ -275,6 +275,9 @@ onUnmounted(() => {
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .dashboard-header {

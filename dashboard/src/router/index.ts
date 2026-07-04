@@ -23,11 +23,8 @@ const router = createRouter({
       name: 'session-detail',
       component: () => import('../views/SessionView.vue'),
     },
-    {
-      path: '/settings',
-      name: 'settings',
-      component: () => import('../views/SettingsView.vue'),
-    },
+    // Settings is now a dialog overlay (not a route).
+    // If you need a direct URL, capture it and open the dialog programmatically.
   ],
 })
 

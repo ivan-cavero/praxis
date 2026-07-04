@@ -153,6 +153,9 @@ onUnmounted(() => {
   padding: var(--space-6);
   max-width: 1200px;
   margin: 0 auto;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .sessions-header {

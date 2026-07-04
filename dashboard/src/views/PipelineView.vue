@@ -167,6 +167,9 @@ watch(() => ws.events.value, (allEvents) => {
   gap: var(--space-8);
   max-width: 1000px;
   margin: 0 auto;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .pipeline-header {
