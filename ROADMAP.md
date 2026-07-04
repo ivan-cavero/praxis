@@ -33,7 +33,7 @@ What ALREADY exists and compiles (291 tests pass):
 | Vault (credentials, keyring/env) | `[x]` |
 | API server (axum: REST + WebSocket + JWT auth) | `[x]` |
 | CLI (clap): init, run, status, server, test... | `[~]` (many commands are stubs) |
-| Desktop (Tauri v2) | `[~]` (minimal shell) |
+| Desktop (Tauri v2) | `[x]` (tray, updater, embedded core) |
 | Dashboard (Vue 3) | `[x]` (full: 5 views, 6 components, router, WS, Pinia) |
 
 ---
@@ -68,9 +68,14 @@ gates, real checkpointing.
 - [x] **Agent.execute() calls the real LLM** — connected to `ProviderRouter`,
   calls `provider.chat()` directly.
 - [x] **System prompt assembly** — system_prompt + role + task context.
-- [ ] **Tool execution** — agents can call MCP tools (filesystem: read/write/edit)
-  during `execute()`.
-- [ ] **Streaming output** — `provider.stream()` → EventBus → CLI/dashboard.
+- [x] **Tool execution** — agents call MCP tools (filesystem: read/write/edit)
+  during `execute()`. Tool calls are parsed from ` ```tool JSON blocks`, executed
+  via `McpHost`, and results are appended. If tools were called, the agent is
+  **re-invoked with tool results** in the same iteration so the LLM can react
+  to tool output. `ToolCalled` events published to EventBus.
+- [x] **Streaming output** — `provider.stream()` → EventBus → CLI (**done**) +
+  Dashboard (**new**). PipelineView and SessionView show real-time `AgentOutput`
+  streaming text. `getAgentStream()` / `filterEvents()` helpers in useWebSocket.
 
 ### 1.3 Completion Criteria — Outcome-Based
 
@@ -214,7 +219,7 @@ monitor and manage.
 - [x] **InjectPanel** — target selector, type, message, send.
 - [x] **ProjectConfig** — TOML editor with save support.
 - [x] **useWebSocket** composable — auto-reconnect, backoff, event buffering.
-- [ ] **Responsive** — 3-col desktop, 2-col tablet, 1-col mobile.
+- [x] **Responsive** — 3-col desktop, 2-col tablet, 1-col mobile. Sidebar collapses to icon-only at tablet, top nav bar at mobile. SessionsView has mobile card layout.
 
 🧪 **Milestone:** `praxis server` on VPS → browser to `http://vps:8080` → modern
 dark dashboard shows the loop live, tokens, agent health. Inject instruction
@@ -228,28 +233,39 @@ from the panel → reaches the agent.
 
 ### 4.1 Desktop App Base
 
-- [ ] **Tauri v2** — window 1280x800, title "praxis".
-- [ ] **Core embedded** — `CoreRuntime` initialized in setup.
-- [ ] **Same UI as dashboard** — the Vue dashboard served via Tauri WebView.
-- [ ] **System tray** — show/hide, new session, settings, quit.
-- [ ] **Auto-update** — `tauri-plugin-updater` from GitHub releases.
+- [x] **Tauri v2** — window 1280x800, title "praxis".
+- [x] **Core embedded** — `CoreRuntime` initialized in setup.
+- [x] **Same UI as dashboard** — the Vue dashboard served via Tauri WebView.
+- [x] **System tray** — show/hide, new session, settings, quit. Left-click toggles window visibility. Close button hides instead of quitting.
+- [x] **Auto-update** — `tauri-plugin-updater` registered. Endpoints configured for GitHub releases. Missing: pubkey (generate with `cargo tauri signer generate`), frontend JS integration.
 
 ### 4.2 Local Management
 
-- [ ] **Projects** — create, configure, archive, list.
-- [ ] **Agents** — configure roles, models, system prompts, tools.
-- [ ] **Models/Providers** — add API keys via secure vault, test connections.
-- [ ] **Goals/Sessions** — create goals, launch, stop, watch live.
-- [ ] **Config** — forge.toml editor with validation.
+- [x] **Projects** — create, configure, archive, list. Full CRUD via REST API + store.
+- [x] **Agents** — configure roles, models, system prompts, tools. AgentsConfig panel in Settings → Skills.
+- [x] **Models/Providers** — add API keys via secure vault, test connections.
+- [x] **Goals/Sessions** — create goals, launch, stop, watch live. GoalLaunch panel on DashboardView. Uses Tauri IPC in desktop mode.
+- [x] **Config** — forge.toml editor with validation. ProjectConfig.vue with TOML text editor + AgentsConfig panel.
 
 ### 4.3 Remote Connection
 
-- [ ] **Connection manager** — list of remote VPS (host, port, token).
-- [ ] **Add remote** — form: host, port, auth token. Test connection.
-- [ ] **Switch local/remote** — toggle between local and remote instance.
-- [ ] **Remote dashboard** — same UI but connected to the remote VPS API.
-- [ ] **Remote management** — everything from local management, but against VPS.
-- [ ] **Connection status** — connection indicator, latency, auto-reconnect.
+- [x] **Pairing system (Fase A)** — QR-based device pairing. `POST /api/pair` generates code, browser confirmation page, JWT retrieval via `/api/pair/{code}/token`. In-memory codes with 5min TTL + background expiry.
+- [x] **CLI --pair** — `praxis server --pair` enables pairing mode, prints ASCII QR in terminal.
+- [x] **Device management** — devices stored in `{data_dir}/devices.json`, REST endpoints for list/revoke, JWT auth with "device" role.
+- [x] **Frontend Remote Connections** — Settings tab with saved connections (localStorage), "Add Remote" modal with QR rendering + polling + JWT retrieval. Works on LAN.
+- [x] **Connection toggle + API proxy** — header indicator (green dot + host) when remote, dropdown to switch local/remote, all API calls redirect to remote when in remote mode.
+- [x] **Designed for Fase B** — PairingState, Device, JWT claims all extendable. When `praxis.dev` exists, QR will point to cloud relay instead of direct server URL.
+
+#### 🌐 Fase B — praxis.dev Platform (FUTURE)
+
+- [ ] **praxis.dev domain** — register domain, deploy cloud API + web app.
+- [ ] **OAuth login** — Google/GitHub login via praxis.dev (not per-VPS). Users create ONE account.
+- [ ] **Cloud account** — accounts table in cloud DB (PostgreSQL), JWT issued by praxis.dev.
+- [ ] **Device registry** — VPS/desktops register themselves to the user's praxis.dev account.
+- [ ] **Cloud relay pairing** — QR points to `app.praxis.dev/pair?code=X&host=...` instead of direct VPS URL.
+- [ ] **Multi-device sync** — connections, config, and preferences synced across devices via praxis.dev.
+- [ ] **Remote tunnel** — if VPS has no public IP, praxis.dev relays the connection (Tailscale-like).
+- [ ] **Web dashboard** — `app.praxis.dev` web app to manage all your devices from anywhere.
 
 🧪 **Milestone:** Desktop app open → manage local project → add remote VPS →
 connect → see the remote VPS dashboard → launch a remote goal → monitor it live

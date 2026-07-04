@@ -2,12 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
   "productName": "praxis",
   "identifier": "com.praxis.desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "build": {
     "frontendDist": "../dashboard/dist",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "cd ../dashboard && bun run dev",
     "beforeBuildCommand": "cd ../dashboard && bun run build"
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/128x128.png",
+      "icons/256x256.png"
+    ]
   },
   "app": {
     "windows": [
@@ -32,7 +42,8 @@
       "endpoints": [
         "https://github.com/ivan-cavero/praxis/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxREI4MTVDMjBGQjg1MEMKUldRTWhmc2dYSUhiZ2NSdnZXaW1IZmY1ZWQyT2cvdTl5YWNHNTdheWM2aE42NFVyU05VOEx6KzgK",
+      "dangerousInsecureTransportProtocol": false
     }
   }
 }

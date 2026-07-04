@@ -193,7 +193,11 @@ enum Commands {
     Dashboard,
 
     /// Start the API server (REST + WebSocket)
-    Server,
+    Server {
+        /// Enable QR pairing system for remote connections
+        #[arg(long)]
+        pair: bool,
+    },
 
     /// Open terminal UI monitor
     Monitor,
@@ -364,7 +368,8 @@ async fn main() -> anyhow::Result<()> {
                 } else if headless {
                     // Headless: JSON output
                     println!("{} Running in headless mode", "→".cyan());
-                    let mut runtime = praxis_core::CoreRuntime::new().await?;
+                    let mut runtime = praxis_core::CoreRuntime::new().await?
+                        .with_default_memory();
 
                     // Apply completion criterion if set
                     if completion != "coding" {
@@ -405,6 +410,7 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!(e))?;
                     let mut runtime = praxis_core::CoreRuntime::new()
                         .await?
+                        .with_default_memory()
                         .with_event_store(store);
 
                     // Apply completion criterion if set
@@ -549,6 +555,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut runtime = praxis_core::CoreRuntime::new()
                     .await?
+                    .with_default_memory()
                     .with_event_store(store);
 
                 let vault = load_vault();
@@ -1080,7 +1087,7 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::Dashboard => println!("{} Opening dashboard...", "→".cyan()),
-        Commands::Server => {
+        Commands::Server { pair } => {
             // Read vault password from env if set
             let vault_password = std::env::var("VAULT_PASSWORD").ok();
             let data_dir = get_data_dir();
@@ -1097,6 +1104,7 @@ async fn main() -> anyhow::Result<()> {
                     cors_origins: vec!["*".to_string()],
                     vault_password,
                     data_dir,
+                    enable_pairing: pair,
                 }
             );
 

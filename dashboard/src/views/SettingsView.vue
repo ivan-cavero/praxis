@@ -2,6 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import Icon from '../components/ui/Icon.vue'
+import AgentsConfig from '../components/dashboard/AgentsConfig.vue'
+import RemoteConnections from '../components/dashboard/RemoteConnections.vue'
 
 const emit = defineEmits<{
   back: []
@@ -53,6 +55,7 @@ const settingsNavItems = [
   { id: 'model-settings', label: 'Model settings', icon: 'server' },
   { id: 'skills', label: 'Skills', icon: 'code' },
   { id: 'subagents', label: 'Subagents', icon: 'robot' },
+  { id: 'remote', label: 'Remote', icon: 'globe' },
   { id: 'mcp-servers', label: 'MCP Servers', icon: 'terminal' },
   { id: 'plugins', label: 'Plugins', icon: 'plug' },
   { id: 'commands', label: 'Commands', icon: 'command' },
@@ -354,16 +357,22 @@ onMounted(() => {
         </div>
       </template>
 
-      <!-- Skills Settings -->
+      <!-- Agents (Skills) Settings -->
       <template v-else-if="activeSettingsTab === 'skills'">
         <div class="settings-header">
-          <h1 class="settings-title">Skills</h1>
-          <p class="settings-subtitle">Manage agent skills and capabilities.</p>
+          <h1 class="settings-title">Agent Roles</h1>
+          <p class="settings-subtitle">Configure each agent's model, system prompt, and tools. Changes are saved to the project's forge.toml.</p>
         </div>
-        <div class="settings-placeholder">
-          <Icon name="code" :size="48" class="opacity-40" />
-          <p>Skills management coming soon</p>
+        <AgentsConfig />
+      </template>
+
+      <!-- Remote Connections -->
+      <template v-else-if="activeSettingsTab === 'remote'">
+        <div class="settings-header">
+          <h1 class="settings-title">Remote Connections</h1>
+          <p class="settings-subtitle">Connect to remote praxis servers (VPS, other desktops) via QR pairing.</p>
         </div>
+        <RemoteConnections />
       </template>
 
       <!-- Other settings views -->

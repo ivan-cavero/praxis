@@ -30,6 +30,11 @@ impl TokenCounter {
         Self { chars_per_token }
     }
 
+    /// Create a token counter with the default approximation (4 chars/token).
+    pub fn default_token_counter() -> Self {
+        Self { chars_per_token: 4.0 }
+    }
+
     /// Estimate tokens for a string.
     pub fn count_tokens(&self, text: &str) -> u32 {
         (text.len() as f32 / self.chars_per_token).ceil() as u32

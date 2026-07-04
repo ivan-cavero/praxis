@@ -74,7 +74,8 @@ impl AppState {
 
     /// Initialize the CoreRuntime with an optional event store database path.
     pub async fn init_runtime(&self, db_path: Option<PathBuf>) -> Result<(), String> {
-        let mut rt = CoreRuntime::new().await.map_err(|e| e.to_string())?;
+        let mut rt = CoreRuntime::new().await.map_err(|e| e.to_string())?
+            .with_default_memory();
 
         if let Some(ref path) = db_path {
             let store = SqliteEventStore::new(path).map_err(|e| e.to_string())?;

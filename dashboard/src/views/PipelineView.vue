@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import Icon from '../components/ui/Icon.vue'
-import { useWebSocket, getEventPayload, type PhaseChangedEvent, type AgentCompletedEvent, type AgentStartedEvent } from '../composables/useWebSocket'
+import { useWebSocket, getEventPayload, type PhaseChangedEvent, type AgentCompletedEvent, type AgentStartedEvent, type AgentOutputEvent } from '../composables/useWebSocket'
 
 const ws = useWebSocket()
 
@@ -30,6 +30,16 @@ interface LogEntry {
 }
 
 const log = ref<LogEntry[]>([])
+
+// Track accumulated streaming output per agent
+const agentOutputs = ref<Record<string, string>>({})
+const activeAgent = ref<string | null>(null)
+
+// Latest streaming text for the active agent
+const activeAgentStream = computed(() => {
+  if (!activeAgent.value) return ''
+  return agentOutputs.value[activeAgent.value] || ''
+})
 
 // Watch for PhaseChanged events via WebSocket
 watch(() => ws.events.value, (allEvents) => {
@@ -71,6 +81,19 @@ watch(() => ws.events.value, (allEvents) => {
         text: `${agentDone.role} (${agentDone.agent}) ${agentDone.status} in ${agentDone.duration_ms}ms`,
         kind: 'agent' as const,
       }]
+      // Keep the output visible even after completion
+      continue
+    }
+
+    // Accumulate streaming output per agent
+    const agentOut = getEventPayload<AgentOutputEvent>(event, 'AgentOutput')
+    if (agentOut && agentOut.delta) {
+      const current = agentOutputs.value[agentOut.agent] || ''
+      agentOutputs.value = {
+        ...agentOutputs.value,
+        [agentOut.agent]: current + agentOut.delta,
+      }
+      activeAgent.value = agentOut.agent
     }
   }
 }, { deep: true })</script>
@@ -103,8 +126,17 @@ watch(() => ws.events.value, (allEvents) => {
             <span v-if="phase.active" class="status-dot live" :style="{ background: phase.color }" />
             <span v-else class="status-dot" />
             {{ phase.active ? 'In Progress' : 'Pending' }}
-          </div>
-        </div>
+      </div>
+    </div>
+
+    <!-- Agent streaming output -->
+    <div v-if="activeAgent" class="stream-panel">
+      <div class="stream-header">
+        <h2 class="stream-title">Agent Output: {{ activeAgent }}</h2>
+        <span class="stream-badge">LIVE</span>
+      </div>
+      <pre class="stream-content"><code>{{ activeAgentStream }}</code></pre>
+    </div>
       </div>
     </div>
 
@@ -333,5 +365,51 @@ watch(() => ws.events.value, (allEvents) => {
 
 .log-entry.gate .log-text {
   color: var(--warning);
+}
+
+/* Agent streaming output panel */
+.stream-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #0f0f11;
+}
+
+.stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.stream-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stream-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  animation: pulse 2s infinite;
+}
+
+.stream-content {
+  padding: var(--space-4);
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #e4e4e7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

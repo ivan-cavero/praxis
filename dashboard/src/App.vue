@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAppStore } from './stores/app'
 import { setApiPort } from './composables/useApi'
 import { useWebSocket } from './composables/useWebSocket'
+import { useUpdater } from './composables/useUpdater'
 import Icon from './components/ui/Icon.vue'
 import LoginView from './views/LoginView.vue'
 
@@ -11,6 +12,7 @@ const router = useRouter()
 const route = useRoute()
 const store = useAppStore()
 const ws = useWebSocket()
+const updater = useUpdater()
 
 const isAuthenticated = ref(false)
 
@@ -34,6 +36,13 @@ async function listenTauriEvents() {
     await listen('core:ready', () => {
       // Core runtime ready
     })
+    // System tray events
+    await listen('tray:new_session', () => {
+      router.push('/sessions')
+    })
+    await listen('tray:settings', () => {
+      router.push('/settings')
+    })
   } catch {
     // Not in Tauri — running in browser dev mode
   }
@@ -41,6 +50,9 @@ async function listenTauriEvents() {
 
 onMounted(async () => {
   await listenTauriEvents()
+
+  // Check for updates (Tauri only — silently ignored in browser)
+  updater.checkForUpdates()
 
   const token = localStorage.getItem('praxis-token')
   if (token) {
@@ -60,12 +72,67 @@ function handleLogin(token: string) {
   store.refreshAll()
   refreshInterval = setInterval(() => store.refreshAll(), 10000)
 }
+
+/** Restart the app — uses Tauri relaunch in desktop, falls back to page reload. */
+async function restartApp() {
+  try {
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+  } catch {
+    window.location.reload()
+  }
+}
 </script>
 
 <template>
   <LoginView v-if="!isAuthenticated" @login="handleLogin" />
 
-  <div v-else class="layout">
+  <!-- Update available banner -->
+  <div
+    v-if="isAuthenticated && updater.updateAvailable.value && !updater.dismissed.value"
+    class="update-banner"
+  >
+    <div class="update-banner-content">
+      <Icon name="download" :size="16" class="update-icon" />
+      <span v-if="updater.installDone.value">
+        Update {{ updater.updateVersion.value }} installed — restart to apply
+      </span>
+      <span v-else-if="updater.installing.value">
+        Installing update...
+      </span>
+      <span v-else-if="updater.downloading.value">
+        Downloading update {{ updater.updateVersion.value }} —
+        {{ updater.progressPercent() }}%
+      </span>
+      <span v-else>
+        Update {{ updater.updateVersion.value }} available
+        <span v-if="updater.updateBody.value" class="update-body">
+          — {{ updater.updateBody.value.slice(0, 80) }}...
+        </span>
+      </span>
+    </div>
+    <div class="update-banner-actions">
+      <button
+        v-if="!updater.downloading.value && !updater.installDone.value"
+        class="update-btn"
+        @click="updater.installUpdate()"
+      >
+        Install
+      </button>
+      <button
+        v-if="updater.installDone.value"
+        class="update-btn"
+        @click="restartApp()"
+      >
+        Restart
+      </button>
+      <button class="update-dismiss" @click="updater.dismissUpdate()" title="Dismiss">
+        &times;
+      </button>
+    </div>
+  </div>
+
+  <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="logo-mark">P</div>
@@ -139,5 +206,77 @@ function handleLogin(token: string) {
 .status-item.online .status-dot {
   background: var(--primary);
   box-shadow: 0 0 6px var(--primary-glow);
+}
+
+/* ─── Update Banner ──────────────────────────────────────────── */
+
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--primary);
+  color: var(--bg-base);
+  font-size: 13px;
+}
+
+.update-banner-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.update-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.update-body {
+  opacity: 0.7;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.update-btn {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--bg-base);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--bg-base);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.update-btn:hover {
+  background: var(--bg-base);
+  color: var(--primary);
+}
+
+.update-dismiss {
+  padding: 0 var(--space-1);
+  border: none;
+  background: transparent;
+  color: var(--bg-base);
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.6;
+  line-height: 1;
+}
+
+.update-dismiss:hover {
+  opacity: 1;
 }
 </style>

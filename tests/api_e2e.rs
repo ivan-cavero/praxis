@@ -14,6 +14,8 @@ async fn start_test_server() -> u16 {
 
     let state = praxis_core::api::routes::AppState {
         version: "test-0.1.0".to_string(),
+        port: 0,
+        hostname: "localhost".to_string(),
         started_at: chrono::Utc::now(),
         bus,
         auth,
@@ -22,6 +24,16 @@ async fn start_test_server() -> u16 {
             None,
         )),
         data_dir: std::env::temp_dir(),
+        token_counters: std::sync::Arc::new(
+            std::sync::RwLock::new(
+                praxis_core::api::routes::TokenCounters::default(),
+            ),
+        ),
+        session_registry: std::sync::Arc::new(
+            std::sync::RwLock::new(Vec::new()),
+        ),
+        event_store: None,
+        pairing: None,
     };
 
     let app = Router::new()

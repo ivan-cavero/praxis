@@ -13,3 +13,5 @@ pub mod drift_guard;
 pub mod summarizer;
 
 pub use base::{BaseAgent, AgentFactory};
+pub use memory_keeper::MemoryKeeper;
+pub use summarizer::SummarizerAgent;

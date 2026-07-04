@@ -16,6 +16,8 @@ use praxis_agent_traits::persistence::EventStore;
 #[derive(Clone)]
 pub struct AppState {
     pub version: String,
+    pub port: u16,
+    pub hostname: String,
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub bus: crate::EventBus,
     pub auth: std::sync::Arc<super::auth::AuthState>,
@@ -29,6 +31,8 @@ pub struct AppState {
     /// Persistent event store (SQLite) shared with `praxis run --goal`.
     /// Used to read persisted sessions from other processes.
     pub event_store: Option<std::sync::Arc<praxis_persistence::SqliteEventStore>>,
+    /// Optional pairing system (enabled via --pair flag).
+    pub pairing: Option<std::sync::Arc<super::pairing::PairingState>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -58,6 +62,8 @@ pub struct ApiServerConfig {
     pub vault_password: Option<String>,
     /// Data directory (%APPDATA%/praxis or ~/.config/praxis).
     pub data_dir: std::path::PathBuf,
+    /// Enable QR pairing system for remote connections.
+    pub enable_pairing: bool,
 }
 
 impl Default for ApiServerConfig {
@@ -67,6 +73,7 @@ impl Default for ApiServerConfig {
             cors_origins: vec!["*".to_string()],
             vault_password: None,
             data_dir: std::path::PathBuf::from("."),
+            enable_pairing: false,
         }
     }
 }
@@ -98,14 +105,23 @@ impl ApiServer {
             .route("/api/sessions/{id}", get(sessions::get_one))
             .route("/api/sessions/{id}/stop", post(sessions::stop))
             .route("/api/agents", get(sessions::list_agents))
+            .route("/api/devices", get(super::pairing::list_devices))
+            .route("/api/devices/{device_id}", delete(super::pairing::revoke_device))
             .with_state(Arc::new(state.clone()))
             .layer(axum::middleware::from_fn_with_state(
                 auth_state,
                 super::auth::auth_middleware,
             ));
 
-        // Public routes
+        // Public routes (no auth required)
         let public_routes = Router::new()
+            // Pairing endpoints — no auth (they ARE the auth mechanism)
+            .route("/api/pair", post(super::pairing::create_pairing))
+            .route("/api/pair/{code}", get(super::pairing::pairing_page))
+            .route("/api/pair/{code}/confirm", post(super::pairing::confirm_pairing))
+            .route("/api/pair/{code}/status", get(super::pairing::get_pairing_status))
+            .route("/api/pair/{code}/token", post(super::pairing::get_pairing_token))
+            // Existing public routes
             .route("/api/health", get(routes::health))
             .route("/api/metrics/tokens", get(routes::token_metrics))
             .route("/api/metrics/summary", get(routes::metrics_summary))
@@ -187,8 +203,48 @@ impl ApiServer {
             }
         });
 
+        // Optionally create pairing state (enabled via --pair flag or config)
+        let pairing = self.config.enable_pairing.then(|| {
+            std::sync::Arc::new(super::pairing::PairingState::new(300)) // 5 min TTL
+        });
+
+        // Determine hostname
+        let hostname = gethostname::gethostname()
+            .to_string_lossy()
+            .to_string();
+
+        // If pairing is enabled, generate and display the QR immediately
+        if let Some(ref pairing_state) = pairing {
+            let (pair_code, path) = pairing_state.generate().await;
+            let qr_url = format!("http://{hostname}:{}{path}", self.config.port);
+
+            // Generate ASCII QR and print it
+            if let Ok(qr_code) = qrcode::QrCode::new(&qr_url) {
+                let qr_string = qr_code
+                    .render()
+                    .light_color(' ')
+                    .dark_color('█')
+                    .build();
+                println!();
+                println!("╔══════════════════════════════════╗");
+                println!("║     🔗 PAIR YOUR DEVICE          ║");
+                println!("╠══════════════════════════════════╣");
+                println!("║  Scan this QR or open the URL:   ║");
+                println!("║  {}", qr_url);
+                println!("╠══════════════════════════════════╣");
+                println!("║  Code: {}               ║", pair_code);
+                println!("║  Expires: 5 minutes              ║");
+                println!("╚══════════════════════════════════╝");
+                println!();
+                println!("{}", qr_string);
+                println!();
+            }
+        }
+
         let state = AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
+            port: self.config.port,
+            hostname,
             started_at: chrono::Utc::now(),
             bus,
             auth,
@@ -197,6 +253,7 @@ impl ApiServer {
             token_counters,
             session_registry,
             event_store,
+            pairing,
         };
 
         let app = Self::router(state);

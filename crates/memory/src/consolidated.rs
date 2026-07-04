@@ -39,9 +39,14 @@ pub struct ErrorLearned {
 }
 
 /// Long-term memory store for consolidated summaries.
+///
+/// Primary: in-memory `VecDeque<MemorySummary>` for fast access.
+/// Optional: Qdrant sync for persistence across restarts.
 pub struct ConsolidatedMemory {
     summaries: VecDeque<MemorySummary>,
     max_summaries: usize,
+    /// Optional Qdrant backend for persistent backup.
+    qdrant: Option<crate::episodic::QdrantBackend>,
 }
 
 impl ConsolidatedMemory {
@@ -50,6 +55,7 @@ impl ConsolidatedMemory {
         Self {
             summaries: VecDeque::with_capacity(max_summaries),
             max_summaries,
+            qdrant: None,
         }
     }
 
@@ -58,13 +64,64 @@ impl ConsolidatedMemory {
         Self::new(100)
     }
 
-    /// Store a new summary.
-    pub fn store(&mut self, summary: MemorySummary) {
-        self.summaries.push_back(summary);
+    /// Attach a Qdrant backend for persistent storage.
+    ///
+    /// Summaries are synced to Qdrant on every `store()` call
+    /// and can be reloaded with `load_from_qdrant()`.
+    pub fn with_qdrant(mut self, qdrant: crate::episodic::QdrantBackend) -> Self {
+        self.qdrant = Some(qdrant);
+        self
+    }
 
-        // Evict oldest if over capacity
+    /// Store a summary synchronously (in-memory only).
+    ///
+    /// Use this for unit tests and non-async contexts.
+    /// For production, prefer `store()` which also syncs to Qdrant.
+    pub fn store_sync(&mut self, summary: MemorySummary) {
+        self.summaries.push_back(summary);
         while self.summaries.len() > self.max_summaries {
             self.summaries.pop_front();
+        }
+    }
+
+    /// Store a new summary (in-memory + optional Qdrant sync).
+    ///
+    /// Qdrant sync is fire-and-forget on a spawned task — the in-memory
+    /// write is synchronous, so the caller can immediately read back the data.
+    pub async fn store(&mut self, summary: MemorySummary) {
+        let summary_id = summary.id.clone();
+        self.store_sync(summary);
+
+        // Fire-and-forget Qdrant sync
+        if let Some(qdrant) = self.qdrant.clone() {
+            let last = self.summaries.back().cloned();
+            if let Some(last) = last {
+                tokio::spawn(async move {
+                    let payload: std::collections::HashMap<String, serde_json::Value> = [
+                        ("data".to_string(), serde_json::to_value(&last).unwrap_or(serde_json::Value::Null)),
+                    ].into_iter().collect();
+
+                    let client = match qdrant.build_client().await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            tracing::warn!("Qdrant sync failed (connection): {}", e);
+                            return;
+                        }
+                    };
+
+                    let _ = qdrant.ensure_collection(&client, 1).await;
+
+                    use qdrant_client::qdrant::{PointStruct, UpsertPointsBuilder};
+                    let point = PointStruct::new(summary_id, vec![0.0f32; 1], payload);
+
+                    if let Err(e) = client
+                        .upsert_points(UpsertPointsBuilder::new(qdrant.collection.clone(), vec![point]))
+                        .await
+                    {
+                        tracing::warn!("Qdrant sync failed (upsert): {}", e);
+                    }
+                });
+            }
         }
     }
 
@@ -271,7 +328,7 @@ mod tests {
     fn test_store_and_search() {
         let mut memory = ConsolidatedMemory::new(10);
 
-        memory.store(MemorySummary {
+        memory.store_sync(MemorySummary {
             id: "1".to_string(),
             session_id: "s1".to_string(),
             project_id: "p1".to_string(),
@@ -300,7 +357,7 @@ mod tests {
         let mut memory = ConsolidatedMemory::new(10);
 
         for i in 0..5 {
-            memory.store(MemorySummary {
+            memory.store_sync(MemorySummary {
                 id: i.to_string(),
                 session_id: if i < 3 { "s1".to_string() } else { "s2".to_string() },
                 project_id: "p1".to_string(),
@@ -358,7 +415,7 @@ mod tests {
         let mut memory = ConsolidatedMemory::new(3);
 
         for i in 0..5 {
-            memory.store(MemorySummary {
+            memory.store_sync(MemorySummary {
                 id: i.to_string(),
                 session_id: "s1".to_string(),
                 project_id: "p1".to_string(),
@@ -381,7 +438,7 @@ mod tests {
     fn test_all_decisions() {
         let mut memory = ConsolidatedMemory::new(10);
 
-        memory.store(MemorySummary {
+        memory.store_sync(MemorySummary {
             id: "1".to_string(),
             session_id: "s1".to_string(),
             project_id: "p1".to_string(),

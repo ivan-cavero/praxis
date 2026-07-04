@@ -8,6 +8,7 @@ license = "Proprietary"
 praxis-shared = { path = "../shared" }
 praxis-agent-traits = { path = "../agent-traits" }
 
+async-trait.workspace = true
 dashmap.workspace = true
 moka.workspace = true
 qdrant-client.workspace = true

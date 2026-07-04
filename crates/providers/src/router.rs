@@ -95,6 +95,16 @@ impl ProviderRouter {
             .collect()
     }
 
+    /// Return the first registered provider, if any.
+    ///
+    /// Useful for attaching an embedding service — any provider can serve embeddings.
+    pub fn first_provider(&self) -> Option<Arc<dyn praxis_agent_traits::provider::LLMProvider>> {
+        self.providers
+            .values()
+            .next()
+            .map(|reg| reg.provider.clone())
+    }
+
     /// Detect which provider a model name belongs to.
     pub fn detect_provider(model: &str) -> Option<String> {
         let lower = model.to_lowercase();

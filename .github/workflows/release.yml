@@ -1,82 +1,164 @@
+# ─── praxis Release Workflow ──────────────────────────────────────
+#
+# Triggered when a tag matching "v*" is pushed.
+# Builds the Tauri desktop app with updater artifacts, then creates
+# a GitHub Release with the installer + signature files.
+#
+# Required secrets:
+#   TAURI_SIGNING_PRIVATE_KEY          — contents of updater-private-key.pem
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — password used during key generation
+#
+# To generate a keypair:
+#   cargo tauri signer generate -p "<password>" -w desktop/updater-private-key.pem --ci
+#
+# The public key (updater-private-key.pem.pub) is already set in
+# desktop/tauri.conf.json → plugins.updater.pubkey.
+
 name: Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
-permissions:
-  contents: write
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  build-and-release:
+    name: Build & Release (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            binary: project-x
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            binary: project-x
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            binary: project-x
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            binary: project-x.exe
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: AppImage
+            artifact-name: praxis-x86_64-linux
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundle: msi
+            artifact-name: praxis-x86_64-windows
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bundle: dmg
+            artifact-name: praxis-aarch64-macos
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Install system deps (Linux)
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
 
-      - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/${{ matrix.binary }} project-x-${{ matrix.target }}
+      - name: Build dashboard
+        run: |
+          cd dashboard
+          bun install
+          bun run build
 
-      - name: Upload artifact
+      - name: Build Tauri app (with updater artifacts)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # The `cargo tauri build` generates updater artifacts (.sig + .tar.gz)
+          # when the updater plugin is configured in tauri.conf.json.
+          #
+          # The TAURI_SIGNING_* env vars are picked up automatically by
+          # the Tauri bundler to sign the update artifacts.
+          cargo tauri build --bundles ${{ matrix.bundle }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          # Tauri v2 places bundled output in target/release/bundle/
+          # The updater artifacts (.sig, .tar.gz) are in the same directory.
+          BUNDLE_DIR="target/release/bundle/${{ matrix.bundle }}"
+
+          # Copy installer
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            cp "$BUNDLE_DIR"/*.msi dist/ 2>/dev/null || true
+          elif [ "${{ matrix.os }}" = "macos-14" ]; then
+            cp "$BUNDLE_DIR"/*.dmg dist/ 2>/dev/null || true
+          else
+            cp "$BUNDLE_DIR"/*.AppImage dist/ 2>/dev/null || true
+          fi
+
+          # Copy updater artifacts (if generated)
+          cp target/release/bundle/updater/*.sig dist/ 2>/dev/null || true
+          cp target/release/bundle/updater/*.tar.gz dist/ 2>/dev/null || true
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: project-x-${{ matrix.target }}
-          path: project-x-${{ matrix.target }}
+          name: ${{ matrix.artifact-name }}
+          path: dist/*
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
+  create-release:
+    name: Create GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-artifacts
 
-      - name: Generate checksums
+      - name: Generate release notes
+        id: notes
         run: |
-          cd artifacts
-          for dir in project-x-*/; do
-            if [ -f "$dir/project-x"* ]; then
-              sha256sum "$dir/project-x"* > "${dir}sha256sum.txt"
-            fi
-          done
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Create release
+          cat > RELEASE_NOTES.md << EOF
+          ## praxis v${VERSION}
+
+          ### Installation
+
+          \`\`\`bash
+          curl -fsSL https://praxis.dev/install.sh | bash
+          \`\`\`
+
+          Or download the appropriate package for your platform from the assets below.
+
+          ### Updating
+
+          If you already have praxis installed, the app will check for updates
+          automatically and prompt you to install.
+          EOF
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: praxis ${{ steps.notes.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
           files: |
-            artifacts/**/project-x*
-            artifacts/**/sha256sum.txt
+            release-artifacts/**/*

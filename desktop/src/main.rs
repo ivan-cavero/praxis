@@ -3,6 +3,9 @@
 //! Embeds the core runtime + API server and serves the dashboard via WebView.
 //! The Vue dashboard is served from `../dashboard/dist` (production)
 //! or `http://localhost:3000` (development via `bun run dev`).
+//!
+//! Features: system tray (show/hide, new session, settings, quit),
+//! auto-updater from GitHub releases, window close-to-hide.
 
 mod commands;
 mod events;
@@ -11,7 +14,11 @@ use commands::AppState;
 use praxis_core::CoreRuntime;
 use praxis_persistence::SqliteEventStore;
 use std::path::PathBuf;
-use tauri::{Emitter, Manager};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager,
+};
 
 fn main() {
     run();
@@ -34,14 +41,32 @@ pub fn run() {
         .manage(initial_state)
         .setup(|app| {
             tracing::info!("praxis Desktop starting");
-            let handle = app.handle().clone();
 
-            // Start background initialization
+            // ── 1. Auto-updater plugin ──────────────────────────
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // ── 2. System tray ──────────────────────────────────
+            build_tray(app)?;
+
+            // ── 3. Window close → hide instead of quit ─────────
+            // (handled in on_window_event below)
+
+            // ── 4. Background backend initialization ───────────
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 init_backend(&handle).await;
             });
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Hide window on close instead of quitting.
+            // User must use tray → Quit to fully exit.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                window.hide().ok();
+                api.prevent_close();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_version,
@@ -53,6 +78,73 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Build the system tray icon and menu.
+fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Menu items
+    let show_hide = MenuItem::with_id(app, "show_hide", "Show/Hide", true, None::<&str>)?;
+    let new_session = MenuItem::with_id(app, "new_session", "New Session", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[&show_hide, &new_session, &settings, &separator, &quit])?;
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("praxis — Autonomous Multi-Agent System")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app_handle, event| {
+            let window = app_handle.get_webview_window("main");
+            match event.id().as_ref() {
+                "show_hide" => {
+                    if let Some(w) = window {
+                        if w.is_visible().ok().unwrap_or(false) {
+                            w.hide().ok();
+                        } else {
+                            w.show().ok();
+                            w.set_focus().ok();
+                        }
+                    }
+                }
+                "new_session" => {
+                    // Emit event to frontend — the dashboard will navigate to run a new goal
+                    let _ = app_handle.emit("tray:new_session", ());
+                }
+                "settings" => {
+                    // Emit event to frontend — the dashboard will navigate to settings
+                    let _ = app_handle.emit("tray:settings", ());
+                }
+                "quit" => {
+                    app_handle.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            // Left click → toggle window visibility
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app_handle = tray.app_handle();
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    if window.is_visible().ok().unwrap_or(false) {
+                        window.hide().ok();
+                    } else {
+                        window.show().ok();
+                        window.set_focus().ok();
+                    }
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
 }
 
 /// Initialize CoreRuntime and API server in the background.
@@ -67,7 +159,9 @@ async fn init_backend(handle: &tauri::AppHandle) {
     let state = handle.state::<AppState>();
     match CoreRuntime::new().await {
         Ok(mut runtime) => {
-            runtime = runtime.with_data_dir(data_dir.clone());
+            runtime = runtime
+                .with_default_memory()
+                .with_data_dir(data_dir.clone());
             match SqliteEventStore::new(&db_path) {
                 Ok(store) => {
                     runtime = runtime.with_event_store(store);
@@ -126,6 +220,8 @@ async fn init_backend(handle: &tauri::AppHandle) {
     let app = praxis_core::api::ApiServer::router(
         praxis_core::api::AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
+            port: api_port,
+            hostname: gethostname::gethostname().to_string_lossy().to_string(),
             started_at: chrono::Utc::now(),
             bus: praxis_core::EventBus::new(),
             auth: std::sync::Arc::new(
@@ -134,7 +230,22 @@ async fn init_backend(handle: &tauri::AppHandle) {
                 ),
             ),
             vault,
-            data_dir,
+            data_dir: data_dir.clone(),
+            token_counters: std::sync::Arc::new(
+                std::sync::RwLock::new(
+                    praxis_core::api::routes::TokenCounters::default(),
+                ),
+            ),
+            session_registry: std::sync::Arc::new(
+                std::sync::RwLock::new(Vec::new()),
+            ),
+            event_store: {
+                let db_path = data_dir.join("state.db");
+                praxis_persistence::SqliteEventStore::new(&db_path)
+                    .ok()
+                    .map(std::sync::Arc::new)
+            },
+            pairing: None,
         },
     );
 

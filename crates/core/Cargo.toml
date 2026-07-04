@@ -1,6 +1,6 @@
 [package]
 name = "praxis-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "Proprietary"
 
@@ -33,3 +33,5 @@ hmac.workspace = true
 sha2.workspace = true
 base64.workspace = true
 toml.workspace = true
+qrcode.workspace = true
+gethostname.workspace = true

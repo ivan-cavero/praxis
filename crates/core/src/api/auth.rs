@@ -98,15 +98,21 @@ impl AuthState {
         role: &str,
     ) -> Result<String, AuthError> {
         let now = chrono::Utc::now().timestamp() as u64;
-
         let claims = Claims {
             sub: user_id.to_string(),
             iat: now,
             exp: now + self.token_expiry_secs,
             role: role.to_string(),
         };
+        self.generate_token_from_claims(&claims)
+    }
 
-        encode(&Header::default(), &claims, &self.encoding_key)
+    /// Generate a JWT from pre-built claims (used by pairing for long-lived tokens).
+    pub fn generate_token_from_claims(
+        &self,
+        claims: &Claims,
+    ) -> Result<String, AuthError> {
+        encode(&Header::default(), claims, &self.encoding_key)
             .map_err(|e| AuthError::TokenCreation(e.to_string()))
     }
 
@@ -174,8 +180,11 @@ pub async fn auth_middleware(
 ) -> Result<Response, StatusCode> {
     let path = request.uri().path();
 
-    // Exempt health check and WebSocket upgrade paths
-    if path == "/api/health" || path.starts_with("/ws/") {
+    // Exempt health check, WebSocket, and pairing paths
+    if path == "/api/health"
+        || path.starts_with("/ws/")
+        || path.starts_with("/api/pair/")
+    {
         return Ok(next.run(request).await);
     }
 

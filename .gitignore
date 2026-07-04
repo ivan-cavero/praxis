@@ -92,3 +92,4 @@ artifacts/
 tmp/
 temp/
 scratch/
+desktop/updater-private-key.pem

@@ -52,6 +52,19 @@ export interface AgentStartedEvent {
   phase: string
 }
 
+/** Streaming text delta from an agent during LLM response generation. */
+export interface AgentOutputEvent {
+  agent: string
+  delta: string
+}
+
+export interface ToolCalledEvent {
+  agent: string
+  tool: string
+  duration_ms: number
+  success: boolean
+}
+
 export interface ContextPressureEvent {
   pressure: number
   agent_id: string
@@ -75,6 +88,21 @@ export function getEventPayload<T>(event: SystemEvent, kindName: string): T | un
     return payload as T
   }
   return undefined
+}
+
+/** Filter all events of a specific kind from the event list. */
+export function filterEvents<T>(events: SystemEvent[], kindName: string): T[] {
+  return events
+    .map(e => getEventPayload<T>(e, kindName))
+    .filter((p): p is T => p !== undefined)
+}
+
+/** Get the latest AgentOutput text for a given agent. */
+export function getAgentStream(events: SystemEvent[], agentName: string): string {
+  return filterEvents<AgentOutputEvent>(events, 'AgentOutput')
+    .filter(o => o.agent === agentName)
+    .map(o => o.delta)
+    .join('')
 }
 
 // ─── Module-level singleton state ───────────────────────────────

@@ -1,12 +1,15 @@
 /**
  * useApi — Backend API communication composable.
  *
- * Works in two modes:
+ * Works in three modes:
  * 1. Tauri desktop: uses the API port emitted via `api:ready` event
  * 2. Browser dev (standalone Vite): uses `/api` proxy (localhost:8080)
+ * 3. Remote mode: all calls go to a remote praxis server (host:port)
  *
  * The `setApiPort()` function is called by App.vue when the Tauri backend
  * emits the `api:ready` event with the port number.
+ * The `setRemoteApi()`/`clearRemoteApi()` functions are called by
+ * `useConnection()` when switching between local and remote mode.
  */
 
 import { ref } from 'vue'
@@ -15,8 +18,15 @@ import { ref } from 'vue'
 // In browser dev mode, Vite proxies `/api` to the API server.
 const apiPort = ref<number | null>(null)
 
+/** Remote API override (set when connected to a remote server). */
+const remoteApi = ref<{ host: string; port: number; token: string } | null>(null)
+const isRemoteMode = ref(false)
+
 /** Compute the API base URL dynamically. */
 function apiBase(): string {
+  if (remoteApi.value !== null) {
+    return `http://${remoteApi.value.host}:${remoteApi.value.port}/api`
+  }
   if (apiPort.value !== null) {
     return `http://127.0.0.1:${apiPort.value}/api`
   }
@@ -26,6 +36,23 @@ function apiBase(): string {
 /** Set the API port (called from Tauri event listener). */
 export function setApiPort(port: number) {
   apiPort.value = port
+}
+
+/** Switch to remote API mode (called from useConnection). */
+export function setRemoteApi(host: string, port: number, token: string) {
+  remoteApi.value = { host, port, token }
+  isRemoteMode.value = true
+}
+
+/** Switch back to local API mode. */
+export function clearRemoteApi() {
+  remoteApi.value = null
+  isRemoteMode.value = false
+}
+
+/** Get the remote mode status for UI indicators. */
+export function useRemoteStatus() {
+  return { isRemoteMode, remoteHost: remoteApi.value?.host ?? null, remotePort: remoteApi.value?.port ?? null }
 }
 
 export interface HealthStatus {
@@ -71,6 +98,10 @@ export interface LimitsDetail {
 export interface ProviderKey { provider: string; key_masked: string; has_key: boolean }
 
 function getToken(): string | null {
+  // When in remote mode, use the remote connection's token
+  if (remoteApi.value !== null) {
+    return remoteApi.value.token
+  }
   return localStorage.getItem('praxis-token')
 }
 

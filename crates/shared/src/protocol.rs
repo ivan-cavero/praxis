@@ -82,6 +82,7 @@ pub enum MessageKind {
         output: u32,
     },
     ToolCalled {
+        agent: String,
         tool: String,
         duration_ms: u64,
         success: bool,
