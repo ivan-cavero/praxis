@@ -75,6 +75,7 @@ pub fn run() {
             commands::run_goal,
             commands::stop_session,
             commands::get_metrics,
+            commands::get_api_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -274,6 +275,11 @@ async fn init_backend(handle: &tauri::AppHandle) {
 
     // 3. Tell the frontend the API port
     tracing::info!("API server listening on port {}", api_port);
+    // Store port in state so frontend can query it if api:ready event was missed
+    let state2 = handle.state::<AppState>();
+    let mut port_guard = state2.api_port.write().await;
+    *port_guard = Some(api_port);
+    drop(port_guard);
     let _ = handle.emit("api:ready", api_port);
 
     // Emit core ready

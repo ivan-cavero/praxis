@@ -165,6 +165,19 @@ async function attemptAuth() {
 
 onMounted(async () => {
   await listenTauriEvents()
+
+  // Fallback: if in Tauri but api:ready event was already emitted before
+  // our listener was registered, query the port directly via IPC command.
+  if (isTauri && apiPort.value === null) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const port = await invoke<number>('get_api_port')
+      setApiPort(port)
+    } catch {
+      // Backend not ready yet — watch(apiPort) or retry will catch it
+    }
+  }
+
   updater.checkForUpdates()
   attemptAuth()
 })

@@ -61,6 +61,8 @@ pub struct AppState {
     /// Path to the SQLite database (optional). Used to open a separate
     /// connection for session queries while CoreRuntime holds the primary one.
     pub db_path: RwLock<Option<PathBuf>>,
+    /// API server port (set by init_backend after binding).
+    pub api_port: RwLock<Option<u16>>,
 }
 
 impl AppState {
@@ -69,6 +71,7 @@ impl AppState {
             runtime: RwLock::new(None),
             bus: EventBus::new(),
             db_path: RwLock::new(None),
+            api_port: RwLock::new(None),
         }
     }
 
@@ -263,4 +266,10 @@ pub async fn get_metrics(state: State<'_, AppState>) -> Result<MetricsInfo, Stri
             iteration: 0,
         }),
     }
+}
+
+#[tauri::command]
+pub async fn get_api_port(state: State<'_, AppState>) -> Result<u16, String> {
+    let guard = state.api_port.read().await;
+    guard.ok_or_else(|| "API server not yet started".to_string())
 }
