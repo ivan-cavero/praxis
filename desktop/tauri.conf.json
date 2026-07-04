@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dashboard/dist",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "cd ../dashboard && bun run dev",
-    "beforeBuildCommand": "cd ../dashboard && bun run build",
+    "beforeDevCommand": "bun run dev --cwd ../dashboard",
+    "beforeBuildCommand": "bun run build --cwd ../dashboard"
   },
   "bundle": {
     "active": true,
