@@ -93,9 +93,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          # beforeBuildCommand uses `bun run build --cwd ../dashboard`
-          # which works from any CWD (bun handles the relative path).
-          tauri build --bundles ${{ matrix.bundle }}
+          # Dashboard was already built in the previous step.
+          # Override beforeBuildCommand to empty so Tauri skips rebuilding.
+          # (The GitHub runner CWD is the repo root, not app_dir,
+          #  so relative paths in beforeBuildCommand would be wrong.)
+          echo '{"build":{"beforeBuildCommand":""}}' > /tmp/ci-config.json
+          tauri build \
+            --config desktop/tauri.conf.json \
+            --config /tmp/ci-config.json \
+            --bundles ${{ matrix.bundle }}
 
       - name: Collect artifacts
         shell: bash
