@@ -168,6 +168,38 @@ jobs:
           automatically and prompt you to install.
           EOF
 
+      - name: Generate updater latest.json
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${GITHUB_REF_NAME}"
+          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+          JSON='{"version":"'"${VERSION}"'","notes":"praxis v'"${VERSION}"'","pub_date":"'"${PUB_DATE}"'","platforms":{}}'
+
+          # Find all .sig files across artifact dirs
+          for sig_file in release-artifacts/*/*.sig; do
+            [ -f "$sig_file" ] || continue
+            sig_content="$(cat "$sig_file")"
+            archive="${sig_file%.sig}"
+
+            # Determine platform from directory name
+            dir_name="$(basename "$(dirname "$sig_file")")"
+            case "$dir_name" in
+              praxis-x86_64-windows) platform="windows-x86_64"; url_suffix="$(basename "$archive")" ;;
+              praxis-x86_64-linux)   platform="linux-x86_64";   url_suffix="$(basename "$archive")" ;;
+              praxis-aarch64-macos)  platform="darwin-aarch64"; url_suffix="$(basename "$archive")" ;;
+              *) continue ;;
+            esac
+
+            entry='{"signature":"'"${sig_content}"'","url":"'"${BASE}/${url_suffix}"'"}'
+            JSON="$(echo "$JSON" | jq --argjson entry "$entry" ".platforms[\"${platform}\"] = \$entry")"
+          done
+
+          echo "$JSON" > release-artifacts/latest.json
+          echo "Generated latest.json:"
+          cat release-artifacts/latest.json
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
