@@ -79,6 +79,9 @@ jobs:
           bun install
           bun run build
 
+      - name: Install cargo-tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
       - name: Build Tauri app (with updater artifacts)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
