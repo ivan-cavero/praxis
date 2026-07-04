@@ -89,18 +89,20 @@ jobs:
           pip3 install --break-system-packages appimage-tools 2>/dev/null || true
 
       - name: Build Tauri app (with updater artifacts)
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          # Dashboard was already built in the previous step.
-          # Override beforeBuildCommand to empty so Tauri skips rebuilding.
-          # (The GitHub runner CWD is the repo root, not app_dir,
-          #  so relative paths in beforeBuildCommand would be wrong.)
-          echo '{"build":{"beforeBuildCommand":""}}' > /tmp/ci-config.json
+          # Dashboard is already built in the previous step.
+          # On CI, beforeBuildCommand runs from the repo root (not app_dir),
+          # so relative paths like ../dashboard would resolve incorrectly.
+          # Override beforeBuildCommand to empty via --config with inline JSON
+          # (Tauri skips empty beforeBuildCommand).
+          # The first --config loads the main config; the second merges/overrides.
           tauri build \
             --config desktop/tauri.conf.json \
-            --config /tmp/ci-config.json \
+            --config '{"build":{"beforeBuildCommand":""}}' \
             --bundles ${{ matrix.bundle }}
 
       - name: Collect artifacts
