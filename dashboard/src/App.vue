@@ -72,9 +72,12 @@ function navigateTo(item: typeof navItems[number]) {
 }
 
 // ─── Tauri Events ─────────────────────────────────────────────────
+let isTauri = false
+
 async function listenTauriEvents() {
   try {
     const { listen } = await import('@tauri-apps/api/event')
+    isTauri = true
     await listen<number>('api:ready', (event) => {
       setApiPort(event.payload)
     })
@@ -126,6 +129,9 @@ watch(apiPort, (port) => {
 async function checkSavedToken(): Promise<'valid' | 'invalid' | 'retry'> {
   const token = localStorage.getItem('praxis-token')
   if (!token) return 'invalid'
+
+  // In Tauri mode, wait for apiPort before making API calls
+  if (isTauri && apiPort.value === null) return 'retry'
 
   try {
     // A protected endpoint call validates the token
