@@ -34,8 +34,7 @@ const tabs = computed(() => {
   const base = [
     { id: 'general', label: 'General', icon: 'settings' },
     { id: 'model-settings', label: 'Model Settings', icon: 'server' },
-    { id: 'skills', label: 'Skills', icon: 'terminal' },
-    { id: 'subagents', label: 'Subagents', icon: 'robot' },
+    { id: 'agent-roles', label: 'Agent Roles', icon: 'robot' },
     ...(store.activeProject?.id
       ? [{ id: 'limits', label: 'Limits', icon: 'database' }]
       : []),
@@ -545,59 +544,13 @@ async function handleCheckUpdate() {
             </div>
           </template>
 
-          <!-- ═══ Skills ═══ -->
-          <template v-else-if="activeTab === 'skills'">
+          <!-- ═══ Agent Roles ═══ -->
+          <template v-else-if="activeTab === 'agent-roles'">
             <div class="content-header">
-              <h1 class="content-title">Skills</h1>
-              <p class="content-subtitle">Configure agent roles, models, and tools</p>
+              <h1 class="content-title">Agent Roles</h1>
+              <p class="content-subtitle">Configure per-project model, temperature, and token limits for each agent role</p>
             </div>
             <AgentsConfig />
-          </template>
-
-          <!-- ═══ Subagents ═══ -->
-          <template v-else-if="activeTab === 'subagents'">
-            <div class="content-header">
-              <h1 class="content-title">Subagents</h1>
-              <p class="content-subtitle">Configure specialized sub-agent roles</p>
-            </div>
-            <div class="section-card">
-              <div class="section-card-header">
-                <Icon name="robot" :size="20" class="section-icon" />
-                <div>
-                  <h3 class="section-title">Subagent System</h3>
-                  <p class="section-desc">Delegated agents with specialized capabilities</p>
-                </div>
-              </div>
-              <div class="info-grid">
-                <div class="info-row">
-                  <span class="info-label">Status</span>
-                  <span class="info-value">
-                    <span class="badge badge-green">Active</span>
-                  </span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Backend</span>
-                  <span class="info-value">ractor actors with mailboxes</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Delegation</span>
-                  <span class="info-value">DELEGATE:agent_type:task protocol</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Budget propagation</span>
-                  <span class="info-value">Parent → child narrowing</span>
-                </div>
-              </div>
-              <p class="section-note">
-                Subagents are implemented in praxis-core as ractor actors.
-                Each agent runs in its own mailbox and can delegate to sub-agents
-                using the <code>DELEGATE:agent_type:task</code> protocol.
-                Budgets are propagated from parent to child with authority narrowing.
-                <br /><br />
-                To configure custom agents, use the <strong>Agents</strong> tab
-                in the sidebar or run <code>praxis agent add</code> from the CLI.
-              </p>
-            </div>
           </template>
 
           <!-- ═══ Remote ═══ -->
@@ -1478,5 +1431,51 @@ async function handleCheckUpdate() {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ═══ Responsive ═══ */
+
+@media (max-width: 1023px) {
+  .model-settings-grid {
+    grid-template-columns: 160px 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .settings-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+  }
+
+  .dialog-body {
+    flex-direction: column;
+  }
+
+  .dialog-nav {
+    width: 100%;
+    flex-shrink: 0;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+    padding: var(--space-2);
+  }
+
+  .dialog-nav-item {
+    white-space: nowrap;
+    width: auto;
+  }
+
+  .dialog-content {
+    padding: var(--space-4);
+  }
+
+  .model-settings-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

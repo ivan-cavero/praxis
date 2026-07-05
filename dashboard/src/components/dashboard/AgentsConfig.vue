@@ -6,7 +6,7 @@
  */
 
 import { ref, computed, onMounted } from 'vue'
-import { useApi, type Project, type ProjectConfig, type RoleDetail } from '../../composables/useApi'
+import { useApi, type Project, type ProjectConfig, type RoleDetail, type AgentDefinition } from '../../composables/useApi'
 import Icon from '../ui/Icon.vue'
 
 const api = useApi()
@@ -20,18 +20,43 @@ const isSaving = ref(false)
 const saveMessage = ref<string | null>(null)
 const expandedAgent = ref<string | null>(null)
 const isLoading = ref(false)
+const agentDefinitions = ref<AgentDefinition[]>([])
 
-// Known agent roles with their default descriptions
-const knownRoles: Record<string, { label: string; description: string; icon: string }> = {
-  architect: { label: 'Architect', description: 'Designs the solution architecture', icon: 'brain' },
-  coder: { label: 'Coder', description: 'Implements the solution', icon: 'code' },
-  reviewer: { label: 'Reviewer', description: 'Reviews code for quality', icon: 'eye' },
-  security: { label: 'Security', description: 'Audits for vulnerabilities', icon: 'shield' },
-  tester: { label: 'Tester', description: 'Writes and runs tests', icon: 'check' },
-  git: { label: 'Git', description: 'Manages version control', icon: 'terminal' },
+// Icon mapping for known agent types (agent .md files don't carry icons)
+const AGENT_ICONS: Record<string, string> = {
+  architect: 'brain',
+  coder: 'code',
+  reviewer: 'eye',
+  security: 'shield',
+  tester: 'check',
+  git: 'terminal',
+  researcher: 'search',
+  explorer: 'compass',
 }
 
-const agentKeys = computed(() => Object.keys(knownRoles))
+/** Build known roles from agent definitions loaded from the API. */
+const knownRoles = computed<Record<string, { label: string; description: string; icon: string }>>(() => {
+  const roles: Record<string, { label: string; description: string; icon: string }> = {}
+  for (const def of agentDefinitions.value) {
+    roles[def.name] = {
+      label: def.name.charAt(0).toUpperCase() + def.name.slice(1),
+      description: def.description || '',
+      icon: AGENT_ICONS[def.name] || 'robot',
+    }
+  }
+  return roles
+})
+
+const agentKeys = computed(() => Object.keys(knownRoles.value))
+
+/** Map agent name → system prompt from the .md definitions. */
+const systemPromptDefaults = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const def of agentDefinitions.value) {
+    map[def.name] = def.system_prompt
+  }
+  return map
+})
 
 /** Current roles from config, or empty object if not loaded. */
 const roles = computed<Record<string, RoleDetail>>(() =>
@@ -77,12 +102,14 @@ function updateRoleField(agentKey: string, field: keyof RoleDetail, value: strin
 }
 
 function createDefaultRole(agentKey: string): RoleDetail {
-  const known = knownRoles[agentKey]
+  const known = knownRoles.value[agentKey]
+  const defaultPrompt = systemPromptDefaults.value[agentKey]
+    || `You are the ${known?.label ?? agentKey} agent. ${known?.description ?? ''}`
   return {
     model: 'gpt-4o',
     temperature: 0.7,
     max_tokens: 4096,
-    system_prompt: `You are the ${known?.label ?? agentKey} agent. ${known?.description ?? ''}`,
+    system_prompt: defaultPrompt,
     tools: [],
     description: known?.description ?? '',
   }
@@ -171,7 +198,16 @@ async function saveConfig() {
 
 onMounted(() => {
   loadProjects()
+  loadAgentDefinitions()
 })
+
+async function loadAgentDefinitions() {
+  try {
+    agentDefinitions.value = await api.getAgents()
+  } catch {
+    // Agent definitions endpoint might not be available — fall back to empty
+  }
+}
 </script>
 
 <template>
