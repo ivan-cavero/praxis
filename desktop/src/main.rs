@@ -150,11 +150,31 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize CoreRuntime and API server in the background.
 async fn init_backend(handle: &tauri::AppHandle) {
-    let data_dir = dirs::data_dir()
-        .map(|d| d.join("praxis"))
-        .unwrap_or_else(|| PathBuf::from(".praxis"));
+    // Use ~/.config/praxis on ALL platforms for consistency with CLI
+    let data_dir = if let Ok(dir) = std::env::var("PRAXIS_DATA_DIR") {
+        PathBuf::from(dir)
+    } else if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".config").join("praxis")
+    } else if let Ok(userprofile) = std::env::var("USERPROFILE") {
+        PathBuf::from(userprofile).join(".config").join("praxis")
+    } else {
+        PathBuf::from(".praxis-data")
+    };
+
     std::fs::create_dir_all(&data_dir).ok();
-    let db_path = data_dir.join("praxis.db");
+    let db_path = data_dir.join("state.db");
+
+    // Create a SINGLE shared event store to avoid "database is locked"
+    let shared_store = match SqliteEventStore::new(&db_path) {
+        Ok(store) => {
+            tracing::info!("Event store attached at: {:?}", db_path);
+            Some(std::sync::Arc::new(store))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to create event store: {}", e);
+            None
+        }
+    };
 
     // 1. Initialize CoreRuntime
     let state = handle.state::<AppState>();
@@ -163,13 +183,19 @@ async fn init_backend(handle: &tauri::AppHandle) {
             runtime = runtime
                 .with_default_memory()
                 .with_data_dir(data_dir.clone());
-            match SqliteEventStore::new(&db_path) {
-                Ok(store) => {
-                    runtime = runtime.with_event_store(store);
-                    tracing::info!("Event store attached at: {:?}", db_path);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to create event store: {}", e);
+
+            // with_event_store takes ownership of SqliteEventStore (not Arc)
+            // We need to give the runtime its own store, and the API its own Arc
+            // Since SqliteEventStore uses r2d2 pool internally, multiple instances
+            // on the same path are fine — they share the pool
+            if let Some(ref _store) = shared_store {
+                match SqliteEventStore::new(&db_path) {
+                    Ok(store2) => {
+                        runtime = runtime.with_event_store(store2);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create runtime event store: {}", e);
+                    }
                 }
             }
 
@@ -259,12 +285,7 @@ async fn init_backend(handle: &tauri::AppHandle) {
             active_runs: std::sync::Arc::new(
                 std::sync::RwLock::new(std::collections::HashMap::new()),
             ),
-            event_store: {
-                let db_path = data_dir.join("state.db");
-                praxis_persistence::SqliteEventStore::new(&db_path)
-                    .ok()
-                    .map(std::sync::Arc::new)
-            },
+            event_store: shared_store.clone(),
             pairing: None,
         },
     );
