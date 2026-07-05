@@ -42,6 +42,27 @@ const canSpawnInput = ref('')
 const isBuiltin = computed(() => selectedAgent.value?.scope === 'builtin')
 const isNew = computed(() => !selectedAgent.value)
 
+/** Names that appear in any agent's can_spawn list — these are subagents. */
+const subagentNames = computed(() => {
+  const names = new Set<string>()
+  for (const agent of agents.value) {
+    for (const spawn of agent.can_spawn) {
+      names.add(spawn)
+    }
+  }
+  return names
+})
+
+/** Main agents — not spawned by any other agent. */
+const mainAgents = computed(() =>
+  agents.value.filter(a => !subagentNames.value.has(a.name))
+)
+
+/** Subagents — appear in some other agent's can_spawn list. */
+const subagents = computed(() =>
+  agents.value.filter(a => subagentNames.value.has(a.name))
+)
+
 async function loadAgents() {
   isLoading.value = true
   error.value = null
@@ -171,68 +192,105 @@ onMounted(loadAgents)
 
 <template>
   <div class="agents-view">
+    <!-- Header -->
     <div class="agents-header">
-      <h1 class="title">Agents</h1>
-      <button class="btn-primary" @click="startNewAgent">
-        + New Agent
+      <div class="agents-header-info">
+        <h1 class="agents-title">Agents</h1>
+        <p class="agents-subtitle">Manage agent definitions, system prompts, and delegation rules</p>
+      </div>
+      <button class="btn btn-primary" @click="startNewAgent">
+        <Icon name="plus" :size="15" />
+        New Agent
       </button>
     </div>
 
+    <!-- Error banner -->
     <div v-if="error" class="error-banner">
+      <Icon name="alert-triangle" :size="14" />
       {{ error }}
     </div>
 
+    <!-- Two-panel layout -->
     <div class="agents-layout">
-      <!-- Agent list -->
+      <!-- ─── Agent list ───────────────────────────────── -->
       <div class="agent-list-panel">
-        <div v-if="isLoading" class="loading">Loading...</div>
-        <div v-else-if="agents.length === 0" class="empty">No agents found.</div>
-        <div v-else class="agent-items">
-          <div
-            v-for="agent in agents"
-            :key="agent.name"
-            class="agent-item"
-            :class="{ selected: selectedAgent?.name === agent.name }"
-            @click="selectAgent(agent)"
-          >
-            <div class="agent-item-name">{{ agent.name }}</div>
-            <div class="agent-item-meta">
-              <span class="agent-item-model">{{ agent.model }}</span>
-              <Badge :variant="scopeColor(agent.scope)" size="sm">{{ agent.scope }}</Badge>
+        <div v-if="isLoading" class="agent-list-empty">
+          <div class="loading-spinner" />
+          <p>Loading agents...</p>
+        </div>
+        <div v-else-if="agents.length === 0" class="agent-list-empty">
+          <Icon name="robot" :size="36" class="empty-icon" />
+          <p>No agents found</p>
+        </div>
+        <div v-else class="agent-list-content">
+          <!-- Main agents section -->
+          <div class="agent-section">
+            <div class="agent-section-header">Agents</div>
+            <div
+              v-for="agent in mainAgents"
+              :key="agent.name"
+              class="agent-item"
+              :class="{ selected: selectedAgent?.name === agent.name }"
+              @click="selectAgent(agent)"
+            >
+              <div class="agent-item-top">
+                <span class="agent-item-name">{{ agent.name }}</span>
+                <Badge :variant="scopeColor(agent.scope)" size="sm">{{ agent.scope }}</Badge>
+              </div>
+              <div class="agent-item-model">{{ agent.model }}</div>
+              <div v-if="agent.description" class="agent-item-desc">{{ agent.description }}</div>
             </div>
-            <div class="agent-item-desc">{{ agent.description }}</div>
-            <div v-if="agent.max_depth > 0" class="agent-item-spawn">
-              can spawn: {{ agent.can_spawn.join(', ') }}
+          </div>
+
+          <!-- Subagents section -->
+          <div v-if="subagents.length > 0" class="agent-section">
+            <div class="agent-section-header">Subagents</div>
+            <div
+              v-for="agent in subagents"
+              :key="agent.name"
+              class="agent-item"
+              :class="{ selected: selectedAgent?.name === agent.name }"
+              @click="selectAgent(agent)"
+            >
+              <div class="agent-item-top">
+                <span class="agent-item-name">{{ agent.name }}</span>
+                <Badge :variant="scopeColor(agent.scope)" size="sm">{{ agent.scope }}</Badge>
+              </div>
+              <div class="agent-item-model">{{ agent.model }}</div>
+              <div v-if="agent.description" class="agent-item-desc">{{ agent.description }}</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Agent detail / editor -->
+      <!-- ─── Agent detail / editor ────────────────────── -->
       <div class="agent-detail-panel">
+        <!-- View mode -->
         <div v-if="!isEditing && selectedAgent" class="agent-detail">
           <div class="detail-header">
-            <h2 class="detail-title">{{ selectedAgent.name }}</h2>
+            <div class="detail-header-info">
+              <h2 class="detail-title">{{ selectedAgent.name }}</h2>
+              <Badge :variant="scopeColor(selectedAgent.scope)" size="sm">{{ selectedAgent.scope }}</Badge>
+            </div>
             <div class="detail-actions">
-              <button class="btn-secondary" @click="startEdit" :disabled="isBuiltin">
+              <button class="btn btn-secondary btn-sm" @click="startEdit" :disabled="isBuiltin">
                 {{ isBuiltin ? 'Clone to Edit' : 'Edit' }}
               </button>
               <button
-                class="btn-danger"
-                @click="deleteAgent"
-                :disabled="isBuiltin"
                 v-if="!isBuiltin"
+                class="btn btn-ghost btn-sm detail-delete"
+                @click="deleteAgent"
               >
                 Delete
               </button>
             </div>
           </div>
 
+          <div v-if="selectedAgent.description" class="detail-description">
+            {{ selectedAgent.description }}
+          </div>
+
           <div class="detail-meta">
-            <div class="meta-row">
-              <span class="meta-label">Scope</span>
-              <Badge :variant="scopeColor(selectedAgent.scope)" size="sm">{{ selectedAgent.scope }}</Badge>
-            </div>
             <div class="meta-row">
               <span class="meta-label">Model</span>
               <span class="meta-value">{{ selectedAgent.model }}</span>
@@ -243,7 +301,7 @@ onMounted(loadAgents)
             </div>
             <div class="meta-row">
               <span class="meta-label">Max tokens</span>
-              <span class="meta-value">{{ selectedAgent.max_tokens }}</span>
+              <span class="meta-value">{{ selectedAgent.max_tokens.toLocaleString() }}</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">Max turns</span>
@@ -251,15 +309,15 @@ onMounted(loadAgents)
             </div>
             <div class="meta-row">
               <span class="meta-label">Max depth</span>
-              <span class="meta-value">{{ selectedAgent.max_depth }}</span>
+              <span class="meta-value">{{ selectedAgent.max_depth === 0 ? 'leaf (no delegation)' : selectedAgent.max_depth }}</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">Tools</span>
               <span class="meta-value">{{ selectedAgent.tools.join(', ') || '—' }}</span>
             </div>
-            <div class="meta-row">
+            <div v-if="selectedAgent.can_spawn.length > 0" class="meta-row">
               <span class="meta-label">Can spawn</span>
-              <span class="meta-value">{{ selectedAgent.can_spawn.join(', ') || '—' }}</span>
+              <span class="meta-value">{{ selectedAgent.can_spawn.join(', ') }}</span>
             </div>
           </div>
 
@@ -274,81 +332,83 @@ onMounted(loadAgents)
           <h2 class="editor-title">{{ isNew ? 'New Agent' : `Edit: ${selectedAgent?.name}` }}</h2>
 
           <div class="form-group">
-            <label>Name</label>
+            <label class="form-label">Name</label>
             <input
               v-model="editForm.name"
               type="text"
+              class="form-input"
               placeholder="my-agent"
               :disabled="!isNew"
             />
           </div>
 
           <div class="form-group">
-            <label>Description</label>
+            <label class="form-label">Description</label>
             <input
               v-model="editForm.description"
               type="text"
+              class="form-input"
               placeholder="What does this agent do?"
             />
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Model</label>
-              <input v-model="editForm.model" type="text" placeholder="gpt-5" />
+              <label class="form-label">Model</label>
+              <input v-model="editForm.model" type="text" class="form-input" placeholder="gpt-5" />
             </div>
             <div class="form-group">
-              <label>Temperature</label>
-              <input v-model.number="editForm.temperature" type="number" step="0.1" min="0" max="2" />
+              <label class="form-label">Temperature</label>
+              <input v-model.number="editForm.temperature" type="number" step="0.1" min="0" max="2" class="form-input" />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Max tokens</label>
-              <input v-model.number="editForm.max_tokens" type="number" />
+              <label class="form-label">Max tokens</label>
+              <input v-model.number="editForm.max_tokens" type="number" class="form-input" />
             </div>
             <div class="form-group">
-              <label>Max turns</label>
-              <input v-model.number="editForm.max_turns" type="number" />
+              <label class="form-label">Max turns</label>
+              <input v-model.number="editForm.max_turns" type="number" class="form-input" />
             </div>
             <div class="form-group">
-              <label>Max depth (0 = leaf)</label>
-              <input v-model.number="editForm.max_depth" type="number" min="0" max="5" />
+              <label class="form-label">Max depth (0 = leaf)</label>
+              <input v-model.number="editForm.max_depth" type="number" min="0" max="5" class="form-input" />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Tools (comma-separated)</label>
-            <input v-model="toolsInput" type="text" placeholder="filesystem, git, cargo" @blur="parseToolsInput" />
+            <label class="form-label">Tools (comma-separated)</label>
+            <input v-model="toolsInput" type="text" class="form-input" placeholder="filesystem, git, cargo" @blur="parseToolsInput" />
           </div>
 
           <div class="form-group">
-            <label>Can spawn (comma-separated, requires max_depth > 0)</label>
-            <input v-model="canSpawnInput" type="text" placeholder="researcher, explorer" @blur="parseCanSpawnInput" />
+            <label class="form-label">Can spawn (comma-separated, requires max_depth > 0)</label>
+            <input v-model="canSpawnInput" type="text" class="form-input" placeholder="researcher, explorer" @blur="parseCanSpawnInput" />
           </div>
 
           <div class="form-group">
-            <label>Scope</label>
-            <select v-model="editForm.scope">
+            <label class="form-label">Scope</label>
+            <select v-model="editForm.scope" class="form-input">
               <option value="project">Project</option>
               <option value="global">Global</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label>System Prompt (Markdown)</label>
+            <label class="form-label">System Prompt (Markdown)</label>
             <textarea
               v-model="editForm.system_prompt"
               rows="15"
+              class="form-input prompt-editor"
               placeholder="You are a ... agent. Your job is to ..."
-              class="prompt-editor"
             ></textarea>
           </div>
 
           <div class="editor-actions">
-            <button class="btn-primary" @click="saveAgent">Save</button>
-            <button class="btn-secondary" @click="cancelEdit">Cancel</button>
+            <button class="btn btn-primary" @click="saveAgent">Save</button>
+            <button class="btn btn-secondary" @click="cancelEdit">Cancel</button>
           </div>
         </div>
 
@@ -364,260 +424,343 @@ onMounted(loadAgents)
 
 <style scoped>
 .agents-view {
-  padding: 24px;
-  max-width: 1400px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-6);
+  overflow: hidden;
 }
+
+/* ─── Header ──────────────────────────────────────────────────── */
 
 .agents-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+  flex-shrink: 0;
 }
 
-.title {
-  font-size: 24px;
-  font-weight: 700;
+.agents-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.btn-primary, .btn-secondary, .btn-danger {
-  padding: 6px 16px;
-  border-radius: 6px;
+.agents-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.agents-subtitle {
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid var(--border-color, #333);
-}
-
-.btn-primary {
-  background: var(--accent, #6a9fd6);
-  color: white;
-  border-color: var(--accent, #6a9fd6);
-}
-
-.btn-secondary {
-  background: var(--bg-elevated, #2a2a3e);
-  color: var(--text-primary, #eee);
-}
-
-.btn-danger {
-  background: var(--danger, #c44);
-  color: white;
-  border-color: var(--danger, #c44);
-}
-
-.btn-primary:disabled, .btn-secondary:disabled, .btn-danger:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  color: var(--text-muted);
 }
 
 .error-banner {
-  padding: 8px 12px;
-  background: rgba(200, 60, 60, 0.1);
-  border: 1px solid rgba(200, 60, 60, 0.3);
-  border-radius: 6px;
-  color: #ff6666;
-  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
   font-size: 13px;
+  margin-bottom: var(--space-4);
+  flex-shrink: 0;
 }
+
+/* ─── Layout ──────────────────────────────────────────────────── */
 
 .agents-layout {
   display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 16px;
-  min-height: 600px;
+  grid-template-columns: 320px 1fr;
+  gap: var(--space-5);
+  flex: 1;
+  min-height: 0;
 }
+
+/* ─── Agent list panel ────────────────────────────────────────── */
 
 .agent-list-panel {
-  border: 1px solid var(--border-color, #333);
-  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   overflow-y: auto;
-  max-height: 700px;
+  display: flex;
+  flex-direction: column;
 }
 
-.loading, .empty {
-  padding: 24px;
-  text-align: center;
-  color: var(--text-muted, #666);
+.agent-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: var(--space-8);
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.agent-list-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-section + .agent-section {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.agent-section-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: var(--space-3) var(--space-4);
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  z-index: 1;
 }
 
 .agent-item {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color, #2a2a3e);
+  padding: var(--space-3) var(--space-4);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
+  border-left: 3px solid transparent;
 }
 
 .agent-item:hover {
-  background: var(--bg-elevated, #1a1a2e);
+  background: var(--bg-hover);
 }
 
 .agent-item.selected {
-  background: rgba(106, 159, 214, 0.1);
-  border-left: 3px solid var(--accent, #6a9fd6);
+  background: var(--bg-elevated);
+  border-left-color: var(--primary);
+}
+
+.agent-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .agent-item-name {
-  font-weight: 600;
   font-size: 14px;
-  color: var(--text-primary, #eee);
-}
-
-.agent-item-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .agent-item-model {
   font-size: 11px;
-  color: var(--text-muted, #888);
-  font-family: monospace;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 2px;
 }
 
 .agent-item-desc {
   font-size: 12px;
-  color: var(--text-secondary, #aaa);
-  margin-top: 4px;
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.agent-item-spawn {
-  font-size: 11px;
-  color: var(--text-accent, #6a9fd6);
-  margin-top: 2px;
-}
+/* ─── Detail panel ────────────────────────────────────────────── */
 
 .agent-detail-panel {
-  border: 1px solid var(--border-color, #333);
-  border-radius: 8px;
-  padding: 20px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   overflow-y: auto;
-  max-height: 700px;
+  padding: var(--space-6);
 }
 
 .detail-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.detail-header-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .detail-title {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
 .detail-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
+}
+
+.detail-delete {
+  color: var(--error);
+}
+
+.detail-delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.detail-description {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-5);
+  line-height: 1.5;
 }
 
 .detail-meta {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 20px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
 }
 
 .meta-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-4);
 }
 
 .meta-label {
   width: 120px;
   font-size: 12px;
   text-transform: uppercase;
-  color: var(--text-muted, #666);
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .meta-value {
   font-size: 14px;
-  color: var(--text-primary, #eee);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 .detail-prompt {
-  margin-top: 16px;
+  margin-top: var(--space-2);
 }
 
 .prompt-label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-muted, #666);
-  margin-bottom: 8px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
 }
 
 .prompt-content {
-  background: var(--bg-tertiary, #12121f);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 6px;
-  padding: 12px;
-  font-family: 'Fira Code', monospace;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  font-family: var(--font-mono);
   font-size: 13px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 400px;
   overflow-y: auto;
-  color: var(--text-primary, #ddd);
+  color: var(--text-secondary);
 }
+
+/* ─── Editor ──────────────────────────────────────────────────── */
 
 .agent-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-4);
 }
 
 .editor-title {
   font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-2);
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
-.form-group label {
+.form-label {
   font-size: 12px;
+  font-weight: 500;
   text-transform: uppercase;
-  color: var(--text-muted, #666);
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
 }
 
-.form-group input, .form-group select, .form-group textarea {
-  padding: 6px 10px;
-  background: var(--bg-tertiary, #12121f);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 4px;
-  color: var(--text-primary, #eee);
+.form-input {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
   font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-fast);
 }
 
-.form-group input:disabled {
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-muted);
+}
+
+.form-input:disabled {
   opacity: 0.5;
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .prompt-editor {
-  font-family: 'Fira Code', monospace;
+  font-family: var(--font-mono);
   resize: vertical;
   min-height: 200px;
+  line-height: 1.5;
 }
 
 .editor-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
+
+/* ─── Empty state ─────────────────────────────────────────────── */
 
 .empty-detail {
   display: flex;
@@ -625,11 +768,39 @@ onMounted(loadAgents)
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--text-muted, #666);
-  gap: 12px;
+  color: var(--text-muted);
+  gap: var(--space-3);
+  font-size: 14px;
 }
 
 .empty-icon {
   opacity: 0.3;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 1023px) {
+  .agents-layout {
+    grid-template-columns: 280px 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .agents-view {
+    padding: var(--space-4);
+  }
+
+  .agents-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .agent-list-panel {
+    max-height: 200px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
