@@ -256,6 +256,9 @@ async fn init_backend(handle: &tauri::AppHandle) {
             session_registry: std::sync::Arc::new(
                 std::sync::RwLock::new(Vec::new()),
             ),
+            active_runs: std::sync::Arc::new(
+                std::sync::RwLock::new(std::collections::HashMap::new()),
+            ),
             event_store: {
                 let db_path = data_dir.join("state.db");
                 praxis_persistence::SqliteEventStore::new(&db_path)

@@ -129,32 +129,6 @@ async fn call_llm_stream_or_mock(
     }
 }
 
-/// Call the LLM provider if available, otherwise return mock output.
-/// Replaced by `call_llm_stream_or_mock` — kept for non-streaming fallback.
-#[expect(dead_code, reason = "Available for non-streaming fallback path")]
-async fn call_llm_or_mock(
-    provider: &Option<Arc<dyn LLMProvider>>,
-    task: &Task,
-    system_prompt: &str,
-    role: &ResolvedRole,
-    mock_output: &str,
-) -> String {
-    match provider {
-        Some(llm) => {
-            let messages = build_chat_messages(task, system_prompt);
-            let config = build_chat_config(role);
-            match llm.chat(&messages, &config).await {
-                Ok(response) => response.content,
-                Err(e) => {
-                    tracing::warn!("LLM call failed for '{}', using mock: {}", role.role_name, e);
-                    mock_output.to_string()
-                }
-            }
-        }
-        None => mock_output.to_string(),
-    }
-}
-
 fn make_task_result(
     task: &Task,
     agent_id: &str,
@@ -213,13 +187,12 @@ impl BaseAgent for Architect {
 
     async fn execute(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are a senior software architect. Generate an Architecture Decision Record (ADR) for the given task. Include: title, status, context, decision, consequences, and alternatives considered.";
         let mock = format!(
             "ADR: {}\nStatus: accepted\nContext: The team needs to: {}\nDecision: Implement using the proposed approach\nConsequences: [+Clear architecture, -Upfront design time]",
             task.description, task.description
         );
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "architect").await;
-        make_task_result(task, "architect", "architect", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, &self.role.system_prompt, &self.role, &mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -263,26 +236,24 @@ impl BaseAgent for Coder {
 
     async fn execute(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are an expert Rust engineer. Write production-quality code for the given task. Output only the code, no explanation. Use idiomatic Rust patterns.";
         let mock = format!(
             "// Generated code for: {}\nfn main() {{ println!(\"Hello, world!\"); }}",
             task.description
         );
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "coder").await;
-        make_task_result(task, "coder", "coder", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, &self.role.system_prompt, &self.role, &mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, feedback: &str) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are an expert Rust engineer. Fix the code based on the reviewer feedback. Output only the corrected code.";
         let mut task_with_feedback = task.clone();
         task_with_feedback.context = format!("{}\n\nReviewer feedback:\n{}", task.context, feedback);
         let mock = format!(
             "// Fixed code for: {}\n// Applied feedback: {}",
             task.description, feedback
         );
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, &task_with_feedback, prompt, &self.role, &mock, &self.bus, "coder").await;
-        make_task_result(task, "coder", "coder", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, &task_with_feedback, &self.role.system_prompt, &self.role, &mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     fn reset_context(&mut self) {
@@ -322,10 +293,9 @@ impl BaseAgent for Reviewer {
 
     async fn execute(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are a senior code reviewer. Analyze the given code/task critically. Report: pass/fail, issues found (severity, file, line, message), and suggestions for improvement. Be specific.";
         let mock = "Review: PASS\nSummary: Code looks good with minor suggestions\nIssues: 0 critical, 0 major, 1 nit";
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "reviewer").await;
-        make_task_result(task, "reviewer", "reviewer", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, &self.role.system_prompt, &self.role, mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -368,10 +338,9 @@ impl BaseAgent for Security {
 
     async fn execute(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are a security auditor. Scan the given code for: hardcoded secrets, SQL injection, XSS, unsafe operations, insecure dependencies, and other vulnerabilities. Report findings with severity levels.";
         let mock = "Security Scan: PASS\nFindings: 0 critical, 0 high, 0 medium\nSummary: No security issues detected";
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "security").await;
-        make_task_result(task, "security", "security", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, &self.role.system_prompt, &self.role, mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -416,10 +385,9 @@ impl BaseAgent for Tester {
 
     async fn execute(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are a QA engineer. Generate comprehensive tests for the given task. Include: unit tests, edge cases, error cases. Use the project's test framework. Output test code only.";
         let mock = format!("// Tests for: {}\n#[test]\nfn test_basic() {{ assert!(true); }}", task.description);
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, &mock, &self.bus, "tester").await;
-        make_task_result(task, "tester", "tester", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, &self.role.system_prompt, &self.role, &mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -479,10 +447,9 @@ impl BaseAgent for Git {
 
     async fn execute(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
-        let prompt = "You are a Git expert. Generate a conventional commit message for the given task. Format: type(scope): description. Types: feat, fix, refactor, docs, test, chore.";
         let mock = &self.generate_commit_message(task);
-        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, prompt, &self.role, mock, &self.bus, "git").await;
-        make_task_result(task, "git", "git", &content, start, usage.input_tokens, usage.output_tokens)
+        let (content, usage) = call_llm_stream_or_mock(&self.provider, task, &self.role.system_prompt, &self.role, mock, &self.bus, &self.role.role_name).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
     }
 
     async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
@@ -508,7 +475,14 @@ impl AgentFactory {
             "security" => Box::new(Security::new(role.clone())),
             "tester" => Box::new(Tester::new(role.clone())),
             "git" => Box::new(Git::new(role.clone())),
-            _ => Box::new(Coder::new(role.clone())),
+            // Researcher and explorer use the Coder struct as a base —
+            // the system prompt comes from self.role.system_prompt (from .md files),
+            // so the struct choice only affects the mock fallback output.
+            "researcher" | "explorer" => Box::new(Coder::new(role.clone())),
+            unknown => {
+                tracing::warn!("Unknown role '{}' — falling back to Coder", unknown);
+                Box::new(Coder::new(role.clone()))
+            }
         }
     }
 
@@ -520,7 +494,11 @@ impl AgentFactory {
             "security" => Box::new(Security::with_provider(role.clone(), provider)),
             "tester" => Box::new(Tester::with_provider(role.clone(), provider)),
             "git" => Box::new(Git::with_provider(role.clone(), provider)),
-            _ => Box::new(Coder::with_provider(role.clone(), provider)),
+            "researcher" | "explorer" => Box::new(Coder::with_provider(role.clone(), provider)),
+            unknown => {
+                tracing::warn!("Unknown role '{}' — falling back to Coder", unknown);
+                Box::new(Coder::with_provider(role.clone(), provider))
+            }
         }
     }
 
@@ -532,7 +510,11 @@ impl AgentFactory {
             "security" => Box::new(Security::with_provider_and_bus(role.clone(), provider, bus)),
             "tester" => Box::new(Tester::with_provider_and_bus(role.clone(), provider, bus)),
             "git" => Box::new(Git::with_provider_and_bus(role.clone(), provider, bus)),
-            _ => Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus)),
+            "researcher" | "explorer" => Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus)),
+            unknown => {
+                tracing::warn!("Unknown role '{}' — falling back to Coder", unknown);
+                Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus))
+            }
         }
     }
 }

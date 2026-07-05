@@ -14,6 +14,10 @@ pub struct Task {
     pub timeout: Duration,
     pub role: String,
     pub model: String,
+    /// Execution budget for this task (tokens, cost, turns, depth).
+    /// None = unlimited (root orchestrator level).
+    #[serde(default)]
+    pub budget: Option<praxis_shared::budget::Budget>,
 }
 
 impl Task {
@@ -27,6 +31,7 @@ impl Task {
             timeout: Duration::from_secs(300),
             role: role.to_string(),
             model: model.to_string(),
+            budget: None,
         }
     }
 }

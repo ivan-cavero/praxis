@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.3.0"
+version = "0.4.0"
 description = "praxis Desktop — Tauri v2 binary"
 edition = "2024"
 default-run = "desktop"
@@ -8,7 +8,7 @@ default-run = "desktop"
 [dependencies]
 tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
 tauri-plugin-updater = "2"
-praxis-core = { path = "../crates/core", version = "0.3" }
+praxis-core = { path = "../crates/core", version = "0.4" }
 praxis-agent-traits = { path = "../crates/agent-traits", version = "0.1.0" }
 praxis-persistence = { path = "../crates/persistence", version = "0.1.0" }
 praxis-vault = { path = "../crates/vault", version = "0.1.0" }

@@ -23,6 +23,7 @@ fn get_data_dir() -> PathBuf {
 }
 
 /// Default forge.toml template for new projects.
+/// Must stay in sync with `DEFAULT_FORGE_TOML` in `crates/core/src/api/routes.rs`.
 const FORGE_TOML: &str = r#"[project]
 name = "{name}"
 version = "0.1.0"
@@ -33,57 +34,49 @@ api_key = "env:NAN_API_KEY"
 default_model = "qwen3.6"
 
 [roles.architect]
-description = "System design and architecture"
 model = "claude-sonnet-4-20250514"
 temperature = 0.2
-system_prompt = "You are a senior software architect specialized in Rust systems."
 tools = ["filesystem", "web_search"]
+system_prompt = "You are a senior software architect."
 
 [roles.coder]
-description = "Code generation and implementation"
 model = "gpt-4o"
 temperature = 0.3
-system_prompt = "You are an expert Rust engineer. Write production-quality code."
 tools = ["filesystem", "execute_command"]
+system_prompt = "You implement clean, maintainable code."
 
 [roles.reviewer]
-description = "Code review and quality assurance"
 model = "gpt-4o"
 temperature = 0.2
-system_prompt = "You are a senior code reviewer. Analyze code critically."
 tools = ["filesystem"]
+system_prompt = "Review for correctness and quality."
 
 [roles.security]
-description = "Security audit and vulnerability scanning"
 model = "claude-sonnet-4-20250514"
 temperature = 0.1
-system_prompt = "You are a security auditor. Check for vulnerabilities."
 tools = ["filesystem", "grep"]
+system_prompt = "Audit for security vulnerabilities."
 
 [roles.tester]
-description = "Test generation and execution"
 model = "gpt-4o"
 temperature = 0.2
-system_prompt = "You are a QA engineer. Generate comprehensive tests."
 tools = ["filesystem", "execute_command"]
+system_prompt = "Generate and execute tests."
 
 [roles.researcher]
-description = "Technical research and documentation"
 model = "gpt-4o"
 temperature = 0.3
-system_prompt = "You are a technical researcher. Find best practices."
 tools = ["web_search", "read_url"]
+system_prompt = "Research technical topics."
 
 [[goals]]
 name = "full-feature"
-description = "Complete feature development"
 agents = ["architect", "coder", "reviewer", "security", "tester"]
 gates = ["review.pass", "security.no_critical", "test.pass"]
 max_iterations = 10
 
 [[goals]]
 name = "quick-fix"
-description = "Fast bug fix"
 agents = ["coder", "reviewer"]
 max_iterations = 3
 
@@ -92,9 +85,25 @@ max_iterations_per_goal = 50
 max_iterations_per_phase = 5
 session_ttl_seconds = 3600
 phase_timeout_seconds = 300
+# max_tokens = 1000000      # stop after 1M total tokens (comment to disable)
+# max_cost_usd = 5.0        # stop after $5 estimated cost (comment to disable)
 "#;
 
 /// Create a new project in AppData.
+///
+/// Creates a per-project directory structure:
+/// ```text
+/// ~/.config/praxis/
+/// ├── projects.json          ← lightweight index
+/// └── projects/
+///     └── <name>/
+///         ├── config.toml    ← project config (was forge.toml)
+///         ├── state.db       ← SQLite event store (created on first run)
+///         ├── STATE.md       ← live state file (created during runs)
+///         ├── skills/        ← SKILL.md files
+///         ├── plans/         ← saved plans
+///         └── injections/    ← mid-loop injection files
+/// ```
 pub fn init_project(name: &str) -> anyhow::Result<()> {
     let data_dir = get_data_dir();
     std::fs::create_dir_all(&data_dir)?;
@@ -112,8 +121,19 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
         anyhow::bail!("Project '{}' already exists", name);
     }
 
+    // Create per-project directory structure
+    let project_dir = data_dir.join("projects").join(name);
+    std::fs::create_dir_all(&project_dir)?;
+    std::fs::create_dir_all(project_dir.join("skills"))?;
+    std::fs::create_dir_all(project_dir.join("plans"))?;
+    std::fs::create_dir_all(project_dir.join("injections"))?;
+
+    // Write config.toml into the project directory
+    let config_toml = FORGE_TOML.replace("{name}", name);
+    let config_path = project_dir.join("config.toml");
+    std::fs::write(&config_path, &config_toml)?;
+
     // Create project entry
-    let forge_toml = FORGE_TOML.replace("{name}", name);
     let now = chrono::Utc::now().to_rfc3339();
     let project = serde_json::json!({
         "id": uuid::Uuid::new_v4().to_string(),
@@ -121,7 +141,8 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
         "description": "",
         "created_at": now,
         "last_active": now,
-        "forge_toml": forge_toml,
+        "forge_toml": config_toml,
+        "path": project_dir.display().to_string(),
     });
 
     projects.push(project);
@@ -129,6 +150,8 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
 
     println!("  Created project '{}' in AppData", name);
     println!("  Data directory: {}", data_dir.display());
+    println!("  Project directory: {}", project_dir.display());
+    println!("  Config: {}", config_path.display());
 
     Ok(())
 }

@@ -246,6 +246,8 @@ async fn e2e_pipeline_limits_enforcement() {
         session_ttl_seconds: 3600,
         phase_timeout_seconds: 300,
         cycle_detection_window: 4,
+        max_tokens: None,
+        max_cost_usd: None,
     };
 
     let mut runtime = praxis_core::CoreRuntime::new().await.unwrap();

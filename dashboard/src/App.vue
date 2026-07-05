@@ -63,6 +63,8 @@ const navItems = [
   { name: 'dashboard', label: 'Dashboard', icon: 'dashboard', route: '/' },
   { name: 'pipeline', label: 'Pipeline', icon: 'chart-line', route: '/pipeline' },
   { name: 'sessions', label: 'Sessions', icon: 'server', route: '/sessions' },
+  { name: 'agents', label: 'Agents', icon: 'robot', route: '/agents' },
+  { name: 'cost-analysis', label: 'Cost', icon: 'chart', route: '/cost-analysis' },
 ]
 
 const currentRouteName = computed(() => route.name as string || 'dashboard')

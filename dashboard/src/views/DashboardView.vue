@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
-import { useApi, type SessionEntry, type AgentSummary, type Project } from '../composables/useApi'
+import { useApi, type SessionEntry, type AgentDefinition, type Project } from '../composables/useApi'
 import MetricCard from '../components/ui/MetricCard.vue'
 import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
@@ -12,7 +12,7 @@ const store = useAppStore()
 const api = useApi()
 
 const sessions = ref<SessionEntry[]>([])
-const agents = ref<AgentSummary[]>([])
+const agents = ref<AgentDefinition[]>([])
 const isLoading = ref(true)
 const metricsSummary = ref<{ total_tokens: number; avg_asi_score: number } | null>(null)
 
@@ -30,6 +30,14 @@ const filteredSessions = computed(() => {
 
 const activeSessionsCount = computed(() =>
   sessions.value.filter(s => s.status === 'running').length
+)
+
+const totalTokens = computed(() =>
+  sessions.value.reduce((sum, s) => sum + (s.tokens_used || 0), 0)
+)
+
+const totalCost = computed(() =>
+  sessions.value.reduce((sum, s) => sum + (s.cost_usd || 0), 0)
 )
 
 const projectNames = computed(() => {
@@ -84,9 +92,9 @@ onUnmounted(() => {
       <MetricCard label="Active Sessions" :value="activeSessionsCount" sub="Currently running" color="green" />
       <MetricCard label="Total Sessions" :value="sessions.length" sub="All time" color="emerald" />
       <MetricCard label="Projects" :value="projects.length" sub="Created" color="blue" />
-      <MetricCard label="Tokens" :value="metricsSummary?.total_tokens ?? '—'" sub="Total consumed" color="amber" />
-      <MetricCard label="ASI Score" :value="metricsSummary?.avg_asi_score ?? '—'" sub="Average" color="purple" />
-      <MetricCard label="Agents" :value="agents.length" sub="Configured" color="crimson" />
+      <MetricCard label="Tokens" :value="totalTokens" sub="Total consumed" color="amber" />
+      <MetricCard label="Est. Cost" :value="`$${totalCost.toFixed(2)}`" sub="All sessions" color="crimson" />
+      <MetricCard label="Agents" :value="agents.length" sub="Configured" color="purple" />
     </div>
 
 
@@ -124,6 +132,10 @@ onUnmounted(() => {
             <div class="session-row-meta">
               {{ session.project }} &middot; Phase {{ session.phase }}
               &middot; Iteration {{ session.iteration }}
+              <span v-if="session.tokens_used" class="session-meta-tokens">
+                &middot; {{ (session.tokens_used || 0).toLocaleString() }} tokens
+                &middot; ${{ (session.cost_usd || 0).toFixed(4) }}
+              </span>
             </div>
           </div>
           <div class="session-row-right">
@@ -156,10 +168,12 @@ onUnmounted(() => {
           <div class="agent-card-header">
             <div class="agent-avatar">{{ agent.name.charAt(0).toUpperCase() }}</div>
             <div class="agent-card-info">
-              <div class="agent-name">{{ agent.role }}</div>
+              <div class="agent-name">{{ agent.name }}</div>
               <div class="agent-model">{{ agent.model }}</div>
             </div>
-            <Badge variant="green" size="sm">Idle</Badge>
+            <Badge :variant="agent.scope === 'builtin' ? 'gray' : 'emerald'" size="sm">
+              {{ agent.scope }}
+            </Badge>
           </div>
           <div class="agent-card-tools">
             <span v-for="tool in agent.tools" :key="tool" class="agent-tool-tag">
@@ -291,6 +305,12 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: var(--space-1);
+}
+
+.session-meta-tokens {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-disabled);
+  font-size: 11px;
 }
 
 .session-row-right {

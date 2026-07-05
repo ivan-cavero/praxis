@@ -131,6 +131,14 @@ impl StateMachine {
         Ok(record)
     }
 
+    /// Force-set the current phase without transition validation.
+    ///
+    /// Used ONLY when restoring from a known-good checkpoint in `resume_goal`.
+    /// Bypasses the transition guard so we can resume mid-pipeline.
+    pub fn restore_phase(&mut self, phase: Phase) {
+        self.current = phase;
+    }
+
     /// Detect if the machine is in a cycle (A→B→A→B).
     pub fn detect_cycle(&self, window: usize) -> bool {
         if self.history.len() < window * 2 {

@@ -7,6 +7,7 @@ pub mod types;
 pub mod protocol;
 pub mod config;
 pub mod error;
+pub mod budget;
 
 /// Prelude module: re-exports the most commonly used types.
 pub mod prelude {

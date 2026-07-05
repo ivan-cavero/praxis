@@ -66,6 +66,8 @@ export interface Project {
   created_at: string
   last_active: string
   forge_toml: string
+  /** Path to the per-project directory (null for legacy projects). */
+  path?: string | null
 }
 
 export interface ProjectConfig {
@@ -93,6 +95,8 @@ export interface GoalDetail {
 export interface LimitsDetail {
   max_iterations_per_goal: number; max_iterations_per_phase: number
   session_ttl_seconds: number; phase_timeout_seconds: number
+  max_tokens?: number | null
+  max_cost_usd?: number | null
 }
 
 export interface ProviderKey { provider: string; key_masked: string; has_key: boolean }
@@ -170,9 +174,46 @@ export function useApi() {
   const getSessions = () => apiFetch<SessionEntry[]>('/sessions')
   const getSession = (id: string) => apiFetch<SessionEntry>(`/sessions/${id}`)
   const stopSession = (id: string) => apiFetch<{ status: string; session_id: string }>(`/sessions/${id}/stop`, { method: 'POST' })
+  const getSessionState = (id: string) => apiFetch<SessionStateResponse>(`/sessions/${id}/state`)
+
+  // Goal execution — start a goal run in the background
+  const runGoal = (projectId: string, req: RunGoalRequest) =>
+    apiFetch<RunGoalResponse>(`/projects/${projectId}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+
+  // Plan mode — generate a plan without executing
+  const planGoal = (projectId: string, req: RunGoalRequest) =>
+    apiFetch<PlanGoalResponse>(`/projects/${projectId}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+
+  // Skills — list available built-in skills
+  const getSkills = () => apiFetch<SkillInfo[]>('/skills')
 
   // Agents
-  const getAgents = () => apiFetch<AgentSummary[]>('/agents')
+  const getAgents = () => apiFetch<AgentDefinition[]>('/agents')
+  const getAgent = (name: string) => apiFetch<AgentDefinition>(`/agents/${name}`)
+  const createAgent = (req: CreateAgentRequest) =>
+    apiFetch<AgentDefinition>('/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+  const updateAgent = (name: string, req: CreateAgentRequest) =>
+    apiFetch<AgentDefinition>(`/agents/${name}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+  const deleteAgent = (name: string) =>
+    apiFetch<{ deleted: string; scope: string }>(`/agents/${name}`, {
+      method: 'DELETE',
+    })
 
   // Inject
   const sendInject = (targetAgent: string, messageType: string, content: string) =>
@@ -187,8 +228,9 @@ export function useApi() {
     getProjects, getProject, createProject, updateProject, deleteProject,
     getProjectConfig, updateProjectConfig,
     getVaultKeys, setVaultKey, deleteVaultKey,
-    getSessions, getSession, stopSession,
-    getAgents,
+    getSessions, getSession, stopSession, getSessionState,
+    runGoal, planGoal, getSkills,
+    getAgents, getAgent, createAgent, updateAgent, deleteAgent,
     sendInject,
     get, post, del,
   }
@@ -203,6 +245,53 @@ export interface SessionEntry {
   status: string
   started_at: string
   completed_at: string | null
+  tokens_used?: number
+  cost_usd?: number
+}
+
+export interface RunGoalRequest {
+  goal: string
+  completion?: string
+  until?: string
+  max_tokens?: number
+  max_cost_usd?: number
+  parallel_reviewers?: number
+  /** Built-in skill IDs to enable (e.g., ["rust-best-practices", "security"]). */
+  skills?: string[]
+  /** Create a git worktree for this session (isolated working directory). */
+  worktree?: boolean
+}
+
+export interface RunGoalResponse {
+  session_id: string
+  project_id: string
+  goal: string
+  status: string
+}
+
+export interface SessionStateResponse {
+  session_id: string
+  phase: string
+  iteration: number
+  tokens_used: number
+  cost_usd: number
+  status: string
+  state_file?: string
+}
+
+export interface PlanGoalResponse {
+  plan_id: string
+  project_id: string
+  goal: string
+  plan: string
+  plan_path: string
+  status: string
+}
+
+export interface SkillInfo {
+  id: string
+  name: string
+  description: string
 }
 
 export interface AgentSummary {
@@ -211,4 +300,34 @@ export interface AgentSummary {
   model: string
   tools: string[]
   status: string
+}
+
+// ─── Agent CRUD ───────────────────────────────────────────────
+
+export interface AgentDefinition {
+  name: string
+  description: string
+  model: string
+  temperature: number
+  max_tokens: number
+  tools: string[]
+  max_turns: number
+  max_depth: number
+  can_spawn: string[]
+  system_prompt: string
+  scope: string
+}
+
+export interface CreateAgentRequest {
+  name: string
+  description?: string
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  tools?: string[]
+  max_turns?: number
+  max_depth?: number
+  can_spawn?: string[]
+  system_prompt: string
+  scope?: string
 }

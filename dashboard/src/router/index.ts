@@ -24,6 +24,16 @@ const router = createRouter({
       component: () => import('../views/SessionView.vue'),
     },
     {
+      path: '/cost-analysis',
+      name: 'cost-analysis',
+      component: () => import('../views/CostAnalysisView.vue'),
+    },
+    {
+      path: '/agents',
+      name: 'agents',
+      component: () => import('../views/AgentsView.vue'),
+    },
+    {
       path: '/projects/:id/chat',
       name: 'project-chat',
       component: () => import('../views/ProjectChatView.vue'),

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi, type SessionEntry } from '../composables/useApi'
 import { useWebSocket, filterEvents, type AgentOutputEvent, type AgentStartedEvent, type AgentCompletedEvent, type ToolCalledEvent } from '../composables/useWebSocket'
 import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
+import LiveMonitorPanel from '../components/LiveMonitorPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +14,13 @@ const ws = useWebSocket()
 
 const session = ref<SessionEntry | null>(null)
 const isLoading = ref(true)
+const stateFile = ref<string | null>(null)
+const liveTokens = ref(0)
+const liveCost = ref(0)
+const livePhase = ref('')
+const liveIteration = ref(0)
+
+let statePollInterval: ReturnType<typeof setInterval> | null = null
 
 // Live agent log
 interface LiveLogEntry {
@@ -91,15 +99,77 @@ function getStatusColor(status: string): 'green' | 'amber' | 'crimson' | 'gray' 
   }
 }
 
-// Import onMounted from vue — load session data on mount
+function copyStateFile() {
+  if (stateFile.value) {
+    navigator.clipboard.writeText(stateFile.value)
+  }
+}
+
+// Poll session state every 2 seconds for live updates (tokens, cost, STATE.md)
+function startStatePolling(sessionId: string) {
+  if (statePollInterval) clearInterval(statePollInterval)
+  statePollInterval = setInterval(async () => {
+    try {
+      const state = await api.getSessionState(sessionId)
+      stateFile.value = state.state_file || null
+      liveTokens.value = state.tokens_used
+      liveCost.value = state.cost_usd
+      livePhase.value = state.phase
+      liveIteration.value = state.iteration
+
+      // Update the session entry with live data
+      if (session.value) {
+        session.value.tokens_used = state.tokens_used
+        session.value.cost_usd = state.cost_usd
+        session.value.phase = state.phase
+        session.value.iteration = state.iteration
+      }
+
+      // Stop polling when the session is no longer running
+      if (state.status !== 'running') {
+        if (statePollInterval) {
+          clearInterval(statePollInterval)
+          statePollInterval = null
+        }
+        if (session.value) {
+          session.value.status = state.status
+        }
+      }
+    } catch {
+      // session might not be found — keep polling
+    }
+  }, 2000)
+}
+
 onMounted(async () => {
   try {
     const id = route.params.id as string
     session.value = await api.getSession(id)
+
+    // Load STATE.md content + live state
+    try {
+      const state = await api.getSessionState(id)
+      stateFile.value = state.state_file || null
+      liveTokens.value = state.tokens_used
+      liveCost.value = state.cost_usd
+      livePhase.value = state.phase
+      liveIteration.value = state.iteration
+    } catch {
+      // state file might not exist yet
+    }
+
+    // Start polling if the session is running
+    if (session.value && session.value.status === 'running') {
+      startStatePolling(id)
+    }
   } catch {
     // session not found
   }
   isLoading.value = false
+})
+
+onUnmounted(() => {
+  if (statePollInterval) clearInterval(statePollInterval)
 })
 </script>
 
@@ -137,11 +207,19 @@ onMounted(async () => {
       <div class="session-detail-grid">
         <div class="detail-card">
           <div class="detail-card-label">Phase</div>
-          <div class="detail-card-value">{{ session.phase }}</div>
+          <div class="detail-card-value">{{ livePhase || session.phase }}</div>
         </div>
         <div class="detail-card">
           <div class="detail-card-label">Iteration</div>
-          <div class="detail-card-value">{{ session.iteration }}</div>
+          <div class="detail-card-value">{{ liveIteration || session.iteration }}</div>
+        </div>
+        <div class="detail-card">
+          <div class="detail-card-label">Tokens</div>
+          <div class="detail-card-value">{{ (liveTokens || session.tokens_used || 0).toLocaleString() }}</div>
+        </div>
+        <div class="detail-card">
+          <div class="detail-card-label">Cost</div>
+          <div class="detail-card-value">${{ (liveCost || session.cost_usd || 0).toFixed(4) }}</div>
         </div>
         <div class="detail-card">
           <div class="detail-card-label">Status</div>
@@ -153,6 +231,18 @@ onMounted(async () => {
             {{ session.completed_at ? new Date(session.completed_at).toLocaleString() : '—' }}
           </div>
         </div>
+      </div>
+
+      <!-- Live Monitor Panel (real-time WebSocket) -->
+      <LiveMonitorPanel :session-id="route.params.id as string" />
+
+      <!-- STATE.md viewer -->
+      <div v-if="stateFile" class="state-file-section">
+        <div class="state-file-header">
+          <h2 class="state-file-title">STATE.md</h2>
+          <button class="btn-copy" @click="copyStateFile">Copy</button>
+        </div>
+        <pre class="state-file-content">{{ stateFile }}</pre>
       </div>
 
       <!-- Live agent logs -->
@@ -297,6 +387,53 @@ onMounted(async () => {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.state-file-section {
+  margin-top: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.state-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.state-file-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.btn-copy {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.btn-copy:hover { color: var(--text-primary); }
+
+.state-file-content {
+  padding: var(--space-3);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .session-logs {

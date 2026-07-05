@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useApi, type AgentSummary } from '../../composables/useApi'
+import { useApi, type AgentDefinition } from '../../composables/useApi'
 import Badge from '../ui/Badge.vue'
 import Icon from '../ui/Icon.vue'
 
 const api = useApi()
 
-const agents = ref<AgentSummary[]>([])
+const agents = ref<AgentDefinition[]>([])
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-function getStatusColor(status: string): 'green' | 'amber' | 'crimson' | 'gray' {
-  switch (status) {
-    case 'running': return 'green'
-    case 'idle': return 'amber'
-    case 'error': return 'crimson'
-    default: return 'gray'
+function getScopeColor(scope: string): 'green' | 'emerald' | 'amber' | 'gray' {
+  switch (scope) {
+    case 'builtin': return 'gray'
+    case 'global': return 'emerald'
+    case 'project': return 'green'
+    default: return 'amber'
   }
 }
 
@@ -45,10 +45,10 @@ onUnmounted(() => {
     <div class="health-table">
       <div class="health-row header">
         <span class="col-agent">Agent</span>
-        <span class="col-role">Role</span>
         <span class="col-model">Model</span>
+        <span class="col-depth">Depth</span>
         <span class="col-tools">Tools</span>
-        <span class="col-status">Status</span>
+        <span class="col-scope">Scope</span>
       </div>
 
       <div
@@ -60,14 +60,14 @@ onUnmounted(() => {
           <div class="agent-avatar-sm">{{ agent.name.charAt(0).toUpperCase() }}</div>
           {{ agent.name }}
         </span>
-        <span class="col-role">{{ agent.role }}</span>
         <span class="col-model mono">{{ agent.model }}</span>
+        <span class="col-depth">{{ agent.max_depth }}</span>
         <span class="col-tools">
           <span v-for="tool in agent.tools" :key="tool" class="tool-chip">{{ tool }}</span>
         </span>
-        <span class="col-status">
-          <Badge :variant="getStatusColor(agent.status)" size="sm">
-            {{ agent.status }}
+        <span class="col-scope">
+          <Badge :variant="getScopeColor(agent.scope)" size="sm">
+            {{ agent.scope }}
           </Badge>
         </span>
       </div>

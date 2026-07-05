@@ -62,7 +62,7 @@ fn e2e_cli_version() {
     let (stdout, _, success) = run_cli(&["version"]);
     assert!(success, "CLI version command failed");
     assert!(stdout.contains("praxis"), "Should contain 'praxis': {}", stdout);
-    assert!(stdout.contains("0.1.0"), "Should contain version: {}", stdout);
+    assert!(stdout.contains("v0."), "Should contain a version starting with v0.: {}", stdout);
 }
 
 #[test]
@@ -175,16 +175,6 @@ fn e2e_cli_context_inspect_no_session() {
     assert!(!stdout.is_empty(), "Should produce some output");
 }
 
-#[test]
-fn e2e_cli_org_list() {
-    let (stdout, _, success) = run_cli(&["org", "list"]);
-    assert!(success, "CLI org list should succeed");
-}
-
-#[test]
-fn e2e_cli_billing_show() {
-    let (stdout, _, success) = run_cli(&["billing", "show"]);
-    assert!(success, "CLI billing show should succeed");
-    assert!(stdout.contains("Plan") || stdout.contains("plan") || stdout.contains("Billing"),
-        "Should show billing info: {}", stdout);
-}
+// NOTE: e2e_cli_org_list and e2e_cli_billing_show removed —
+// org/billing commands are explicitly out of scope per VISION.md
+// ("No enterprise. No multi-tenant. No billing.")

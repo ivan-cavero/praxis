@@ -29,6 +29,10 @@ pub struct LoopController {
     pub running: bool,
     /// Session start time.
     pub started_at: std::time::Instant,
+    /// Total tokens consumed across all agents in this session.
+    pub tokens_used: u64,
+    /// Estimated cost in USD across all agents in this session.
+    pub cost_usd: f64,
 }
 
 impl LoopController {
@@ -44,6 +48,8 @@ impl LoopController {
             events: VecDeque::with_capacity(256),
             running: false,
             started_at: std::time::Instant::now(),
+            tokens_used: 0,
+            cost_usd: 0.0,
         }
     }
 
@@ -114,6 +120,26 @@ impl LoopController {
             }
         }
 
+        // Token budget cap
+        if let Some(max_tokens) = self.limits.max_tokens
+            && self.tokens_used >= max_tokens
+        {
+            return Some(LimitViolation::TokenBudget {
+                used: self.tokens_used,
+                max: max_tokens,
+            });
+        }
+
+        // Cost budget cap
+        if let Some(max_cost) = self.limits.max_cost_usd
+            && self.cost_usd >= max_cost
+        {
+            return Some(LimitViolation::CostBudget {
+                used: self.cost_usd,
+                max: max_cost,
+            });
+        }
+
         None
     }
 
@@ -165,6 +191,13 @@ impl LoopController {
         });
     }
 
+    /// Record token usage and estimated cost from an agent execution.
+    /// Called after each LLM call to accumulate the session budget.
+    pub fn record_token_usage(&mut self, tokens: u32, cost_usd: f64) {
+        self.tokens_used += tokens as u64;
+        self.cost_usd += cost_usd;
+    }
+
     /// Check for cycle detection.
     pub fn detect_cycle(&self) -> bool {
         self.state_machine.detect_cycle(self.limits.cycle_detection_window)
@@ -214,6 +247,12 @@ pub struct Limits {
     pub session_ttl_seconds: u64,
     pub phase_timeout_seconds: u64,
     pub cycle_detection_window: usize,
+    /// Maximum total tokens across all agents in the session. None = no cap.
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
+    /// Maximum estimated cost in USD across all agents. None = no cap.
+    #[serde(default)]
+    pub max_cost_usd: Option<f64>,
 }
 
 impl Default for Limits {
@@ -224,6 +263,8 @@ impl Default for Limits {
             session_ttl_seconds: 3600,
             phase_timeout_seconds: 300,
             cycle_detection_window: 4,
+            max_tokens: None,
+            max_cost_usd: None,
         }
     }
 }
@@ -237,6 +278,8 @@ pub enum LimitViolation {
     MaxIterationsPerPhase { phase: Phase, current: u32, max: u32 },
     SessionTtl { elapsed: std::time::Duration, max: std::time::Duration },
     PhaseTimeout { phase: Phase, duration: std::time::Duration, max: std::time::Duration },
+    TokenBudget { used: u64, max: u64 },
+    CostBudget { used: f64, max: f64 },
 }
 
 impl std::fmt::Display for LimitViolation {
@@ -253,6 +296,12 @@ impl std::fmt::Display for LimitViolation {
             }
             Self::PhaseTimeout { phase, duration, max } => {
                 write!(f, "Phase {} timeout: {:?}/{:?}", phase, duration, max)
+            }
+            Self::TokenBudget { used, max } => {
+                write!(f, "Token budget exhausted: {}/{} tokens", used, max)
+            }
+            Self::CostBudget { used, max } => {
+                write!(f, "Cost budget exhausted: ${:.4}/${:.4}", used, max)
             }
         }
     }
@@ -382,5 +431,53 @@ mod tests {
         assert_eq!(info.current, Phase::Planning);
         assert_eq!(info.iteration, 1);
         assert_eq!(info.phase_iteration, 1);
+    }
+
+    #[test]
+    fn test_token_budget_cap() {
+        let limits = Limits {
+            max_tokens: Some(1000),
+            ..Default::default()
+        };
+        let mut ctrl = LoopController::with_limits(limits);
+        ctrl.start();
+
+        // Under budget — no violation
+        ctrl.record_token_usage(500, 0.01);
+        assert!(ctrl.check_limits().is_none(), "500 tokens should be under 1000 cap");
+
+        // At budget — violation (>=)
+        ctrl.record_token_usage(500, 0.01);
+        assert!(ctrl.check_limits().is_some(), "1000 tokens should trigger cap");
+        assert!(matches!(ctrl.check_limits(), Some(LimitViolation::TokenBudget { used: 1000, max: 1000 })));
+    }
+
+    #[test]
+    fn test_cost_budget_cap() {
+        let limits = Limits {
+            max_cost_usd: Some(1.0),
+            ..Default::default()
+        };
+        let mut ctrl = LoopController::with_limits(limits);
+        ctrl.start();
+
+        // Under budget
+        ctrl.record_token_usage(1000, 0.50);
+        assert!(ctrl.check_limits().is_none(), "$0.50 should be under $1.00 cap");
+
+        // Over budget
+        ctrl.record_token_usage(1000, 0.60);
+        assert!(ctrl.check_limits().is_some(), "$1.10 should trigger cap");
+        assert!(matches!(ctrl.check_limits(), Some(LimitViolation::CostBudget { .. })));
+    }
+
+    #[test]
+    fn test_no_budget_cap_when_none() {
+        let mut ctrl = LoopController::new();
+        ctrl.start();
+
+        // No caps set — should never trigger token/cost violations
+        ctrl.record_token_usage(999_999_999, 999_999.0);
+        assert!(ctrl.check_limits().is_none(), "No caps = no token/cost violation");
     }
 }

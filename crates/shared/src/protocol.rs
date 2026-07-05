@@ -101,6 +101,25 @@ pub enum MessageKind {
         ratio: f32,
         technique: String,
     },
+
+    // ─── Delegation Events ──────────────────────────────────
+    /// A parent agent spawned a subagent to handle a sub-task.
+    DelegationStarted {
+        parent: String,
+        child: String,
+        task_preview: String,
+        budget_tokens: Option<u64>,
+        depth: u8,
+    },
+    /// A subagent completed and returned a result to its parent.
+    DelegationCompleted {
+        parent: String,
+        child: String,
+        status: String,
+        duration_ms: u64,
+        tokens_used: u64,
+        result_preview: String,
+    },
 }
 
 // ─── Sub-types for MessageKind variants ────────────────────────

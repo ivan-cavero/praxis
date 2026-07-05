@@ -93,3 +93,6 @@ tmp/
 temp/
 scratch/
 desktop/updater-private-key.pem
+
+# --- Session state files (generated at runtime, not committed) ---
+STATE.md

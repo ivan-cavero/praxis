@@ -78,6 +78,23 @@ export interface ContextCompressionEvent {
   technique: string
 }
 
+export interface DelegationStartedEvent {
+  parent: string
+  child: string
+  task_preview: string
+  budget_tokens: number | null
+  depth: number
+}
+
+export interface DelegationCompletedEvent {
+  parent: string
+  child: string
+  status: string
+  duration_ms: number
+  tokens_used: number
+  result_preview: string
+}
+
 /**
  * Extract typed payload from a SystemEvent by kind variant name.
  * Returns `undefined` if the event doesn't match.

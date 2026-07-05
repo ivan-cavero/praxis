@@ -31,6 +31,9 @@ async fn start_vault_server() -> (u16, String) {
         session_registry: std::sync::Arc::new(
             std::sync::RwLock::new(Vec::new()),
         ),
+        active_runs: std::sync::Arc::new(
+            std::sync::RwLock::new(std::collections::HashMap::new()),
+        ),
         event_store: None,
         pairing: None,
     };

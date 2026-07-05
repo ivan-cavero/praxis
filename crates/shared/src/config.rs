@@ -73,6 +73,10 @@ pub struct LimitsConfig {
     pub consolidation_interval: Option<u32>,
     pub context_pressure_warning: Option<f32>,
     pub context_pressure_critical: Option<f32>,
+    /// Maximum total tokens across all agents in the session. None = no cap.
+    pub max_tokens: Option<u64>,
+    /// Maximum estimated cost in USD across all agents. None = no cap.
+    pub max_cost_usd: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

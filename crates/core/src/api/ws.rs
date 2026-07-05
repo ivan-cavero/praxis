@@ -6,43 +6,9 @@
 use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::State;
-use futures_util::{SinkExt, StreamExt, stream::SplitSink};
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
 use super::routes::AppState;
-
-/// Client connection state
-#[expect(dead_code, reason = "Planned for client subscription filtering")]
-struct ClientState {
-    sender: SplitSink<WebSocket, Message>,
-    subscriptions: Vec<String>,
-}
-
-/// Spawn a task that forwards EventBus events to all connected clients.
-pub fn start_event_forwarder(bus: &crate::EventBus, clients: broadcast::Sender<String>) {
-    let mut rx = bus.subscribe();
-    tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let kind_value = serde_json::to_value(&event.kind).unwrap_or_default();
-                    let msg = serde_json::json!({
-                        "id": event.id,
-                        "timestamp": chrono::Utc::now().to_rfc3339(),
-                        "kind": kind_value,
-                        "source": event.source,
-                        "metadata": event.metadata,
-                    });
-                    let payload = serde_json::to_string(&msg).unwrap_or_default();
-                    let _ = clients.send(payload);
-                }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("Event forwarder lagged by {} events", n);
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    });
-}
 
 /// Handle an incoming WebSocket connection.
 pub async fn ws_handler(

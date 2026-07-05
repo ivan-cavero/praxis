@@ -8,7 +8,7 @@
 import { ref, computed, inject, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
-import { useApi, type Project, type RoleDetail, type ProviderDetail } from '../composables/useApi'
+import { useApi, type Project, type RoleDetail, type ProviderDetail, type SkillInfo } from '../composables/useApi'
 import { useWebSocket, getEventPayload, type AgentOutputEvent } from '../composables/useWebSocket'
 import Icon from '../components/ui/Icon.vue'
 
@@ -184,40 +184,194 @@ onMounted(async () => {
 // You never send to individual agents — one goal, full pipeline.
 
 async function sendMessage() {
-  if (!inputText.value.trim() || !projectId.value || !activeAgent.value) return
+  if (!inputText.value.trim() || !projectId.value) return
   const text = inputText.value.trim()
   inputText.value = ''
 
-  // "All" tab = send to the orchestrator via the first agent entry point.
-  // A single goal triggers the full multi-agent pipeline.
-  const target = activeAgent.value === 'all' ? agentList.value[0] : activeAgent.value
+  // Support multi-goal dispatch: split by newlines that start with "- " or "1. "
+  // or just separate goals with "---" on its own line
+  const goals = parseMultiGoals(text)
 
-  pushMessage(target, {
-    id: crypto.randomUUID(),
-    role: 'user',
-    content: text,
-    timestamp: new Date().toISOString(),
-    agent: target,
-  })
-
-  isSending.value = true
-  try {
-    await api.sendInject(target, 'goal', text)
-    pushMessage(target, {
+  for (const goal of goals) {
+    // Push the user's goal to the "all" tab
+    pushMessage('all', {
       id: crypto.randomUUID(),
-      role: 'system',
-      content: `Goal dispatched — orchestrator distributing across agents`,
+      role: 'user',
+      content: goal,
       timestamp: new Date().toISOString(),
+      agent: 'all',
     })
-  } catch {
-    pushMessage(target, {
+
+    isSending.value = true
+    try {
+      // Start a real goal run via the API
+      const result = await api.runGoal(projectId.value, {
+        goal,
+        until: untilCommand.value || undefined,
+        max_tokens: maxTokens.value || undefined,
+        max_cost_usd: maxCost.value || undefined,
+        skills: enabledSkills.value.length > 0 ? enabledSkills.value : undefined,
+        worktree: useWorktree.value || undefined,
+      })
+
+      activeSessionId.value = result.session_id
+
+      pushMessage('all', {
+        id: crypto.randomUUID(),
+        role: 'system',
+        content: `Goal dispatched — session ${result.session_id.slice(0, 8)}... orchestrator distributing across agents`,
+        timestamp: new Date().toISOString(),
+      })
+
+      // Start polling for live state (tokens, cost, phase)
+      startStatePolling(result.session_id)
+    } catch (error: unknown) {
+      pushMessage('all', {
+        id: crypto.randomUUID(),
+        role: 'system',
+        content: `Failed to dispatch goal: ${error instanceof Error ? error.message : 'unknown error'}`,
+        timestamp: new Date().toISOString(),
+      })
+    }
+    isSending.value = false
+  }
+}
+
+/** Parse multi-goal input. Supports:
+ * - Single goal (one line or paragraph)
+ * - Multiple goals separated by "---" on its own line
+ * - Numbered list (1. goal1 \n 2. goal2)
+ * - Bullet list (- goal1 \n - goal2)
+ */
+function parseMultiGoals(text: string): string[] {
+  const trimmed = text.trim()
+
+  // Check for separator
+  if (trimmed.includes('\n---\n')) {
+    return trimmed.split('\n---\n').map(g => g.trim()).filter(g => g.length > 0)
+  }
+
+  // Check for numbered list (1. ... 2. ...)
+  const numberedMatch = trimmed.match(/^(\d+\.\s+.+(\n|$))+/)
+  if (numberedMatch) {
+    return trimmed
+      .split(/\n(?=\d+\.\s)/)
+      .map(g => g.replace(/^\d+\.\s+/, '').trim())
+      .filter(g => g.length > 0)
+  }
+
+  // Check for bullet list (- ... - ...)
+  if (trimmed.match(/^(-\s+.+(\n|$))+/)) {
+    return trimmed
+      .split(/\n(?=-\s)/)
+      .map(g => g.replace(/^-\s+/, '').trim())
+      .filter(g => g.length > 0)
+  }
+
+  // Single goal
+  return [trimmed]
+}
+
+// ─── Plan mode ────────────────────────────────────────────────────
+
+const showPlanModal = ref(false)
+const planContent = ref('')
+const planPath = ref('')
+const isPlanning = ref(false)
+
+async function planGoal() {
+  if (!inputText.value.trim() || !projectId.value) return
+  const text = inputText.value.trim()
+
+  isPlanning.value = true
+  try {
+    const result = await api.planGoal(projectId.value, { goal: text })
+    planContent.value = result.plan
+    planPath.value = result.plan_path
+    showPlanModal.value = true
+  } catch (error: unknown) {
+    pushMessage('all', {
       id: crypto.randomUUID(),
       role: 'system',
-      content: 'Failed to dispatch goal. Is the backend running?',
+      content: `Failed to plan: ${error instanceof Error ? error.message : 'unknown error'}`,
       timestamp: new Date().toISOString(),
     })
   }
-  isSending.value = false
+  isPlanning.value = false
+}
+
+async function executePlan() {
+  if (!projectId.value || !planContent.value) return
+  showPlanModal.value = false
+
+  // Extract the goal from the plan content (first "# Plan: ..." line)
+  const goalLine = planContent.value.split('\n').find(l => l.startsWith('# Plan:'))
+  const goal = goalLine ? goalLine.replace('# Plan:', '').trim() : inputText.value
+
+  inputText.value = goal
+  await sendMessage()
+}
+
+// ─── Live session state polling ────────────────────────────────────
+
+const activeSessionId = ref<string | null>(null)
+const liveTokens = ref(0)
+const liveCost = ref(0)
+const livePhase = ref('')
+const liveIteration = ref(0)
+const liveStatus = ref('')
+const untilCommand = ref('')
+const maxTokens = ref<number | null>(null)
+const maxCost = ref<number | null>(null)
+const useWorktree = ref(false)
+const availableSkills = ref<SkillInfo[]>([])
+const enabledSkills = ref<string[]>([])
+
+// Load available skills on mount
+onMounted(async () => {
+  try {
+    availableSkills.value = await api.getSkills()
+  } catch {
+    // skills endpoint might not be available
+  }
+})
+
+function toggleSkill(skillId: string) {
+  enabledSkills.value = enabledSkills.value.includes(skillId)
+    ? enabledSkills.value.filter(id => id !== skillId)
+    : [...enabledSkills.value, skillId]
+}
+
+let statePollInterval: ReturnType<typeof setInterval> | null = null
+
+function startStatePolling(sessionId: string) {
+  if (statePollInterval) clearInterval(statePollInterval)
+  statePollInterval = setInterval(async () => {
+    try {
+      const state = await api.getSessionState(sessionId)
+      liveTokens.value = state.tokens_used
+      liveCost.value = state.cost_usd
+      livePhase.value = state.phase
+      liveIteration.value = state.iteration
+      liveStatus.value = state.status
+
+      // Stop polling when the session is no longer running
+      if (state.status !== 'running') {
+        if (statePollInterval) {
+          clearInterval(statePollInterval)
+          statePollInterval = null
+        }
+        pushMessage('all', {
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: `Session ${state.status} — ${state.tokens_used} tokens, $${state.cost_usd.toFixed(4)}`,
+          timestamp: new Date().toISOString(),
+        })
+      }
+    } catch {
+      // Session might not be found yet — keep polling
+    }
+  }, 2000)
 }
 
 // ─── Listen for agent output via WebSocket ─────────────────────────
@@ -346,23 +500,117 @@ watch(() => ws.events.value, (allEvents) => {
       </div>
     </div>
 
+    <!-- Live state bar (shown when a session is active) -->
+    <div v-if="activeSessionId" class="live-state-bar">
+      <div class="live-state-item">
+        <span class="live-state-label">Phase</span>
+        <span class="live-state-value">{{ livePhase }}</span>
+      </div>
+      <div class="live-state-item">
+        <span class="live-state-label">Iter</span>
+        <span class="live-state-value">{{ liveIteration }}</span>
+      </div>
+      <div class="live-state-item">
+        <span class="live-state-label">Tokens</span>
+        <span class="live-state-value">{{ liveTokens.toLocaleString() }}</span>
+      </div>
+      <div class="live-state-item">
+        <span class="live-state-label">Cost</span>
+        <span class="live-state-value">${{ liveCost.toFixed(4) }}</span>
+      </div>
+      <div class="live-state-item">
+        <span class="live-state-label">Status</span>
+        <span class="live-state-value" :class="{ 'status-running': liveStatus === 'running' }">{{ liveStatus }}</span>
+      </div>
+    </div>
+
+    <!-- Budget controls (collapsible) -->
+    <details class="budget-controls">
+      <summary>Budget, Skills & Options</summary>
+      <div class="budget-row">
+        <label>
+          <span>Until command</span>
+          <input v-model="untilCommand" placeholder="cargo test" class="budget-input" />
+        </label>
+        <label>
+          <span>Max tokens</span>
+          <input v-model.number="maxTokens" type="number" placeholder="1000000" class="budget-input" />
+        </label>
+        <label>
+          <span>Max cost ($)</span>
+          <input v-model.number="maxCost" type="number" step="0.01" placeholder="5.00" class="budget-input" />
+        </label>
+        <label class="worktree-toggle">
+          <span>Git worktree</span>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="useWorktree" />
+            <span>Isolate in worktree</span>
+          </label>
+        </label>
+      </div>
+      <div v-if="availableSkills.length > 0" class="skills-section">
+        <span class="skills-title">Built-in Skills</span>
+        <div class="skills-grid">
+          <button
+            v-for="skill in availableSkills"
+            :key="skill.id"
+            class="skill-chip"
+            :class="{ 'skill-enabled': enabledSkills.includes(skill.id) }"
+            :title="skill.description"
+            @click="toggleSkill(skill.id)"
+          >
+            {{ skill.name }}
+          </button>
+        </div>
+      </div>
+    </details>
+
     <!-- Input — send to single agent or all agents -->
     <div class="chat-input">
       <input
         v-model="inputText"
         class="chat-input-field"
-        :placeholder="activeAgent === 'all' ? 'Describe what you want to build...' : activeAgent ? `Message ${activeAgent}...` : 'Select an agent tab to chat'"
-        :disabled="isSending || !activeAgent"
+        :placeholder="'Describe what you want to build...'"
+        :disabled="isSending"
         @keydown.enter="sendMessage"
       />
       <button
         class="chat-send-btn"
-        :disabled="!inputText.trim() || isSending || !activeAgent || !projectId"
+        :disabled="!inputText.trim() || isSending"
         @click="sendMessage"
       >
         <Icon v-if="isSending" name="refresh" :size="16" class="animate-spin" />
         <Icon v-else name="send" :size="16" />
       </button>
+      <button
+        class="chat-plan-btn"
+        :disabled="!inputText.trim() || isPlanning"
+        @click="planGoal"
+        title="Plan first (Planning + Designing only)"
+      >
+        <Icon v-if="isPlanning" name="refresh" :size="16" class="animate-spin" />
+        <Icon v-else name="code" :size="16" />
+      </button>
+    </div>
+
+    <!-- Plan modal -->
+    <div v-if="showPlanModal" class="plan-modal-overlay" @click.self="showPlanModal = false">
+      <div class="plan-modal">
+        <div class="plan-modal-header">
+          <h2>Plan Review</h2>
+          <button class="plan-close" @click="showPlanModal = false">×</button>
+        </div>
+        <div class="plan-modal-body">
+          <pre class="plan-content">{{ planContent }}</pre>
+        </div>
+        <div class="plan-modal-footer">
+          <span class="plan-path">{{ planPath }}</span>
+          <div class="plan-actions">
+            <button class="btn btn-ghost" @click="showPlanModal = false">Cancel</button>
+            <button class="btn btn-primary" @click="executePlan">Execute Plan</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -704,6 +952,136 @@ watch(() => ws.events.value, (allEvents) => {
 .chat-send-btn:hover:not(:disabled) { background: var(--primary-hover); transform: scale(1.05); }
 .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+.chat-plan-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+.chat-plan-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--bg-base);
+  border-color: var(--primary);
+}
+.chat-plan-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─── Plan modal ────────────────────────────────────────────────── */
+
+.plan-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.plan-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  width: 90%;
+  max-width: 700px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.plan-modal-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plan-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.plan-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.plan-content {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.plan-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-3);
+}
+
+.plan-path {
+  font-size: 11px;
+  color: var(--text-disabled);
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.plan-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+.btn-ghost:hover { background: var(--bg-hover); }
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--bg-base);
+}
+.btn-primary:hover { background: var(--primary-hover); }
+
 /* ─── Orchestrator hint ─────────────────────────────────────────── */
 
 .chat-orch-hint {
@@ -716,5 +1094,157 @@ watch(() => ws.events.value, (allEvents) => {
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   flex-shrink: 0;
+}
+
+/* ─── Live state bar ────────────────────────────────────────────── */
+
+.live-state-bar {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.live-state-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.live-state-label {
+  font-size: 10px;
+  color: var(--text-disabled);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.live-state-value {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.status-running {
+  color: var(--success, #22c55e);
+}
+
+/* ─── Budget controls ───────────────────────────────────────────── */
+
+.budget-controls {
+  padding: var(--space-1) var(--space-4);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.budget-controls summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.budget-row {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.budget-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.budget-row label span {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.budget-input {
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  width: 140px;
+  outline: none;
+}
+
+.budget-input:focus {
+  border-color: var(--primary);
+}
+
+.worktree-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* ─── Skills section ────────────────────────────────────────────── */
+
+.skills-section {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.skills-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.skills-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.skill-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+}
+
+.skill-chip:hover {
+  border-color: var(--primary);
+  color: var(--text-secondary);
+}
+
+.skill-chip.skill-enabled {
+  background: var(--primary);
+  color: var(--bg-base);
+  border-color: var(--primary);
 }
 </style>

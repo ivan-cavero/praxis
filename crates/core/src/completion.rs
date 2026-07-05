@@ -96,7 +96,12 @@ impl CompletionCriterion {
     /// - `"coding"` or `"default"` — CodingOutcomeVerifier
     /// - `"manual"` — ManualCompletionVerifier (always NotAchieved)
     /// - `"stagnant=N"` — coding with custom stagnant limit
+    /// - `"until:<command>"` — CommandOutcomeVerifier (goal achieved when command exits 0)
     pub fn from_string(s: &str) -> Option<Self> {
+        if let Some(cmd) = s.strip_prefix("until:") {
+            let verifier = CommandOutcomeVerifier::new(cmd.to_string());
+            return Some(CompletionCriterion::new(Arc::new(verifier)));
+        }
         match s {
             "coding" | "default" | "" => Some(default_coding_criterion()),
             "manual" => Some(CompletionCriterion::new(Arc::new(ManualCompletionVerifier))),
@@ -107,6 +112,13 @@ impl CompletionCriterion {
                 })
             }
         }
+    }
+
+    /// Create a completion criterion from a shell command.
+    /// The goal is achieved when the command exits 0.
+    pub fn from_until_command(command: String) -> Self {
+        let verifier = CommandOutcomeVerifier::new(command);
+        CompletionCriterion::new(Arc::new(verifier))
     }
 
     /// Evaluate the criterion. Tracks stagnation: if the verifier returns
@@ -278,6 +290,93 @@ impl OutcomeVerifier for ManualCompletionVerifier {
     }
 }
 
+/// Verifier that runs a shell command. The goal is achieved when the command
+/// exits with code 0.
+///
+/// This is the most flexible completion criterion: the user specifies a real
+/// verification command (`cargo test`, `npm test`, `make build`, `grep -q ...`)
+/// and the loop continues until that command succeeds.
+pub struct CommandOutcomeVerifier {
+    command: String,
+    working_dir: Option<std::path::PathBuf>,
+}
+
+impl CommandOutcomeVerifier {
+    pub fn new(command: String) -> Self {
+        Self {
+            command,
+            working_dir: None,
+        }
+    }
+
+    pub fn with_working_dir(command: String, dir: std::path::PathBuf) -> Self {
+        Self {
+            command,
+            working_dir: Some(dir),
+        }
+    }
+}
+
+#[async_trait]
+impl OutcomeVerifier for CommandOutcomeVerifier {
+    fn name(&self) -> &str {
+        "command"
+    }
+
+    async fn verify(&self, _goal: &str, _results: &[TaskResult]) -> OutcomeResult {
+        let mut cmd = if cfg!(windows) {
+            let mut c = tokio::process::Command::new("cmd");
+            c.args(["/C", &self.command]);
+            c
+        } else {
+            let mut c = tokio::process::Command::new("sh");
+            c.args(["-c", &self.command]);
+            c
+        };
+
+        if let Some(dir) = &self.working_dir {
+            cmd.current_dir(dir);
+        }
+
+        // Suppress output — we only care about the exit code
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            cmd.output(),
+        )
+        .await
+        {
+            Ok(Ok(output)) => {
+                if output.status.success() {
+                    OutcomeResult::Achieved {
+                        evidence: format!("Command '{}' exited 0", self.command),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let preview: String = stderr.chars().take(200).collect();
+                    OutcomeResult::NotAchieved {
+                        reason: format!(
+                            "Command '{}' exited {:?}: {}",
+                            self.command,
+                            output.status.code(),
+                            preview
+                        ),
+                    }
+                }
+            }
+            Ok(Err(e)) => OutcomeResult::NotAchieved {
+                reason: format!("Failed to execute '{}': {}", self.command, e),
+            },
+            Err(_) => OutcomeResult::NotAchieved {
+                reason: format!("Command '{}' timed out after 120s", self.command),
+            },
+        }
+    }
+}
+
 /// Factory for creating default completion criteria.
 pub fn default_coding_criterion() -> CompletionCriterion {
     CompletionCriterion::new(Arc::new(CodingOutcomeVerifier))
@@ -413,5 +512,30 @@ mod tests {
         };
         assert!(exhausted.is_exhausted());
         assert!(!exhausted.should_continue());
+    }
+
+    #[tokio::test]
+    async fn test_command_verifier_success() {
+        let verifier = CommandOutcomeVerifier::new(
+            if cfg!(windows) { "exit 0" } else { "true" }.to_string(),
+        );
+        let result = verifier.verify("goal", &[]).await;
+        assert!(result.is_achieved(), "exit 0 should be achieved: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_command_verifier_failure() {
+        let verifier = CommandOutcomeVerifier::new(
+            if cfg!(windows) { "exit 1" } else { "false" }.to_string(),
+        );
+        let result = verifier.verify("goal", &[]).await;
+        assert!(result.should_continue(), "non-zero exit should continue: {:?}", result);
+    }
+
+    #[test]
+    fn test_from_string_until_prefix() {
+        let criterion = CompletionCriterion::from_string("until:cargo test");
+        assert!(criterion.is_some());
+        assert_eq!(criterion.unwrap().verifier_name(), "command");
     }
 }
