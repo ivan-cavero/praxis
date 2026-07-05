@@ -462,6 +462,70 @@ impl BaseAgent for Git {
     }
 }
 
+// ─── Generic Agent (for researcher, explorer, and custom agents) ──
+
+/// A generic agent that uses the system prompt from the .md file.
+/// The mock output is role-appropriate (not code-style).
+pub struct GenericAgent {
+    pub role: ResolvedRole,
+    pub provider: Option<Arc<dyn LLMProvider>>,
+    pub bus: Option<EventBus>,
+    pub asi_score: f32,
+    pub context_pressure: f32,
+}
+
+impl GenericAgent {
+    pub fn new(role: ResolvedRole) -> Self {
+        Self { role, provider: None, bus: None, asi_score: 100.0, context_pressure: 0.0 }
+    }
+    pub fn with_provider(role: ResolvedRole, provider: Arc<dyn LLMProvider>) -> Self {
+        Self { role, provider: Some(provider), bus: None, asi_score: 100.0, context_pressure: 0.0 }
+    }
+    pub fn with_provider_and_bus(role: ResolvedRole, provider: Arc<dyn LLMProvider>, bus: EventBus) -> Self {
+        Self { role, provider: Some(provider), bus: Some(bus), asi_score: 100.0, context_pressure: 0.0 }
+    }
+
+    fn mock_output(&self, task: &Task) -> String {
+        match self.role.role_name.as_str() {
+            "researcher" => format!(
+                "## Research Summary: {}\n\n### Key Findings\n1. Finding one — [source]\n2. Finding two — [source]\n\n### Confidence\nMedium",
+                task.description
+            ),
+            "explorer" => format!(
+                "## Exploration Result: {}\n\n### Files examined\n1. src/main.rs (lines 1-50)\n\n### Findings\n1. Entry point at src/main.rs:10",
+                task.description
+            ),
+            _ => format!("[{} mock output for: {}]", self.role.role_name, task.description),
+        }
+    }
+}
+
+#[async_trait]
+impl BaseAgent for GenericAgent {
+    fn role(&self) -> &ResolvedRole { &self.role }
+    fn asi_score(&self) -> f32 { self.asi_score }
+    fn context_pressure(&self) -> f32 { self.context_pressure }
+
+    async fn execute(&self, task: &Task) -> TaskResult {
+        let start = std::time::Instant::now();
+        let mock = self.mock_output(task);
+        let (content, usage) = call_llm_stream_or_mock(
+            &self.provider, task, &self.role.system_prompt, &self.role,
+            &mock, &self.bus, &self.role.role_name,
+        ).await;
+        make_task_result(task, &self.role.role_name, &self.role.role_name, &content, start, usage.input_tokens, usage.output_tokens)
+    }
+
+    async fn handle_feedback(&self, task: &Task, _feedback: &str) -> TaskResult {
+        self.execute(task).await
+    }
+
+    fn reset_context(&mut self) {
+        self.asi_score = 100.0;
+        self.context_pressure = 0.0;
+    }
+}
+
 // ─── Factory ──────────────────────────────────────────────────
 
 pub struct AgentFactory;
@@ -475,13 +539,13 @@ impl AgentFactory {
             "security" => Box::new(Security::new(role.clone())),
             "tester" => Box::new(Tester::new(role.clone())),
             "git" => Box::new(Git::new(role.clone())),
-            // Researcher and explorer use the Coder struct as a base —
+            // Researcher, explorer, and custom agents use GenericAgent —
             // the system prompt comes from self.role.system_prompt (from .md files),
-            // so the struct choice only affects the mock fallback output.
-            "researcher" | "explorer" => Box::new(Coder::new(role.clone())),
+            // and the mock output is role-appropriate.
+            "researcher" | "explorer" => Box::new(GenericAgent::new(role.clone())),
             unknown => {
-                tracing::warn!("Unknown role '{}' — falling back to Coder", unknown);
-                Box::new(Coder::new(role.clone()))
+                tracing::warn!("Unknown role '{}' — falling back to GenericAgent", unknown);
+                Box::new(GenericAgent::new(role.clone()))
             }
         }
     }
@@ -494,10 +558,10 @@ impl AgentFactory {
             "security" => Box::new(Security::with_provider(role.clone(), provider)),
             "tester" => Box::new(Tester::with_provider(role.clone(), provider)),
             "git" => Box::new(Git::with_provider(role.clone(), provider)),
-            "researcher" | "explorer" => Box::new(Coder::with_provider(role.clone(), provider)),
+            "researcher" | "explorer" => Box::new(GenericAgent::with_provider(role.clone(), provider)),
             unknown => {
-                tracing::warn!("Unknown role '{}' — falling back to Coder", unknown);
-                Box::new(Coder::with_provider(role.clone(), provider))
+                tracing::warn!("Unknown role '{}' — falling back to GenericAgent", unknown);
+                Box::new(GenericAgent::with_provider(role.clone(), provider))
             }
         }
     }
@@ -510,10 +574,10 @@ impl AgentFactory {
             "security" => Box::new(Security::with_provider_and_bus(role.clone(), provider, bus)),
             "tester" => Box::new(Tester::with_provider_and_bus(role.clone(), provider, bus)),
             "git" => Box::new(Git::with_provider_and_bus(role.clone(), provider, bus)),
-            "researcher" | "explorer" => Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus)),
+            "researcher" | "explorer" => Box::new(GenericAgent::with_provider_and_bus(role.clone(), provider, bus)),
             unknown => {
-                tracing::warn!("Unknown role '{}' — falling back to Coder", unknown);
-                Box::new(Coder::with_provider_and_bus(role.clone(), provider, bus))
+                tracing::warn!("Unknown role '{}' — falling back to GenericAgent", unknown);
+                Box::new(GenericAgent::with_provider_and_bus(role.clone(), provider, bus))
             }
         }
     }
@@ -592,6 +656,35 @@ mod tests {
         let task = Task::new("git", "gpt-4o", "commit changes");
         let result = agent.execute(&task).await;
         assert_eq!(result.status, crate::orchestrator::task::TaskStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_researcher_mock_output() {
+        let agent = GenericAgent::new(test_role("researcher"));
+        let task = Task::new("researcher", "gpt-4o", "investigate async patterns");
+        let result = agent.execute(&task).await;
+        assert_eq!(result.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert!(result.content.contains("Research Summary"));
+        assert!(!result.content.contains("// Generated code"));
+    }
+
+    #[tokio::test]
+    async fn test_explorer_mock_output() {
+        let agent = GenericAgent::new(test_role("explorer"));
+        let task = Task::new("explorer", "gpt-4o", "find all callers of AgentFactory");
+        let result = agent.execute(&task).await;
+        assert_eq!(result.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert!(result.content.contains("Exploration Result"));
+        assert!(!result.content.contains("// Generated code"));
+    }
+
+    #[tokio::test]
+    async fn test_generic_agent_custom_role() {
+        let agent = GenericAgent::new(test_role("custom-agent"));
+        let task = Task::new("custom-agent", "gpt-4o", "do something");
+        let result = agent.execute(&task).await;
+        assert_eq!(result.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert!(result.content.contains("custom-agent mock output"));
     }
 
     #[test]

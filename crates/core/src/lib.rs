@@ -892,6 +892,137 @@ impl CoreRuntime {
 
 /// Parse and execute tool calls from agent output.
     /// Publishes `AgentOutput` streaming deltas for each tool call so the
+    /// Publish an event with the current session_id in metadata.
+    /// This allows the frontend to filter events by session.
+    fn publish_session_event(&self, kind: praxis_shared::protocol::MessageKind) {
+        let sid = self.session_id.map(|s| s.to_string());
+        self.bus.publish_with_session(kind, "core", sid.as_deref());
+    }
+
+    /// Process delegation requests from an agent's output.
+    ///
+    /// Agents can request delegation by including `DELEGATE:agent_type:task_description`
+    /// in their output. This method parses those requests, invokes
+    /// `delegate_to_subagent` for each, and appends the subagent results
+    /// to the agent's output.
+    ///
+    /// Only agents whose `AgentDefinition.can_delegate()` is true can delegate.
+    /// The parent's budget is derived from the session's LoopController limits.
+    async fn process_delegation_requests(
+        &mut self,
+        agent_name: &str,
+        output: &str,
+    ) -> String {
+        // Check if this agent can delegate at all
+        let parent_def = match self.agent_registry.resolve(agent_name) {
+            Some(a) if a.definition.can_delegate() => a.definition.clone(),
+            _ => return output.to_string(), // not delegatable — return as-is
+        };
+
+        // Parse DELEGATE:agent_type:task_description lines from output
+        let delegations = parse_delegate_requests(output);
+        if delegations.is_empty() {
+            return output.to_string();
+        }
+
+        // Build parent budget from session limits
+        let parent_budget = self.session_budget();
+
+        let mut result_output = output.to_string();
+
+        for (child_type, task_desc) in &delegations {
+            // Verify the parent can spawn this type
+            if !parent_def.can_spawn_type(child_type) {
+                tracing::warn!(
+                    "Agent '{}' tried to delegate to '{}' but it's not in can_spawn {:?}",
+                    agent_name, child_type, parent_def.can_spawn()
+                );
+                continue;
+            }
+
+            tracing::info!(
+                "Agent '{}' delegating to '{}': {}",
+                agent_name, child_type,
+                task_desc.chars().take(80).collect::<String>()
+            );
+
+            let task = orchestrator::Task::new(child_type, parent_def.model(), task_desc);
+            let request = crate::delegation::DelegateRequest {
+                agent_type: child_type.clone(),
+                task,
+                parent_name: agent_name.to_string(),
+            };
+
+            // Resolve provider for the child agent
+            let child_def = match self.agent_registry.resolve(child_type) {
+                Some(a) => a.definition.clone(),
+                None => {
+                    tracing::warn!("Child agent '{}' not found in registry", child_type);
+                    continue;
+                }
+            };
+            let provider = match self.resolve_provider_for_model(&child_def.model()) {
+                Some(p) => Some(p),
+                None => None,
+            };
+
+            match crate::delegation::delegate_to_subagent(
+                &request,
+                &parent_budget,
+                &self.agent_registry,
+                provider,
+                Some(&self.bus),
+            ).await {
+                Ok(delegate_result) => {
+                    // Roll up child budget into session totals
+                    let child_tokens = delegate_result.child_budget.used_tokens;
+                    let child_cost = delegate_result.child_budget.used_cost;
+                    if child_tokens > 0 {
+                        self.loop_controller.record_token_usage(
+                            child_tokens.try_into().unwrap_or(u32::MAX),
+                            child_cost,
+                        );
+                    }
+
+                    // Append the subagent's result to the parent's output
+                    result_output.push_str(&format!(
+                        "\n\n─── DELEGATION: {} → {} ───\n{}",
+                        agent_name, child_type, delegate_result.result.content
+                    ));
+                }
+                Err(e) => {
+                    tracing::warn!("Delegation from '{}' to '{}' failed: {}", agent_name, child_type, e);
+                    result_output.push_str(&format!(
+                        "\n\n─── DELEGATION FAILED: {} → {} ───\nError: {}",
+                        agent_name, child_type, e
+                    ));
+                }
+            }
+        }
+
+        result_output
+    }
+
+    /// Build a Budget from the session's LoopController limits.
+    fn session_budget(&self) -> praxis_shared::budget::Budget {
+        praxis_shared::budget::Budget {
+            max_tokens: self.loop_controller.limits.max_tokens,
+            max_cost_usd: self.loop_controller.limits.max_cost_usd,
+            max_turns: 100, // session-level turn cap
+            max_depth: 3,   // max delegation depth from root
+            used_tokens: self.loop_controller.tokens_used,
+            used_cost: self.loop_controller.cost_usd,
+            used_turns: 0,
+        }
+    }
+
+    /// Resolve a provider for a given model name.
+    fn resolve_provider_for_model(&self, _model: &str) -> Option<std::sync::Arc<dyn praxis_agent_traits::provider::LLMProvider>> {
+        // In production, this would use the provider router.
+        // For now, return None (mock mode) — the delegation still works with mock agents.
+        None
+    }
+
     /// dashboard can show them in real-time.
     ///
     /// Returns the output with tool results appended, plus info about
@@ -1334,13 +1465,12 @@ impl CoreRuntime {
                     };
 
                     let agent_name = role_config.name.clone();
-                    self.bus.publish(
+                    self.publish_session_event(
                         praxis_shared::protocol::MessageKind::AgentStarted {
                             agent: agent_name.clone(),
                             role: agent_name.clone(),
                             phase: current_phase,
                         },
-                        "core",
                     );
 
                     // Spawn agent in parallel (return provider_name alongside result)
@@ -1364,6 +1494,12 @@ impl CoreRuntime {
                                 raw_result
                             };
 
+                            // Process delegation requests (DELEGATE: lines in output)
+                            let result = TaskResult {
+                                content: self.process_delegation_requests(&result.agent_id, &result.content).await,
+                                ..result
+                            };
+
                             // Publish ToolCalled events for each tool that was invoked
                             for tc in &tool_exec.tools_called {
                                 self.bus.publish(
@@ -1377,7 +1513,7 @@ impl CoreRuntime {
                                 );
                             }
 
-                            self.bus.publish(
+                            self.publish_session_event(
                                 praxis_shared::protocol::MessageKind::AgentCompleted {
                                     agent: result.agent_id.clone(),
                                     role: result.role.clone(),
@@ -1385,7 +1521,6 @@ impl CoreRuntime {
                                     duration_ms: result.duration_ms,
                                     output_preview: result.content.chars().take(200).collect(),
                                 },
-                                "core",
                             );
 
                             tracing::info!(
@@ -1574,13 +1709,12 @@ impl CoreRuntime {
                     };
 
                     // Publish agent start event for live streaming
-                    self.bus.publish(
+                    self.publish_session_event(
                         praxis_shared::protocol::MessageKind::AgentStarted {
                             agent: role_config.name.clone(),
                             role: role_config.name.clone(),
                             phase: current_phase,
                         },
-                        "core",
                     );
 
                     let raw_result = if has_feedback {
@@ -1655,8 +1789,15 @@ impl CoreRuntime {
                         };
                     }
 
+                    // Process delegation requests from the agent's output
+                    // (agents can request subagent delegation via DELEGATE: lines)
+                    result = TaskResult {
+                        content: self.process_delegation_requests(&role_config.name, &result.content).await,
+                        ..result
+                    };
+
                     // Publish agent completion event
-                    self.bus.publish(
+                    self.publish_session_event(
                         praxis_shared::protocol::MessageKind::AgentCompleted {
                             agent: result.agent_id.clone(),
                             role: result.role.clone(),
@@ -1664,7 +1805,6 @@ impl CoreRuntime {
                             duration_ms: result.duration_ms,
                             output_preview: result.content.chars().take(200).collect(),
                         },
-                        "core",
                     );
 
                     tracing::info!(
@@ -2606,6 +2746,29 @@ fn get_next_phase(current: &machine::phase::Phase) -> machine::phase::Phase {
 }
 
 /// Extract review results from agent task results.
+/// Parse `DELEGATE:agent_type:task_description` lines from agent output.
+///
+/// Format: each delegation request on its own line, prefixed with `DELEGATE:`.
+/// Example: `DELEGATE:researcher:investigate async patterns in Rust 2024`
+///
+/// Returns a list of (agent_type, task_description) pairs.
+fn parse_delegate_requests(output: &str) -> Vec<(String, String)> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed.strip_prefix("DELEGATE:")?;
+            let colon_pos = rest.find(':')?;
+            let agent_type = rest[..colon_pos].trim().to_string();
+            let task_desc = rest[colon_pos + 1..].trim().to_string();
+            if agent_type.is_empty() || task_desc.is_empty() {
+                return None;
+            }
+            Some((agent_type, task_desc))
+        })
+        .collect()
+}
+
 ///
 /// Converts the most recent reviewer/security/tester output into a
 /// `ReviewResult` that the gate system can evaluate. Parses the agent's
@@ -2966,5 +3129,46 @@ mod tests {
         assert_eq!(result.goal, "Test resume");
 
         let _ = runtime.shutdown().await;
+    }
+
+    #[test]
+    fn test_parse_delegate_requests_single() {
+        let output = "Here is my analysis.\nDELEGATE:researcher:investigate async patterns in Rust 2024\nDone.";
+        let requests = parse_delegate_requests(output);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "researcher");
+        assert_eq!(requests[0].1, "investigate async patterns in Rust 2024");
+    }
+
+    #[test]
+    fn test_parse_delegate_requests_multiple() {
+        let output = "DELEGATE:researcher:find async patterns\nDELEGATE:explorer:grep for AgentFactory";
+        let requests = parse_delegate_requests(output);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "researcher");
+        assert_eq!(requests[1].0, "explorer");
+    }
+
+    #[test]
+    fn test_parse_delegate_requests_none() {
+        let output = "Just a regular response with no delegation.";
+        let requests = parse_delegate_requests(output);
+        assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn test_parse_delegate_requests_empty_task_ignored() {
+        let output = "DELEGATE:researcher:\nDELEGATE::task with no agent";
+        let requests = parse_delegate_requests(output);
+        assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn test_parse_delegate_requests_whitespace_trimmed() {
+        let output = "DELEGATE:  researcher  :  investigate patterns  ";
+        let requests = parse_delegate_requests(output);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "researcher");
+        assert_eq!(requests[0].1, "investigate patterns");
     }
 }

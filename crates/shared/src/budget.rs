@@ -88,13 +88,16 @@ impl Budget {
     /// Derive a child budget for delegation.
     ///
     /// SentinelAgent P1: child budget = min(parent_remaining, child_inherent).
-    /// SentinelAgent P5: max_depth decrements by 1.
+    /// SentinelAgent P5: max_depth decrements by 1, but never exceeds child's own max_depth.
     pub fn for_child(&self, child_inherent: &Budget) -> Budget {
         Budget {
             max_tokens: narrow_tokens(self.max_tokens, self.used_tokens, child_inherent.max_tokens),
             max_cost_usd: narrow_cost(self.max_cost_usd, self.used_cost, child_inherent.max_cost_usd),
-            max_turns: child_inherent.max_turns,
-            max_depth: self.max_depth.saturating_sub(1),
+            // P1: narrow turns — child gets min(parent_remaining, child_inherent)
+            max_turns: self.remaining_turns().min(child_inherent.max_turns),
+            // P5: depth decrements from parent, but capped by child's own max_depth
+            // (a leaf child with max_depth=0 stays a leaf even if parent has depth left)
+            max_depth: self.max_depth.saturating_sub(1).min(child_inherent.max_depth),
             used_tokens: 0,
             used_cost: 0.0,
             used_turns: 0,
@@ -217,13 +220,21 @@ mod tests {
             used_cost: 0.0,
             used_turns: 3,
         };
-        // Child inherent budget: 500 tokens
-        let child_inherent = Budget::leaf(Some(500), None, 20);
+        // Child inherent budget: 500 tokens, can delegate once (max_depth=1)
+        let child_inherent = Budget {
+            max_tokens: Some(500),
+            max_cost_usd: None,
+            max_turns: 20,
+            max_depth: 1,
+            used_tokens: 0,
+            used_cost: 0.0,
+            used_turns: 0,
+        };
         let child = parent.for_child(&child_inherent);
 
         // P1: child gets min(700, 500) = 500
         assert_eq!(child.max_tokens, Some(500));
-        // P5: depth decrements
+        // P5: depth = min(2-1, 1) = 1
         assert_eq!(child.max_depth, 1);
         // Child starts with zero usage
         assert_eq!(child.used_tokens, 0);
@@ -344,5 +355,72 @@ mod tests {
 
         // Parent remaining = 7.0, child inherent = 5.0 → min = 5.0
         assert!((child.max_cost_usd.unwrap() - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_for_child_narrows_turns() {
+        // Parent has 25 turns, used 20, remaining 5
+        let parent = Budget {
+            max_tokens: None,
+            max_cost_usd: None,
+            max_turns: 25,
+            max_depth: 2,
+            used_tokens: 0,
+            used_cost: 0.0,
+            used_turns: 20,
+        };
+        // Child inherent: 30 turns
+        let child_inherent = Budget::leaf(None, None, 30);
+        let child = parent.for_child(&child_inherent);
+
+        // P1: child gets min(5, 30) = 5
+        assert_eq!(child.max_turns, 5);
+    }
+
+    #[test]
+    fn test_for_child_respects_leaf_child_max_depth() {
+        // Parent has max_depth=3, child is declared as leaf (max_depth=0)
+        let parent = Budget {
+            max_tokens: None,
+            max_cost_usd: None,
+            max_turns: 25,
+            max_depth: 3,
+            used_tokens: 0,
+            used_cost: 0.0,
+            used_turns: 0,
+        };
+        let child_inherent = Budget::leaf(None, None, 20); // max_depth=0
+        let child = parent.for_child(&child_inherent);
+
+        // Child stays a leaf: min(3-1, 0) = 0
+        assert_eq!(child.max_depth, 0);
+        assert!(!child.can_delegate());
+    }
+
+    #[test]
+    fn test_for_child_depth_capped_by_child_inherent() {
+        // Parent has max_depth=5, child has max_depth=1
+        let parent = Budget {
+            max_tokens: None,
+            max_cost_usd: None,
+            max_turns: 25,
+            max_depth: 5,
+            used_tokens: 0,
+            used_cost: 0.0,
+            used_turns: 0,
+        };
+        let child_inherent = Budget {
+            max_tokens: None,
+            max_cost_usd: None,
+            max_turns: 20,
+            max_depth: 1,
+            used_tokens: 0,
+            used_cost: 0.0,
+            used_turns: 0,
+        };
+        let child = parent.for_child(&child_inherent);
+
+        // min(5-1, 1) = 1 — child can delegate once more, not 4 times
+        assert_eq!(child.max_depth, 1);
     }
 }

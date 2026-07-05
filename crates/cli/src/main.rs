@@ -492,6 +492,10 @@ enum AgentCommands {
         /// Agent name (kebab-case)
         name: String,
 
+        /// Short description of what this agent does
+        #[arg(long, default_value = "")]
+        description: String,
+
         /// Model to use (e.g., gpt-5, claude-sonnet-4-20250514)
         #[arg(long, default_value = "gpt-5")]
         model: String,

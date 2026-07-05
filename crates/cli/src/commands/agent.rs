@@ -29,9 +29,12 @@ fn build_registry() -> AgentRegistry {
     AgentRegistry::load(Some(&global_dir), Some(&project_dir))
 }
 
-/// Serialize an AgentDefinition to Markdown+YAML for disk.
+/// Serialize an agent definition to Markdown+YAML for disk.
+///
+/// Uses `serde_yaml::to_string` for the frontmatter to ensure proper escaping.
 fn serialize_agent_md(
     name: &str,
+    description: &str,
     model: &str,
     temperature: f32,
     max_tokens: u32,
@@ -41,33 +44,26 @@ fn serialize_agent_md(
     can_spawn: &[String],
     system_prompt: &str,
 ) -> String {
-    let mut md = String::new();
-    md.push_str("---\n");
-    md.push_str(&format!("name: {name}\n"));
-    md.push_str(&format!("model: {model}\n"));
-    md.push_str(&format!("temperature: {temperature}\n"));
-    md.push_str(&format!("max_tokens: {max_tokens}\n"));
-    if tools.is_empty() {
-        md.push_str("tools: []\n");
-    } else {
-        md.push_str("tools:\n");
-        for t in tools {
-            md.push_str(&format!("  - {t}\n"));
-        }
-    }
-    md.push_str(&format!("max_turns: {max_turns}\n"));
-    md.push_str(&format!("max_depth: {max_depth}\n"));
-    if can_spawn.is_empty() {
-        md.push_str("can_spawn: []\n");
-    } else {
-        md.push_str("can_spawn:\n");
-        for s in can_spawn {
-            md.push_str(&format!("  - {s}\n"));
-        }
-    }
-    md.push_str("---\n\n");
-    md.push_str(system_prompt);
-    md
+    let frontmatter = praxis_core::agents::AgentFrontmatter {
+        name: name.to_string(),
+        description: description.to_string(),
+        model: model.to_string(),
+        temperature,
+        max_tokens,
+        tools: tools.to_vec(),
+        max_turns,
+        max_depth,
+        can_spawn: can_spawn.to_vec(),
+    };
+
+    let yaml = serde_yaml::to_string(&frontmatter)
+        .unwrap_or_else(|e| {
+            eprintln!("{}: failed to serialize frontmatter: {}", "error".red(), e);
+            String::new()
+        });
+
+    let yaml_body = yaml.strip_prefix("---\n").unwrap_or(&yaml);
+    format!("---\n{yaml_body}---\n\n{system_prompt}")
 }
 
 /// Parse a comma-separated string into a Vec<String>.
@@ -82,9 +78,9 @@ pub fn handle(cmd: AgentCommands) {
         AgentCommands::Show { name } => show(&name),
         AgentCommands::Add {
             name, model, temperature, max_tokens, max_turns, max_depth,
-            tools, can_spawn, prompt, prompt_file, scope,
+            tools, can_spawn, prompt, prompt_file, scope, description,
         } => add(
-            &name, &model, temperature, max_tokens, max_turns, max_depth,
+            &name, &description, &model, temperature, max_tokens, max_turns, max_depth,
             &parse_csv(tools), &parse_csv(can_spawn), prompt, prompt_file, &scope,
         ),
         AgentCommands::Edit { name, scope } => edit(&name, &scope),
@@ -170,6 +166,7 @@ fn show(name: &str) {
 
 fn add(
     name: &str,
+    description: &str,
     model: &str,
     temperature: f32,
     max_tokens: u32,
@@ -225,7 +222,7 @@ fn add(
         return;
     }
 
-    let content = serialize_agent_md(name, model, temperature, max_tokens, max_turns, max_depth, tools, can_spawn, &system_prompt);
+    let content = serialize_agent_md(name, description, model, temperature, max_tokens, max_turns, max_depth, tools, can_spawn, &system_prompt);
     if let Err(e) = std::fs::write(&file_path, &content) {
         eprintln!("{}: failed to write agent file: {}", "error".red(), e);
         return;
@@ -255,6 +252,7 @@ fn edit(name: &str, scope: &str) {
                 }
                 let content = serialize_agent_md(
                     name,
+                    &agent.definition.frontmatter.description,
                     agent.definition.model(),
                     agent.definition.frontmatter.temperature,
                     agent.definition.frontmatter.max_tokens,

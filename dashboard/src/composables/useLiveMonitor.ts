@@ -58,10 +58,11 @@ export interface DelegationInfo {
  * Build a live monitor state from the WebSocket event stream.
  * Returns a computed ref that updates as events arrive.
  */
-export function useLiveMonitor(_sessionId: Ref<string | null>) {
+export function useLiveMonitor(sessionId: Ref<string | null>) {
   const { events } = useWebSocket()
 
   const monitorState = computed<LiveMonitorState>(() => {
+    const sid = sessionId.value
     const agents = new Map<string, AgentState>()
     let phase = ''
     let iteration = 0
@@ -70,10 +71,15 @@ export function useLiveMonitor(_sessionId: Ref<string | null>) {
     const delegations: DelegationInfo[] = []
     const streamingOutput: string[] = []
 
-    // Filter events for this session — events don't have session_id in the
-    // current protocol, so we use all events (the WebSocket is global).
-    // In a real deployment, we'd filter by session.
-    const allEvents = events.value
+    // Filter events for this session — events now carry session_id in metadata.
+    // If the event has no session_id (legacy), include it (backward compat).
+    // If the event has a session_id, only include it if it matches.
+    const allEvents = sid
+      ? events.value.filter(e => {
+          const eventSid = e.metadata?.session_id
+          return !eventSid || eventSid === sid
+        })
+      : events.value
 
     // Process events in order
     for (const event of allEvents) {

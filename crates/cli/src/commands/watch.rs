@@ -9,6 +9,7 @@ use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 const CLEAR: &str = "\x1b[2J\x1b[H";
+const MAX_CONSECUTIVE_ERRORS: u32 = 5;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SessionState {
@@ -18,6 +19,7 @@ struct SessionState {
     tokens_used: u64,
     cost_usd: f64,
     status: String,
+    #[serde(default)]
     state_file: Option<String>,
 }
 
@@ -45,9 +47,13 @@ struct EventEntry {
 }
 
 pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
     let interval = std::time::Duration::from_secs(interval_secs);
     let mut last_event_count: usize = 0;
+    let mut consecutive_errors: u32 = 0;
 
     println!("{} Watching session {} (refresh: {}s, API: {})", "→".cyan(), session_id.yellow(), interval_secs, api_url.dimmed());
     println!("{} Press Ctrl+C to stop.\n", "→".cyan());
@@ -55,10 +61,48 @@ pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
     loop {
         // Fetch session state
         let state_url = format!("{}/api/sessions/{}/state", api_url, session_id);
-        let state = match client.get(&state_url).send().await {
-            Ok(resp) => resp.json::<SessionState>().await.ok(),
-            Err(_) => None,
+        let state_result = client.get(&state_url).send().await;
+
+        let (state, is_404, is_connection_error) = match state_result {
+            Ok(resp) => {
+                let status = resp.status();
+                if status == reqwest::StatusCode::NOT_FOUND {
+                    (None, true, false)
+                } else if status.is_success() {
+                    consecutive_errors = 0;
+                    (resp.json::<SessionState>().await.ok(), false, false)
+                } else {
+                    (None, false, false)
+                }
+            }
+            Err(e) => {
+                if e.is_connect() || e.is_timeout() {
+                    (None, false, true)
+                } else {
+                    (None, false, false)
+                }
+            }
         };
+
+        // Handle 404 — session not found, exit
+        if is_404 {
+            println!("{}: session '{}' not found. Is the API server running?", "error".red(), session_id);
+            println!("Start it with: {}", "praxis server".cyan());
+            return;
+        }
+
+        // Handle connection errors with retry limit
+        if is_connection_error {
+            consecutive_errors += 1;
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                println!("{}: cannot reach API server at {} after {} attempts.", "error".red(), api_url, consecutive_errors);
+                println!("Make sure the API server is running: {}", "praxis server".cyan());
+                return;
+            }
+            println!("{}: cannot reach API server (attempt {}/{}), retrying...", "warn".yellow(), consecutive_errors, MAX_CONSECUTIVE_ERRORS);
+            tokio::time::sleep(interval).await;
+            continue;
+        }
 
         // Fetch session info
         let session_url = format!("{}/api/sessions/{}", api_url, session_id);

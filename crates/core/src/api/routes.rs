@@ -1769,43 +1769,26 @@ fn build_registry(state: &AppState) -> crate::agents::AgentRegistry {
 }
 
 /// Serialize an AgentDefinition to Markdown+YAML format for disk persistence.
+///
+/// Uses `serde_yaml::to_string` for the frontmatter to ensure proper escaping
+/// of all YAML special characters (newlines, colons, booleans, numbers, etc.).
+/// The Markdown body (system prompt) is appended after the closing `---`.
 fn serialize_agent_md(def: &crate::agents::AgentDefinition) -> String {
-    let mut yaml = String::new();
-    yaml.push_str("---\n");
-    yaml.push_str(&format!("name: {}\n", def.frontmatter.name));
-    yaml.push_str(&format!("description: {}\n", escape_yaml_string(&def.frontmatter.description)));
-    yaml.push_str(&format!("model: {}\n", def.frontmatter.model));
-    yaml.push_str(&format!("temperature: {}\n", def.frontmatter.temperature));
-    yaml.push_str(&format!("max_tokens: {}\n", def.frontmatter.max_tokens));
-    if def.frontmatter.tools.is_empty() {
-        yaml.push_str("tools: []\n");
-    } else {
-        yaml.push_str("tools:\n");
-        for tool in &def.frontmatter.tools {
-            yaml.push_str(&format!("  - {}\n", tool));
-        }
-    }
-    yaml.push_str(&format!("max_turns: {}\n", def.frontmatter.max_turns));
-    yaml.push_str(&format!("max_depth: {}\n", def.frontmatter.max_depth));
-    if def.frontmatter.can_spawn.is_empty() {
-        yaml.push_str("can_spawn: []\n");
-    } else {
-        yaml.push_str("can_spawn:\n");
-        for spawn in &def.frontmatter.can_spawn {
-            yaml.push_str(&format!("  - {}\n", spawn));
-        }
-    }
-    yaml.push_str("---\n\n");
-    yaml.push_str(&def.system_prompt);
-    yaml
-}
+    // serde_yaml::to_string produces a YAML document with a leading "---\n"
+    // document marker and ends with "\n". We use it directly for the frontmatter.
+    let yaml = serde_yaml::to_string(&def.frontmatter)
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to serialize agent frontmatter: {}", e);
+            String::new()
+        });
 
-fn escape_yaml_string(s: &str) -> String {
-    if s.contains(':') || s.contains('#') || s.contains('{') || s.contains('}') {
-        format!("\"{}\"", s.replace('"', "\\\""))
-    } else {
-        s.to_string()
-    }
+    // serde_yaml outputs "---\n<fields>\n" — we need to add the closing "---"
+    // and then the Markdown body.
+    // The yaml string already has "---\n" at the start and ends with "\n".
+    // We strip the leading "---\n" (serde_yaml adds it as a document marker)
+    // and reformat to our frontmatter style.
+    let yaml_body = yaml.strip_prefix("---\n").unwrap_or(&yaml);
+    format!("---\n{yaml_body}---\n\n{}", def.system_prompt)
 }
 
 pub mod agent_crud {
@@ -1872,6 +1855,12 @@ pub mod agent_crud {
         if req.system_prompt.is_empty() {
             return Err((StatusCode::BAD_REQUEST, "System prompt is required".to_string()));
         }
+        // Validate scope
+        if req.scope != "project" && req.scope != "global" {
+            return Err((StatusCode::BAD_REQUEST, format!(
+                "Scope must be 'project' or 'global', got '{}'", req.scope
+            )));
+        }
 
         // Determine target directory
         let dir = if req.scope == "global" {
@@ -1884,11 +1873,20 @@ pub mod agent_crud {
         std::fs::create_dir_all(&dir)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create agents dir: {}", e)))?;
 
-        // Check if agent already exists (in the target scope)
+        // Atomically create the file — fails if it already exists (prevents TOCTOU race)
         let file_path = dir.join(format!("{}.md", req.name));
-        if file_path.exists() {
-            return Err((StatusCode::CONFLICT, format!("Agent '{}' already exists in {} scope", req.name, req.scope)));
-        }
+        use std::io::Write;
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&file_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    (StatusCode::CONFLICT, format!("Agent '{}' already exists in {} scope", req.name, req.scope))
+                } else {
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create agent file: {}", e))
+                }
+            })?;
 
         // Build the AgentDefinition
         let definition = crate::agents::AgentDefinition {
@@ -1908,7 +1906,8 @@ pub mod agent_crud {
 
         // Serialize and write
         let content = serialize_agent_md(&definition);
-        std::fs::write(&file_path, &content)
+        let mut file = file;
+        file.write_all(content.as_bytes())
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write agent file: {}", e)))?;
 
         tracing::info!("Created agent '{}' in {} scope ({})", req.name, req.scope, file_path.display());
@@ -1937,6 +1936,13 @@ pub mod agent_crud {
         axum::extract::Path(name): axum::extract::Path<String>,
         Json(req): Json<CreateAgentRequest>,
     ) -> Result<Json<AgentDefinitionResponse>, (StatusCode, String)> {
+        // Validate scope
+        if req.scope != "project" && req.scope != "global" {
+            return Err((StatusCode::BAD_REQUEST, format!(
+                "Scope must be 'project' or 'global', got '{}'", req.scope
+            )));
+        }
+
         // Determine target directory
         let dir = if req.scope == "global" {
             crate::agents::AgentRegistry::global_dir()

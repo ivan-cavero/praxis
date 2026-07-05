@@ -46,12 +46,30 @@ impl EventBus {
     /// If all channels are at capacity, the oldest unread message is dropped
     /// and `Err` is returned with the number of active receivers.
     pub fn publish(&self, kind: praxis_shared::protocol::MessageKind, source: &str) -> usize {
+        self.publish_with_session(kind, source, None)
+    }
+
+    /// Publish an event with an optional session_id in metadata.
+    ///
+    /// The session_id is included in the event's metadata so the frontend
+    /// can filter events by session.
+    pub fn publish_with_session(
+        &self,
+        kind: praxis_shared::protocol::MessageKind,
+        source: &str,
+        session_id: Option<&str>,
+    ) -> usize {
+        let metadata = match session_id {
+            Some(sid) => serde_json::json!({ "session_id": sid }),
+            None => serde_json::Value::Object(Default::default()),
+        };
+
         let event = SystemEvent {
             id: Uuid::new_v4(),
             timestamp: chrono::Utc::now().to_rfc3339(),
             kind,
             source: source.to_string(),
-            metadata: serde_json::Value::Object(Default::default()),
+            metadata,
         };
 
         match self.tx.send(event) {
