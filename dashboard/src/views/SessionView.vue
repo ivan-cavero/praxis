@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi, type SessionEntry } from '../composables/useApi'
 import { useWebSocket, filterEvents, type AgentOutputEvent, type AgentStartedEvent, type AgentCompletedEvent, type ToolCalledEvent } from '../composables/useWebSocket'
+import { useToast } from '../composables/useToast'
 import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
 import LiveMonitorPanel from '../components/LiveMonitorPanel.vue'
@@ -11,6 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const api = useApi()
 const ws = useWebSocket()
+const toast = useToast()
 
 const session = ref<SessionEntry | null>(null)
 const isLoading = ref(true)
@@ -102,6 +104,10 @@ function getStatusColor(status: string): 'green' | 'amber' | 'crimson' | 'gray' 
 function copyStateFile() {
   if (stateFile.value) {
     navigator.clipboard.writeText(stateFile.value)
+      .then(() => toast.success('STATE.md copied to clipboard'))
+      .catch(() => toast.error('Failed to copy to clipboard'))
+  } else {
+    toast.warning('No STATE.md available to copy')
   }
 }
 

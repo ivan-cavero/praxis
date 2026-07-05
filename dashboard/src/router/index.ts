@@ -38,7 +38,12 @@ const router = createRouter({
       name: 'project-chat',
       component: () => import('../views/ProjectChatView.vue'),
     },
-    // Settings is now a dialog overlay (not a route).
+    // 404 catch-all
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('../views/NotFoundView.vue'),
+    },
   ],
 })
 

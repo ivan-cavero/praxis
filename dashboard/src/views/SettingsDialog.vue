@@ -31,7 +31,6 @@ const activeTab = ref('general')
 const tabs = computed(() => {
   const base = [
     { id: 'general', label: 'General', icon: 'settings' },
-    { id: 'code-preview', label: 'Code Preview', icon: 'code' },
     { id: 'model-settings', label: 'Model Settings', icon: 'server' },
     { id: 'skills', label: 'Skills', icon: 'terminal' },
     { id: 'subagents', label: 'Subagents', icon: 'robot' },
@@ -39,10 +38,6 @@ const tabs = computed(() => {
       ? [{ id: 'limits', label: 'Limits', icon: 'database' }]
       : []),
     { id: 'remote', label: 'Remote', icon: 'globe' },
-    { id: 'mcp-servers', label: 'MCP Servers', icon: 'plug' },
-    { id: 'plugins', label: 'Plugins', icon: 'plugin' },
-    { id: 'commands', label: 'Commands', icon: 'command' },
-    { id: 'indexing', label: 'Indexing', icon: 'search' },
     { id: 'usage', label: 'Usage', icon: 'chart' },
   ]
   return base
@@ -317,18 +312,6 @@ async function handleCheckUpdate() {
             </div>
           </template>
 
-          <!-- ═══ Code Preview ═══ -->
-          <template v-else-if="activeTab === 'code-preview'">
-            <div class="content-header">
-              <h1 class="content-title">Code Preview</h1>
-              <p class="content-subtitle">Configure how code is displayed and highlighted</p>
-            </div>
-            <div class="placeholder-state">
-              <Icon name="code" :size="48" class="placeholder-icon" />
-              <p>Code preview settings coming soon</p>
-            </div>
-          </template>
-
           <!-- ═══ Model Settings (Providers) ═══ -->
           <template v-else-if="activeTab === 'model-settings'">
             <div class="content-header">
@@ -496,23 +479,30 @@ async function handleCheckUpdate() {
                 <div class="info-row">
                   <span class="info-label">Status</span>
                   <span class="info-value">
-                    <span class="badge badge-amber">In Development</span>
+                    <span class="badge badge-green">Active</span>
                   </span>
                 </div>
                 <div class="info-row">
                   <span class="info-label">Backend</span>
-                  <span class="info-value">✅ Implemented in praxis-core (ractor actors)</span>
+                  <span class="info-value">ractor actors with mailboxes</span>
                 </div>
                 <div class="info-row">
-                  <span class="info-label">UI</span>
-                  <span class="info-value">⚠️ Settings UI pending</span>
+                  <span class="info-label">Delegation</span>
+                  <span class="info-value">DELEGATE:agent_type:task protocol</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Budget propagation</span>
+                  <span class="info-value">Parent → child narrowing</span>
                 </div>
               </div>
               <p class="section-note">
-                Subagents are implemented in the Rust core as ractor actors.
-                Each subagent runs in its own mailbox and can be assigned
-                specific tools and models. The settings UI to configure them
-                will be added in the next release.
+                Subagents are implemented in praxis-core as ractor actors.
+                Each agent runs in its own mailbox and can delegate to sub-agents
+                using the <code>DELEGATE:agent_type:task</code> protocol.
+                Budgets are propagated from parent to child with authority narrowing.
+                <br /><br />
+                To configure custom agents, use the <strong>Agents</strong> tab
+                in the sidebar or run <code>praxis agent add</code> from the CLI.
               </p>
             </div>
           </template>
@@ -524,54 +514,6 @@ async function handleCheckUpdate() {
               <p class="content-subtitle">Connect to remote praxis servers via QR pairing</p>
             </div>
             <RemoteConnections />
-          </template>
-
-          <!-- ═══ MCP Servers ═══ -->
-          <template v-else-if="activeTab === 'mcp-servers'">
-            <div class="content-header">
-              <h1 class="content-title">MCP Servers</h1>
-              <p class="content-subtitle">Manage MCP (Model Context Protocol) server connections</p>
-            </div>
-            <div class="placeholder-state">
-              <Icon name="plug" :size="48" class="placeholder-icon" />
-              <p>MCP server management coming soon</p>
-            </div>
-          </template>
-
-          <!-- ═══ Plugins ═══ -->
-          <template v-else-if="activeTab === 'plugins'">
-            <div class="content-header">
-              <h1 class="content-title">Plugins</h1>
-              <p class="content-subtitle">Manage plugins and extensions</p>
-            </div>
-            <div class="placeholder-state">
-              <Icon name="plugin" :size="48" class="placeholder-icon" />
-              <p>Plugin management coming soon</p>
-            </div>
-          </template>
-
-          <!-- ═══ Commands ═══ -->
-          <template v-else-if="activeTab === 'commands'">
-            <div class="content-header">
-              <h1 class="content-title">Commands</h1>
-              <p class="content-subtitle">Custom commands and shortcuts</p>
-            </div>
-            <div class="placeholder-state">
-              <Icon name="command" :size="48" class="placeholder-icon" />
-              <p>Command configuration coming soon</p>
-            </div>
-          </template>
-
-          <!-- ═══ Indexing ═══ -->
-          <template v-else-if="activeTab === 'indexing'">
-            <div class="content-header">
-              <h1 class="content-title">Indexing</h1>
-              <p class="content-subtitle">Codebase indexing and search settings</p>
-            </div>
-            <div class="placeholder-state">
-              <Icon name="search" :size="48" class="placeholder-icon" />
-              <p>Indexing settings coming soon</p>
-            </div>
           </template>
 
           <!-- ═══ Limits (per-project) ═══ -->
@@ -693,11 +635,48 @@ async function handleCheckUpdate() {
           <template v-else-if="activeTab === 'usage'">
             <div class="content-header">
               <h1 class="content-title">Usage</h1>
-              <p class="content-subtitle">Token usage and rate limits</p>
+              <p class="content-subtitle">Token usage and cost statistics</p>
             </div>
-            <div class="placeholder-state">
-              <Icon name="chart" :size="48" class="placeholder-icon" />
-              <p>Usage statistics coming soon</p>
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="info" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">System Status</h3>
+                  <p class="section-desc">Current backend and session information</p>
+                </div>
+              </div>
+              <div class="info-grid">
+                <div class="info-row">
+                  <span class="info-label">Version</span>
+                  <span class="info-value mono">{{ version || '--' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Uptime</span>
+                  <span class="info-value">{{ uptime }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Projects</span>
+                  <span class="info-value">{{ store.projects?.length ?? 0 }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Providers</span>
+                  <span class="info-value">{{ providers.length }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="chart" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">Cost Analysis</h3>
+                  <p class="section-desc">View detailed cost breakdown in the Cost Analysis page</p>
+                </div>
+              </div>
+              <p class="section-note">
+                Token usage and cost data are tracked per session.
+                Visit the <strong>Cost</strong> tab in the sidebar for detailed charts
+                and per-session cost breakdowns.
+              </p>
             </div>
           </template>
         </div>

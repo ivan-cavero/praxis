@@ -23,7 +23,7 @@ async function loadData() {
   try {
     sessions.value = await api.getSessions()
   } catch {
-    // silent
+    // Background polling — don't spam toasts
   }
   isLoading.value = false
 }

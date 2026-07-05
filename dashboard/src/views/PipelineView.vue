@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import Icon from '../components/ui/Icon.vue'
+import { useApi } from '../composables/useApi'
 import {
   useWebSocket,
   getEventPayload,
@@ -11,6 +12,43 @@ import {
 } from '../composables/useWebSocket'
 
 const ws = useWebSocket()
+const api = useApi()
+
+// ─── Session selector ──────────────────────────────────────────────
+
+interface SessionEntry {
+  id: string
+  project: string
+  goal: string
+  phase: string
+  status: string
+  started_at: string
+}
+
+const sessions = ref<SessionEntry[]>([])
+const selectedSessionId = ref<string | null>(null)
+const isLoadingSessions = ref(false)
+
+async function loadSessions(): Promise<void> {
+  isLoadingSessions.value = true
+  try {
+    const data = await api.get<SessionEntry[]>('/sessions')
+    sessions.value = data || []
+    // Auto-select the most recent running session, or the first one
+    if (sessions.value.length > 0 && !selectedSessionId.value) {
+      const running = sessions.value.find(s => s.status === 'running')
+      selectedSessionId.value = running?.id ?? sessions.value[0].id
+    }
+  } catch {
+    sessions.value = []
+  } finally {
+    isLoadingSessions.value = false
+  }
+}
+
+onMounted(() => {
+  loadSessions()
+})
 
 // ─── Phase definitions ────────────────────────────────────────────
 
@@ -67,11 +105,17 @@ function togglePhase(phaseId: string) {
   if (phase) phase.expanded = !phase.expanded
 }
 
-// ─── Watch WebSocket events ────────────────────────────────────────
+// ─── Watch WebSocket events (filtered by selected session) ─────────
 
 watch(() => ws.events.value, (allEvents) => {
   for (let i = allEvents.length - 1; i >= 0; i--) {
     const event = allEvents[i]
+
+    // Filter by session ID if one is selected
+    if (selectedSessionId.value) {
+      const eventSession = (event as { metadata?: { session_id?: string } }).metadata?.session_id
+      if (eventSession && eventSession !== selectedSessionId.value) continue
+    }
 
     // Phase changed
     const phaseChange = getEventPayload<PhaseChangedEvent>(event, 'PhaseChanged')
@@ -158,6 +202,27 @@ watch(() => ws.events.value, (allEvents) => {
             &middot; <span class="text-primary">{{ runningAgentCount }} agent{{ runningAgentCount > 1 ? 's' : '' }} running</span>
           </template>
         </p>
+      </div>
+
+      <!-- Session selector -->
+      <div class="session-selector">
+        <label class="session-label">
+          <Icon name="server" :size="14" />
+          Session
+        </label>
+        <select
+          v-model="selectedSessionId"
+          class="session-select"
+          :disabled="isLoadingSessions || sessions.length === 0"
+        >
+          <option :value="null" v-if="sessions.length === 0">No sessions available</option>
+          <option v-for="s in sessions" :key="s.id" :value="s.id">
+            {{ s.id.slice(0, 8) }}... — {{ s.goal.slice(0, 40) }}{{ s.goal.length > 40 ? '...' : '' }} ({{ s.status }})
+          </option>
+        </select>
+        <button class="session-refresh" @click="loadSessions" title="Refresh sessions">
+          <Icon name="refresh" :size="14" />
+        </button>
       </div>
     </div>
 
@@ -258,7 +323,13 @@ watch(() => ws.events.value, (allEvents) => {
   min-height: 0;
 }
 
-.pipeline-header { margin-bottom: var(--space-2); }
+.pipeline-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
 .pipeline-title {
   font-size: 24px;
   font-weight: 600;
@@ -271,6 +342,66 @@ watch(() => ws.events.value, (allEvents) => {
   margin-top: var(--space-1);
 }
 .text-primary { color: var(--primary); }
+
+/* ─── Session Selector ─────────────────────────────────────────── */
+
+.session-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.session-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.session-select {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 320px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.session-select:focus {
+  border-color: var(--primary);
+}
+
+.session-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.session-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.session-refresh:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 
 /* ─── Phase Flow ─────────────────────────────────────────────────── */
 

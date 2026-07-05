@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useApi, type SessionEntry, type AgentDefinition, type Project } from '../composables/useApi'
+import { useToast } from '../composables/useToast'
 import MetricCard from '../components/ui/MetricCard.vue'
 import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
@@ -10,6 +11,7 @@ import Icon from '../components/ui/Icon.vue'
 const router = useRouter()
 const store = useAppStore()
 const api = useApi()
+const toast = useToast()
 
 const sessions = ref<SessionEntry[]>([])
 const agents = ref<AgentDefinition[]>([])
@@ -54,9 +56,9 @@ async function loadData() {
     projects.value = await api.getProjects()
     try {
       metricsSummary.value = await api.getMetricsSummary()
-    } catch { /* optional */ }
-  } catch {
-    // silent
+    } catch { /* metrics endpoint is optional */ }
+  } catch (error: unknown) {
+    toast.error('Failed to load dashboard data', { duration: 5000 })
   }
   isLoading.value = false
 }
@@ -87,6 +89,13 @@ onUnmounted(() => {
       <h1 class="dashboard-title">Dashboard</h1>
     </div>
 
+    <!-- Loading state -->
+    <div v-if="isLoading" class="loading-state">
+      <span class="loading-spinner" />
+      <p>Loading dashboard...</p>
+    </div>
+
+    <template v-else>
     <!-- Metric Cards -->
     <div class="metric-grid">
       <MetricCard label="Active Sessions" :value="activeSessionsCount" sub="Currently running" color="green" />
@@ -183,6 +192,7 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -196,6 +206,29 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  color: var(--text-muted);
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .dashboard-header {

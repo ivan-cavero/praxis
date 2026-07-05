@@ -5,11 +5,12 @@
  * Each agent configured in the project gets its own chat tab.
  * Messages are isolated per agent. WebSocket events route to the correct tab.
  */
-import { ref, computed, inject, onMounted, watch } from 'vue'
+import { ref, computed, inject, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useApi, type Project, type RoleDetail, type ProviderDetail, type SkillInfo } from '../composables/useApi'
 import { useWebSocket, getEventPayload, type AgentOutputEvent } from '../composables/useWebSocket'
+import { useToast } from '../composables/useToast'
 import Icon from '../components/ui/Icon.vue'
 
 const openSettings = inject<() => void>('openSettings')
@@ -19,6 +20,7 @@ const router = useRouter()
 const store = useAppStore()
 const api = useApi()
 const ws = useWebSocket()
+const toast = useToast()
 
 // ─── Project ───────────────────────────────────────────────────────
 
@@ -133,6 +135,21 @@ const currentMessages = computed(() => {
 
 const inputText = ref('')
 const isSending = ref(false)
+const inputTextarea = ref<HTMLTextAreaElement | null>(null)
+
+/** Auto-resize the textarea to fit content (up to a max height). */
+function autoResize(): void {
+  const el = inputTextarea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px'
+}
+
+/** Insert a newline at the cursor (for Shift+Enter). */
+function handleNewline(): void {
+  // Default behavior inserts a newline — just trigger auto-resize
+  nextTick(() => autoResize())
+}
 
 /** Push a message to a specific agent's message list. */
 function pushMessage(agent: string, msg: ChatMessage) {
@@ -157,7 +174,7 @@ onMounted(async () => {
         const vault = await api.getVaultKeys()
         vaultProviders.value = new Set(vault.providers.filter(p => p.has_key).map(p => p.provider))
       } catch {
-        // Vault might not be accessible
+        toast.warning('Could not load vault keys — API keys may not be configured')
       }
 
       // Load project config to get agent roles + providers
@@ -168,11 +185,11 @@ onMounted(async () => {
         // Default to first agent tab
         if (agentList.value.length > 0) activeAgent.value = agentList.value[0]
       } catch {
-        // No config yet
+        toast.info('No agent config found for this project — using defaults')
       }
     }
   } catch {
-    // project not found
+    toast.error('Failed to load project')
   }
   isLoading.value = false
 })
@@ -222,16 +239,19 @@ async function sendMessage() {
         content: `Goal dispatched — session ${result.session_id.slice(0, 8)}... orchestrator distributing across agents`,
         timestamp: new Date().toISOString(),
       })
+      toast.success(`Goal dispatched to orchestrator`)
 
       // Start polling for live state (tokens, cost, phase)
       startStatePolling(result.session_id)
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'unknown error'
       pushMessage('all', {
         id: crypto.randomUUID(),
         role: 'system',
-        content: `Failed to dispatch goal: ${error instanceof Error ? error.message : 'unknown error'}`,
+        content: `Failed to dispatch goal: ${message}`,
         timestamp: new Date().toISOString(),
       })
+      toast.error(`Failed to dispatch goal: ${message}`)
     }
     isSending.value = false
   }
@@ -289,13 +309,16 @@ async function planGoal() {
     planContent.value = result.plan
     planPath.value = result.plan_path
     showPlanModal.value = true
+    toast.success('Plan generated — review and execute when ready')
   } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'unknown error'
     pushMessage('all', {
       id: crypto.randomUUID(),
       role: 'system',
-      content: `Failed to plan: ${error instanceof Error ? error.message : 'unknown error'}`,
+      content: `Failed to plan: ${message}`,
       timestamp: new Date().toISOString(),
     })
+    toast.error(`Failed to plan: ${message}`)
   }
   isPlanning.value = false
 }
@@ -565,19 +588,24 @@ watch(() => ws.events.value, (allEvents) => {
       </div>
     </details>
 
-    <!-- Input — send to single agent or all agents -->
+    <!-- Input — multi-line textarea for multi-goal support -->
     <div class="chat-input">
-      <input
+      <textarea
+        ref="inputTextarea"
         v-model="inputText"
         class="chat-input-field"
-        :placeholder="'Describe what you want to build...'"
+        :placeholder="'Describe what you want to build... (Enter to send, Shift+Enter for new line. Use --- or numbered list for multi-goal)'"
         :disabled="isSending"
-        @keydown.enter="sendMessage"
-      />
+        rows="1"
+        @keydown.enter.exact.prevent="sendMessage"
+        @keydown.shift.enter="handleNewline"
+        @input="autoResize"
+      ></textarea>
       <button
         class="chat-send-btn"
         :disabled="!inputText.trim() || isSending"
         @click="sendMessage"
+        title="Send (Enter)"
       >
         <Icon v-if="isSending" name="refresh" :size="16" class="animate-spin" />
         <Icon v-else name="send" :size="16" />
@@ -908,7 +936,7 @@ watch(() => ws.events.value, (allEvents) => {
 
 .chat-input {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background: var(--bg-surface);
@@ -926,6 +954,11 @@ watch(() => ws.events.value, (allEvents) => {
   font-size: 14px;
   font-family: inherit;
   transition: border-color var(--transition-fast);
+  resize: none;
+  min-height: 38px;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
 }
 .chat-input-field:focus {
   outline: none;

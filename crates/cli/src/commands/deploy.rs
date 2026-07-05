@@ -1,4 +1,9 @@
 //! Deploy commands — VPS deployment via SSH.
+//!
+//! NOTE: praxis is designed as a single-binary, local-first system.
+//! VPS deployment is not part of the core vision. These commands exist
+//! as placeholders for future remote-execution features and currently
+//! print guidance rather than performing real operations.
 
 /// Deploy configuration for VPS.
 pub struct DeployConfig {
@@ -30,32 +35,33 @@ pub async fn setup(host: &str) -> Result<(), String> {
     println!("  Host: {}@{}", config.user, config.host);
     println!("  Port: {}", config.port);
     println!("  Path: {}", config.project_path);
-
-    // In production: SSH into host, install Docker, deploy
     println!();
-    println!("  [DEMO] Would SSH into {} and deploy", config.host);
-    println!("  [DEMO] 1. Install Docker + Docker Compose");
-    println!("  [DEMO] 2. Create docker-compose.yml");
-    println!("  [DEMO] 3. Start services");
-    println!("  [DEMO] 4. Print connection info");
+    println!("  VPS deployment is not yet available.");
+    println!("  praxis runs as a single binary locally — no server needed.");
+    println!();
+    println!("  To run praxis on a remote machine:");
+    println!("    1. SSH into the remote machine");
+    println!("    2. Install praxis: cargo install --path crates/cli");
+    println!("    3. Run: praxis server  (starts the API + WebSocket)");
+    println!("    4. Connect your dashboard to: http://<host>:8080");
 
     Ok(())
 }
 
 /// Push project to VPS.
 pub async fn push() -> Result<(), String> {
-    println!("  [DEMO] Would sync project to VPS");
-    println!("  [DEMO] 1. Dump SQLite");
-    println!("  [DEMO] 2. Compress + upload");
-    println!("  [DEMO] 3. Restart remote core");
+    println!("  VPS push is not yet available.");
+    println!("  To sync a project manually:");
+    println!("    rsync -avz ~/.config/praxis/projects/<name> user@host:~/.config/praxis/projects/");
 
     Ok(())
 }
 
 /// Check VPS status.
 pub async fn status() -> Result<(), String> {
-    println!("  [DEMO] Would check remote health");
-    println!("  [DEMO] Status: OK");
+    println!("  VPS status is not yet available.");
+    println!("  To check a remote praxis instance:");
+    println!("    curl http://<host>:8080/api/health");
 
     Ok(())
 }
@@ -63,9 +69,13 @@ pub async fn status() -> Result<(), String> {
 /// Stream logs from VPS.
 pub async fn logs(tail: bool) -> Result<(), String> {
     if tail {
-        println!("  [DEMO] Would stream logs from VPS (Ctrl+C to stop)");
+        println!("  VPS log streaming is not yet available.");
+        println!("  To tail logs remotely:");
+        println!("    ssh user@host 'tail -f ~/.config/praxis/praxis.log'");
     } else {
-        println!("  [DEMO] Would show last 50 log lines from VPS");
+        println!("  VPS logs are not yet available.");
+        println!("  To view logs remotely:");
+        println!("    ssh user@host 'cat ~/.config/praxis/praxis.log'");
     }
 
     Ok(())

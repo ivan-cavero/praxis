@@ -2,11 +2,13 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi, type SessionEntry } from '../composables/useApi'
+import { useToast } from '../composables/useToast'
 import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
 
 const router = useRouter()
 const api = useApi()
+const toast = useToast()
 
 const sessions = ref<SessionEntry[]>([])
 const isLoading = ref(true)
@@ -26,7 +28,7 @@ async function loadSessions() {
   try {
     sessions.value = await api.getSessions()
   } catch {
-    // silent
+    // Background polling — don't spam toasts on every failed poll
   }
   isLoading.value = false
 }
@@ -34,9 +36,10 @@ async function loadSessions() {
 async function handleStop(sessionId: string) {
   try {
     await api.stopSession(sessionId)
+    toast.success('Session stop signal sent')
     await loadSessions()
-  } catch {
-    // silent
+  } catch (error: unknown) {
+    toast.error('Failed to stop session')
   }
 }
 

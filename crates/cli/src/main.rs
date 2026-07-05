@@ -157,29 +157,28 @@ fn load_vault() -> Option<std::sync::Arc<praxis_vault::VaultService>> {
 }
 
 /// Get the central data directory for all projects and config.
-///   Windows: %APPDATA%/praxis
-///   Linux:   $HOME/.config/praxis
-///   macOS:   $HOME/Library/Application Support/praxis
+///
+/// Uses `~/.config/praxis` on ALL platforms for consistency:
+///   - `$PRAXIS_DATA_DIR` overrides everything
+///   - `$HOME/.config/praxis` if HOME is set
+///   - `%USERPROFILE%/.config/praxis` on Windows if HOME is not set
+///   - `.praxis-data` in cwd as last resort
 pub fn get_data_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("PRAXIS_DATA_DIR") {
         return PathBuf::from(dir);
     }
 
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".config").join("praxis");
+    }
+
     #[cfg(target_os = "windows")]
     {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("praxis");
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            return PathBuf::from(userprofile).join(".config").join("praxis");
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(".config").join("praxis");
-        }
-    }
-
-    // Fallback
     PathBuf::from(".praxis-data")
 }
 
@@ -221,7 +220,7 @@ fn resolve_config_path(project_name: Option<&str>) -> Option<PathBuf> {
     Some(tmp)
 }
 
-/// Load ForgeConfig from AppData project, or return default empty config.
+/// Load ForgeConfig from project, or return default empty config.
 fn load_project_config(project_name: Option<&str>) -> praxis_core::ForgeConfig {
     resolve_config_path(project_name)
         .and_then(|path| praxis_core::load_forge_config(&path).ok())
@@ -230,8 +229,8 @@ fn load_project_config(project_name: Option<&str>) -> praxis_core::ForgeConfig {
 
 #[derive(Parser)]
 #[command(name = "praxis")]
-#[command(about = "Autonomous Multi-Agent System", long_about = None)]
-#[command(version = "0.1.0")]
+#[command(about = "Autonomous Multi-Agent System", long_about = "praxis — Autonomous Multi-Agent System\n\nAn AI agent orchestration system that runs goals through a pipeline of\nspecialized agents (architect, coder, reviewer, security, tester).\n\nEXAMPLES:\n  praxis init my-project\n  praxis run --project my-project --goal \"Build a hello world CLI\"\n  praxis monitor\n  praxis dashboard\n")]
+#[command(version = "0.5.0")]
 #[command(arg_required_else_help = true)]
 struct Cli {
     #[command(subcommand)]
@@ -245,12 +244,28 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Create a new project
+    ///
+    /// Creates a project directory with a default config.toml, skills/, plans/,
+    /// and injections/ directories.
+    ///
+    /// EXAMPLES:
+    ///   praxis init my-app
+    ///   praxis init my-project
     Init {
-        /// Project name
+        /// Project name (kebab-case recommended)
         name: String,
     },
 
-    /// Execute a goal
+    /// Execute a goal through the agent pipeline
+    ///
+    /// Runs the goal through Planning → Designing → Implementing → Reviewing →
+    /// Testing → SecurityScan → Finalizing phases.
+    ///
+    /// EXAMPLES:
+    ///   praxis run --project my-app --goal "Build a hello world CLI"
+    ///   praxis run --goal "Fix the login bug" --dry-run
+    ///   praxis run --goal "Add tests" --until "cargo test"
+    ///   praxis run --goal "Refactor API" --max-tokens 100000 --max-cost 5.0
     Run {
         /// Goal description or name
         #[arg(long)]
@@ -321,6 +336,13 @@ enum Commands {
     },
 
     /// Run a goal on a repeating schedule until a condition is met
+    ///
+    /// Repeats the goal every <interval> until the --until command exits 0
+    /// or max-runs is reached.
+    ///
+    /// EXAMPLES:
+    ///   praxis schedule --goal "Fix failing tests" --until "cargo test" --every 30s
+    ///   praxis schedule --goal "Improve coverage" --until "cargo test" --every 5min --max-runs 20
     Schedule {
         /// Goal description
         #[arg(long)]
@@ -356,6 +378,10 @@ enum Commands {
     ///
     /// Produces a plan file that can be reviewed and then executed via
     /// `praxis run --plan <file>`.
+    ///
+    /// EXAMPLES:
+    ///   praxis plan --goal "Build a REST API" --output plan.md
+    ///   praxis plan --goal "Add authentication" --project my-app
     Plan {
         /// Goal description
         #[arg(long)]
@@ -370,35 +396,76 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
-    /// Manage projects
+    /// Manage projects (list, show, archive)
+    ///
+    /// EXAMPLES:
+    ///   praxis project list
+    ///   praxis project show my-app
     #[command(subcommand)]
     Project(ProjectCommands),
 
     /// Manage agents (list, add, edit, remove)
+    ///
+    /// Agents are Markdown+YAML files with 3 scopes: builtin, global, project.
+    ///
+    /// EXAMPLES:
+    ///   praxis agent list
+    ///   praxis agent list --scope builtin
+    ///   praxis agent show coder
+    ///   praxis agent add my-agent --prompt "You are a custom agent" --model gpt-5
+    ///   praxis agent edit coder
+    ///   praxis agent remove my-agent
     #[command(subcommand)]
     Agent(AgentCommands),
 
-    /// Manage sessions
+    /// Manage sessions (list, show, stop, logs)
+    ///
+    /// EXAMPLES:
+    ///   praxis session list
+    ///   praxis session show <id>
+    ///   praxis session stop <id>
+    ///   praxis session logs <id> --tail
     #[command(subcommand)]
     Session(SessionCommands),
 
     /// LLM provider management
+    ///
+    /// EXAMPLES:
+    ///   praxis provider list
+    ///   praxis provider add openai https://api.openai.com/v1 --api-key-stdin
+    ///   praxis provider test openai
     #[command(subcommand)]
     Provider(ProviderCommands),
 
     /// MCP server management
+    ///
+    /// EXAMPLES:
+    ///   praxis mcp list
+    ///   praxis mcp add filesystem npx -- -y @modelcontextprotocol/server-filesystem /tmp
     #[command(subcommand)]
     Mcp(McpCommands),
 
-    /// Context management
+    /// Context management (inspect, history, compress)
+    ///
+    /// EXAMPLES:
+    ///   praxis context inspect <session-id>
     #[command(subcommand)]
     Context(ContextCommands),
 
-    /// Memory debugging
+    /// Memory debugging (stats, sessions, events, checkpoints)
+    ///
+    /// EXAMPLES:
+    ///   praxis memory stats
+    ///   praxis memory sessions
+    ///   praxis memory events <id>
     #[command(subcommand)]
     Memory(MemoryCommands),
 
-    /// Inject mid-loop instructions
+    /// Inject mid-loop instructions into a running session
+    ///
+    /// EXAMPLES:
+    ///   praxis inject --session <id> --agent coder --message "Focus on error handling"
+    ///   praxis inject --session <id> --agent all --message-type halt --message "Stop now"
     Inject {
         /// Target session
         #[arg(long)]
@@ -417,23 +484,46 @@ enum Commands {
         message: String,
     },
 
-    /// Open desktop app
+    /// Open the desktop app (Tauri)
+    ///
+    /// Builds and launches the Tauri desktop app with the Vue dashboard.
     Desktop,
 
-    /// Open web dashboard
+    /// Start the web dashboard (API server + opens browser)
+    ///
+    /// Starts the API server on port 8080 and opens the dashboard in your browser.
+    /// Press Ctrl+C to stop.
     Dashboard,
 
     /// Start the API server (REST + WebSocket)
+    ///
+    /// The API server provides REST endpoints and a WebSocket for real-time events.
+    ///
+    /// EXAMPLES:
+    ///   praxis server
+    ///   praxis server --pair
     Server {
         /// Enable QR pairing system for remote connections
         #[arg(long)]
         pair: bool,
     },
 
-    /// Open terminal UI monitor
+    /// Open terminal UI monitor — picks the most recent session to watch
+    ///
+    /// Lists all sessions and watches the most recent one in real-time.
+    /// If the API server is not running, starts it automatically.
+    ///
+    /// EXAMPLES:
+    ///   praxis monitor
     Monitor,
 
-    /// Watch a session's progress in real-time (polls the API server)
+    /// Watch a specific session's progress in real-time
+    ///
+    /// Polls the API server and displays session status, events, and STATE.md.
+    ///
+    /// EXAMPLES:
+    ///   praxis watch <session-id>
+    ///   praxis watch <session-id> --api http://localhost:8080 --interval 1
     Watch {
         /// Session ID to watch
         session_id: String,
@@ -447,9 +537,11 @@ enum Commands {
         interval: u64,
     },
 
-    /// Update to latest version
+    /// Check for a newer version of praxis
+    ///
+    /// Compares your installed version against the latest GitHub release.
     Update {
-        /// Release channel
+        /// Release channel (stable | beta)
         #[arg(long, default_value = "stable")]
         channel: String,
     },
@@ -457,12 +549,28 @@ enum Commands {
     /// Show version
     Version,
 
-    /// VPS deployment
+    /// VPS deployment (placeholder — praxis runs locally as a single binary)
+    ///
+    /// NOTE: praxis is designed as a local-first, single-binary system.
+    /// These commands provide guidance for running praxis on a remote machine
+    /// but do not perform automated deployment.
     #[command(subcommand)]
     Deploy(DeployCommands),
 
-    /// Run a comprehensive test
+    /// Run a comprehensive integration test (15 subsystem checks)
     Test,
+
+    /// Diagnose your praxis setup — checks data dir, vault, database, API server
+    ///
+    /// EXAMPLES:
+    ///   praxis doctor
+    Doctor,
+
+    /// Interactive quickstart guide — sets up your first project and provider
+    ///
+    /// EXAMPLES:
+    ///   praxis quickstart
+    Quickstart,
 }
 
 #[derive(Subcommand)]
@@ -568,10 +676,35 @@ enum SessionCommands {
 
 #[derive(Subcommand)]
 enum ProviderCommands {
+    /// List configured LLM providers
     List,
-    Test { name: String },
-    /// Add a custom OpenAI-compatible provider
-    Add { name: String, base_url: String, api_key: String },
+
+    /// Test a provider connection
+    Test {
+        /// Provider name
+        name: String,
+    },
+
+    /// Add a custom OpenAI-compatible provider and save the API key to the vault
+    Add {
+        /// Provider name (e.g., "openai", "anthropic", "custom")
+        name: String,
+
+        /// Base URL (e.g., "https://api.openai.com/v1")
+        base_url: String,
+
+        /// API key (use --api-key to avoid shell history leakage)
+        #[arg(long)]
+        api_key: Option<String>,
+
+        /// Read API key from stdin (most secure — no shell history)
+        #[arg(long)]
+        api_key_stdin: bool,
+
+        /// Default model for this provider
+        #[arg(long)]
+        model: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -639,8 +772,14 @@ async fn main() -> anyhow::Result<()> {
             println!("{} Project '{}' created!", "✓".green().bold(), name.green().bold());
             println!();
             println!("  Next steps:");
-            println!("    cd {}", name);
-            println!("    {} --goal \"your goal here\"", "praxis run".yellow());
+            println!("    {} --project {} --goal \"your goal here\"", "praxis run".yellow(), name);
+            println!("    {} --project {} --goal \"your goal\" --dry-run", "praxis run".yellow(), name);
+            println!();
+            println!("  Or start the dashboard:");
+            println!("    {}", "praxis dashboard".yellow());
+            println!();
+            println!("  Check your setup:");
+            println!("    {}", "praxis doctor".yellow());
         }
 
         // ─── Run ───────────────────────────────────────────
@@ -662,6 +801,23 @@ async fn main() -> anyhow::Result<()> {
             };
 
             if let Some(g) = goal {
+                // Check if any project exists before running
+                let data_dir = get_data_dir();
+                let projects_path = data_dir.join("projects.json");
+                let has_projects = std::fs::read_to_string(&projects_path)
+                    .ok()
+                    .and_then(|c| serde_json::from_str::<Vec<serde_json::Value>>(&c).ok())
+                    .map(|p| !p.is_empty())
+                    .unwrap_or(false);
+
+                if !has_projects && project.is_none() {
+                    println!("{} No project found. You need to create one first:", "✗".red());
+                    println!();
+                    println!("  {} my-project", "praxis init".yellow());
+                    println!("  {} --project my-project --goal \"your goal\"", "praxis run".yellow());
+                    std::process::exit(1);
+                }
+
                 // Parse agent overrides
                 let mut overrides = std::collections::HashMap::new();
                 for arg in &agent_overrides {
@@ -1391,11 +1547,90 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             SessionCommands::Stop { id } => {
-                println!("{} Stop not yet implemented for session {}. Use Ctrl+C during execution.", "→".cyan(), id);
+                // Try to stop via the API server
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .build()
+                    .unwrap_or_default();
+
+                let api_url = "http://localhost:8080";
+                let stop_url = format!("{}/api/sessions/{}/stop", api_url, id);
+
+                match client.post(&stop_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("{} Stop signal sent to session {}", "✓".green(), id);
+                        println!("  The session will stop after the current iteration.");
+                    }
+                    Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                        println!("{} Session {} not found on the API server.", "✗".red(), id);
+                        println!("  Is the API server running? Start it with: {}", "praxis server".cyan());
+                    }
+                    Ok(resp) => {
+                        println!("{} API server returned status {}", "⚠".yellow(), resp.status());
+                    }
+                    Err(e) if e.is_connect() => {
+                        println!("{} Cannot reach API server at {}", "✗".red(), api_url);
+                        println!("  Start it with: {}", "praxis server".cyan());
+                        println!();
+                        println!("  If the session is running in this terminal, press Ctrl+C to stop it.");
+                    }
+                    Err(e) => {
+                        println!("{} Error stopping session: {}", "✗".red(), e);
+                    }
+                }
             }
             SessionCommands::Logs { id, tail, json } => {
-                println!("{} Logs for session {} (tail: {}, json: {})", "→".cyan(), id, tail, json);
-                println!("  {} (implement via EventBus subscription in future)", "→".dimmed());
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
+
+                if !db_path.exists() {
+                    println!("{} No database found. Run a session first.", "→".cyan());
+                    std::process::exit(1);
+                }
+
+                let sid = uuid::Uuid::parse_str(&id)
+                    .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
+                let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let events = store.read_events(sid, None).await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                if events.is_empty() {
+                    println!("{} No events found for session {}", "→".cyan(), id);
+                    std::process::exit(0);
+                }
+
+                if json {
+                    let json_events: Vec<_> = events.iter().map(|e| serde_json::json!({
+                        "id": e.id,
+                        "type": e.event_type,
+                        "version": e.version,
+                        "created_at": e.created_at,
+                        "payload": e.payload,
+                    })).collect();
+                    println!("{}", serde_json::to_string_pretty(&json_events)?);
+                } else {
+                    let mut display_events: Vec<_> = if tail {
+                        events.iter().rev().take(50).collect()
+                    } else {
+                        events.iter().collect()
+                    };
+                    if tail {
+                        display_events.reverse();
+                    }
+
+                    println!("{} Logs for session {} ({} events)", "→".cyan(), id, events.len());
+                    println!("{}", "─".repeat(80));
+                    for event in &display_events {
+                        let time: String = event.created_at.chars().skip(11).take(8).collect();
+                        println!("  {} {} {}", time.dimmed(), event.event_type.cyan(), event.version);
+                        if let Some(pretty) = serde_json::to_string_pretty(&event.payload).ok() {
+                            for line in pretty.lines().take(3) {
+                                println!("    {}", line.dimmed());
+                            }
+                        }
+                    }
+                }
             }
         },
 
@@ -1440,21 +1675,70 @@ async fn main() -> anyhow::Result<()> {
                     println!("  {} Provider '{}' not found in config", "✗".red(), name);
                 }
             }
-            ProviderCommands::Add { name, base_url, api_key } => {
+            ProviderCommands::Add { name, base_url, api_key, api_key_stdin, model } => {
                 println!("{} Adding provider: {}", "→".cyan(), name);
-                println!("  Base URL: {}", base_url);
-                let masked = if api_key.len() > 8 {
-                    format!("{}***{}", &api_key[..4], &api_key[api_key.len()-4..])
+
+                // Get the API key securely
+                let key = if api_key_stdin {
+                    println!("  {} Reading API key from stdin...", "→".dimmed());
+                    use std::io::Read;
+                    let mut buf = String::new();
+                    if std::io::stdin().read_to_string(&mut buf).is_err() {
+                        println!("{} Failed to read API key from stdin", "✗".red());
+                        std::process::exit(1);
+                    }
+                    buf.trim().to_string()
+                } else if let Some(k) = api_key {
+                    println!("  {} {} --api-key leaks to shell history. Use --api-key-stdin next time.", "⚠".yellow(), "Tip:".dimmed());
+                    k
+                } else {
+                    println!("{} No API key provided. Use --api-key <key> or --api-key-stdin", "✗".red());
+                    std::process::exit(1);
+                };
+
+                if key.is_empty() {
+                    println!("{} API key is empty", "✗".red());
+                    std::process::exit(1);
+                }
+
+                let data_dir = get_data_dir();
+                std::fs::create_dir_all(&data_dir)?;
+                let vault_path = data_dir.join("credentials.vault.json");
+
+                // Save to vault
+                let vault = praxis_vault::VaultService::with_path(vault_path.clone(), None);
+                if let Err(e) = vault.init() {
+                    println!("{} Failed to initialize vault: {}", "✗".red(), e);
+                    std::process::exit(1);
+                }
+
+                let key_ref = format!("vault:{}", name);
+                if let Err(e) = vault.set(&name, &key) {
+                    println!("{} Failed to store API key in vault: {}", "✗".red(), e);
+                    std::process::exit(1);
+                }
+
+                let masked = if key.len() > 8 {
+                    format!("{}***{}", &key[..4], &key[key.len()-4..])
                 } else {
                     "****".to_string()
                 };
-                println!("  API Key: {}", masked);
+
+                println!("  Base URL: {}", base_url);
+                println!("  API Key: {} (saved to vault)", masked);
                 println!();
-                println!("  {} Provider added to vault. Configure forge.toml to use it:", "✓".green());
+                println!("{} Provider '{}' saved to vault", "✓".green(), name.cyan());
+                println!("  Vault: {}", vault_path.display());
+                println!();
+                println!("  Add to your project's config.toml:");
                 println!("    [providers.{}]", name);
                 println!("    base_url = \"{}\"", base_url);
-                println!("    api_key = \"keyring:{}\"", name);
-                println!("    default_model = \"<model-name>\"");
+                println!("    api_key = \"{}\"", key_ref);
+                if let Some(m) = model {
+                    println!("    default_model = \"{}\"", m);
+                } else {
+                    println!("    default_model = \"<model-name>\"");
+                }
             }
         },
 
@@ -1501,6 +1785,43 @@ async fn main() -> anyhow::Result<()> {
             ContextCommands::Inspect { session } => {
                 println!("{} Context inspection: {}", "→".cyan(), session);
                 println!();
+
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
+
+                // Try to load real session data from SQLite
+                let session_data: Option<serde_json::Value> = if db_path.exists() {
+                    let sid = uuid::Uuid::parse_str(&session).ok();
+                    if let Some(sid) = sid {
+                        let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                            .map_err(|e| anyhow::anyhow!(e))?;
+                        store.get_snapshot(sid).await
+                            .map_err(|e| anyhow::anyhow!(e))?
+                            .map(|s| s.state)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(ref state) = session_data {
+                    let phase = state.get("phase").and_then(|v| v.as_str()).unwrap_or("?");
+                    let iteration = state.get("iteration").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let pressure = state.get("context_pressure").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let goal = state.get("goal").and_then(|v| v.as_str()).unwrap_or("?");
+
+                    println!("  {} Session: {}", "→".cyan(), session);
+                    println!("  {} Goal: {}", "→".cyan(), goal);
+                    println!("  {} Phase: {}", "→".cyan(), phase);
+                    println!("  {} Iteration: {}", "→".cyan(), iteration);
+                    println!("  {} Context pressure: {:.1}%", "→".cyan(), pressure * 100.0);
+                    println!();
+                } else {
+                    println!("  {} No checkpoint found for session {}", "⚠".yellow(), session);
+                    println!("  Showing default context budget breakdown:");
+                    println!();
+                }
 
                 // Show context budget breakdown
                 let ctx_mgr = praxis_memory::ContextManager::new(
@@ -1979,7 +2300,70 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         },
-        Commands::Dashboard => println!("{} Opening dashboard...", "→".cyan()),
+        Commands::Dashboard => {
+            println!("{} Starting dashboard...", "→".cyan());
+
+            let data_dir = get_data_dir();
+            std::fs::create_dir_all(&data_dir)?;
+
+            // Start the API server in the background
+            let vault_password = std::env::var("VAULT_PASSWORD").ok();
+            let server = praxis_core::api::ApiServer::new(
+                praxis_core::api::ApiServerConfig {
+                    port: 8080,
+                    cors_origins: vec!["*".to_string()],
+                    vault_password,
+                    data_dir: data_dir.clone(),
+                    enable_pairing: false,
+                }
+            );
+
+            println!("{} API server: http://localhost:8080", "✓".green());
+            println!("{} WebSocket:  ws://localhost:8080/ws", "✓".green());
+
+            let server_handle = tokio::spawn(async move {
+                let _ = server.start().await;
+            });
+
+            // Give the server a moment to bind
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+            // Try to open the dashboard in the browser
+            let dashboard_url = "http://localhost:8080";
+            println!("{} Opening dashboard in browser: {}", "→".cyan(), dashboard_url);
+
+            #[cfg(target_os = "windows")]
+            let open_result = std::process::Command::new("cmd")
+                .args(["/C", "start", "", dashboard_url])
+                .spawn();
+
+            #[cfg(target_os = "macos")]
+            let open_result = std::process::Command::new("open")
+                .arg(dashboard_url)
+                .spawn();
+
+            #[cfg(all(unix, not(target_os = "macos")))]
+            let open_result = std::process::Command::new("xdg-open")
+                .arg(dashboard_url)
+                .spawn();
+
+            match open_result {
+                Ok(_) => println!("{} Browser opened", "✓".green()),
+                Err(_) => {
+                    println!("{} Could not auto-open browser. Visit: {}", "⚠".yellow(), dashboard_url);
+                }
+            }
+
+            println!();
+            println!("{} Press Ctrl+C to stop the server", "→".dimmed());
+            println!("{}", "─".repeat(50).dimmed());
+
+            // Wait for Ctrl+C
+            tokio::signal::ctrl_c().await?;
+            println!();
+            println!("{} Shutting down...", "→".dimmed());
+            server_handle.abort();
+        }
         Commands::Server { pair } => {
             // Read vault password from env if set
             let vault_password = std::env::var("VAULT_PASSWORD").ok();
@@ -1996,15 +2380,15 @@ async fn main() -> anyhow::Result<()> {
                     port: 8080,
                     cors_origins: vec!["*".to_string()],
                     vault_password,
-                    data_dir,
+                    data_dir: data_dir.clone(),
                     enable_pairing: pair,
                 }
             );
 
             println!("{} REST: http://localhost:8080", "✓".green());
             println!("{} WebSocket: ws://localhost:8080/ws", "✓".green());
-            println!("{} Vault: AppData/credentials.vault.json", "✓".green());
-            println!("{} Projects: AppData/projects.json", "✓".green());
+            println!("{} Vault: {}/credentials.vault.json", "✓".green(), data_dir.display());
+            println!("{} Projects: {}/projects.json", "✓".green(), data_dir.display());
             println!("{0}\n{} Press Ctrl+C to stop\n{0}", "─".repeat(50).dimmed());
 
             tokio::spawn(async move {
@@ -2016,15 +2400,132 @@ async fn main() -> anyhow::Result<()> {
             println!();
             println!("{} Server shutting down...", "→".dimmed());
         }
-        Commands::Monitor => println!("{} Opening monitor...", "→".cyan()),
+        Commands::Monitor => {
+            // List sessions and let the user pick one to watch
+            let data_dir = get_data_dir();
+            let db_path = data_dir.join("state.db");
+
+            if !db_path.exists() {
+                println!("{} No sessions found. Run a goal first:", "→".cyan());
+                println!("  {} --project <name> --goal \"your goal\"", "praxis run".yellow());
+                std::process::exit(0);
+            }
+
+            let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let session_ids = store
+                .list_aggregates("session")
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            if session_ids.is_empty() {
+                println!("{} No sessions found. Run a goal first:", "→".cyan());
+                println!("  {} --project <name> --goal \"your goal\"", "praxis run".yellow());
+                std::process::exit(0);
+            }
+
+            println!("{} Sessions:", "→".cyan());
+            for (i, sid) in session_ids.iter().enumerate() {
+                let snapshot = store.get_snapshot(*sid).await.map_err(|e| anyhow::anyhow!(e))?;
+                let goal = snapshot
+                    .as_ref()
+                    .and_then(|s| s.state.get("goal").and_then(|v| v.as_str()))
+                    .unwrap_or("?");
+                let phase = snapshot
+                    .as_ref()
+                    .and_then(|s| s.state.get("phase").and_then(|v| v.as_str()))
+                    .unwrap_or("?");
+                println!("  [{}] {} — {} ({})", i + 1, sid, goal.cyan(), phase.dimmed());
+            }
+            println!();
+
+            // Pick the most recent session (last in list)
+            let session_id = session_ids.last().unwrap();
+            println!("{} Watching most recent session: {}", "→".cyan(), session_id);
+            println!();
+
+            // Check if the API server is running, if not start it
+            let api_url = "http://localhost:8080";
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .unwrap_or_default();
+            let server_reachable = client
+                .get(format!("{}/api/health", api_url))
+                .send()
+                .await
+                .is_ok();
+
+            if !server_reachable {
+                println!("{} API server not running. Starting it...", "→".cyan());
+                let vault_password = std::env::var("VAULT_PASSWORD").ok();
+                let server = praxis_core::api::ApiServer::new(
+                    praxis_core::api::ApiServerConfig {
+                        port: 8080,
+                        cors_origins: vec!["*".to_string()],
+                        vault_password,
+                        data_dir: data_dir.clone(),
+                        enable_pairing: false,
+                    }
+                );
+                tokio::spawn(async move {
+                    let _ = server.start().await;
+                });
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                println!("{} API server started", "✓".green());
+            }
+
+            commands::watch::run(&session_id.to_string(), api_url, 2).await;
+        }
 
         Commands::Watch { session_id, api, interval } => {
             commands::watch::run(&session_id, &api, interval).await;
         }
 
         Commands::Update { channel } => {
+            let current_version = env!("CARGO_PKG_VERSION");
             println!("{} Checking for updates (channel: {})...", "→".cyan(), channel);
-            println!("  {} Already up to date (v{})", "✓".green(), env!("CARGO_PKG_VERSION"));
+            println!("  Current version: v{}", current_version);
+
+            // Check GitHub releases for the latest version
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_default();
+
+            let resp = client
+                .get("https://api.github.com/repos/praxis-ai/praxis/releases/latest")
+                .header("User-Agent", format!("praxis/{}", current_version))
+                .send()
+                .await
+                .ok();
+
+            let latest = match resp {
+                Some(r) => r.json::<serde_json::Value>().await.ok(),
+                None => None,
+            };
+
+            let latest = latest
+                .and_then(|v| v.get("tag_name").and_then(|t| t.as_str()).map(|s| s.trim_start_matches('v').to_string()));
+
+            match latest {
+                Some(latest_version) => {
+                    println!("  Latest version:  v{}", latest_version);
+                    if latest_version == current_version {
+                        println!("{} Already up to date", "✓".green());
+                    } else {
+                        println!("{} Update available: v{} → v{}", "↑".yellow(), current_version, latest_version);
+                        println!();
+                        println!("  To update:");
+                        println!("    {} install praxis-ai/praxis", "cargo binstall".yellow());
+                        println!("    or: {} clone https://github.com/praxis-ai/praxis && cd praxis && cargo install --path crates/cli", "git".yellow());
+                    }
+                }
+                None => {
+                    println!("{} Could not check for updates (network error or rate limited)", "⚠".yellow());
+                    println!("  Check manually: https://github.com/praxis-ai/praxis/releases");
+                }
+            }
         }
 
         Commands::Deploy(cmd) => match cmd {
@@ -2046,6 +2547,217 @@ async fn main() -> anyhow::Result<()> {
                 commands::deploy::logs(tail).await.map_err(|e| anyhow::anyhow!(e))?;
             }
         },
+
+        // ─── Doctor ────────────────────────────────────────
+        Commands::Doctor => {
+            println!("{} Diagnosing praxis setup...", "→".cyan());
+            println!("{}", "═".repeat(50).dimmed());
+            println!();
+
+            let data_dir = get_data_dir();
+            let mut all_ok = true;
+
+            // 1. Data directory
+            print!("  {} Data directory... ", "1.".cyan());
+            if data_dir.exists() {
+                println!("{} {}", "✓".green(), data_dir.display());
+            } else {
+                println!("{} not found at {}", "✗".red(), data_dir.display());
+                println!("    Run {} to create it", "praxis init <name>".yellow());
+                all_ok = false;
+            }
+
+            // 2. Projects
+            print!("  {} Projects...       ", "2.".cyan());
+            let projects_path = data_dir.join("projects.json");
+            match std::fs::read_to_string(&projects_path) {
+                Ok(content) => {
+                    let projects: Vec<serde_json::Value> = serde_json::from_str(&content).unwrap_or_default();
+                    if projects.is_empty() {
+                        println!("{} no projects found", "⚠".yellow());
+                        println!("    Run {} to create one", "praxis init <name>".yellow());
+                    } else {
+                        println!("{} {} project(s)", "✓".green(), projects.len());
+                    }
+                }
+                Err(_) => {
+                    println!("{} no projects.json", "✗".red());
+                    println!("    Run {} to create one", "praxis init <name>".yellow());
+                    all_ok = false;
+                }
+            }
+
+            // 3. Vault
+            print!("  {} Vault...          ", "3.".cyan());
+            let vault_path = data_dir.join("credentials.vault.json");
+            if vault_path.exists() {
+                let vault = praxis_vault::VaultService::with_path(vault_path.clone(), None);
+                if vault.init().is_ok() {
+                    match vault.list_keys() {
+                        Ok(keys) => {
+                            if keys.is_empty() {
+                                println!("{} empty (no API keys stored)", "⚠".yellow());
+                                println!("    Run: {} openai https://api.openai.com/v1 --api-key-stdin", "praxis provider add".yellow());
+                            } else {
+                                println!("{} {} credential(s) stored", "✓".green(), keys.len());
+                            }
+                        }
+                        Err(_) => {
+                            println!("{} could not read vault", "⚠".yellow());
+                        }
+                    }
+                } else {
+                    println!("{} could not initialize vault", "✗".red());
+                    all_ok = false;
+                }
+            } else {
+                println!("{} no vault file", "⚠".yellow());
+                println!("    Run: {} <name> <base_url> --api-key-stdin", "praxis provider add".yellow());
+            }
+
+            // 4. Database
+            print!("  {} Database...       ", "4.".cyan());
+            let db_path = data_dir.join("state.db");
+            if db_path.exists() {
+                match praxis_persistence::SqliteEventStore::new(&db_path) {
+                    Ok(store) => {
+                        match store.list_aggregates("session").await {
+                            Ok(sessions) => {
+                                println!("{} {} session(s) recorded", "✓".green(), sessions.len());
+                            }
+                            Err(e) => {
+                                println!("{} could not read sessions: {}", "✗".red(), e);
+                                all_ok = false;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("{} could not open: {}", "✗".red(), e);
+                        all_ok = false;
+                    }
+                }
+            } else {
+                println!("{} no database (run a session first)", "⚠".yellow());
+            }
+
+            // 5. API server
+            print!("  {} API server...     ", "5.".cyan());
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .unwrap_or_default();
+            match client.get("http://localhost:8080/api/health").send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    println!("{} running on http://localhost:8080", "✓".green());
+                }
+                _ => {
+                    println!("{} not running", "⚠".yellow());
+                    println!("    Start with: {}", "praxis server".cyan());
+                }
+            }
+
+            // 6. Agents
+            print!("  {} Agents...         ", "6.".cyan());
+            let global_dir = praxis_core::agents::AgentRegistry::global_dir();
+            let registry = praxis_core::agents::AgentRegistry::load(
+                Some(&global_dir),
+                None,
+            );
+            println!("{} {} agent(s) ({} builtin, {} global)",
+                "✓".green(),
+                registry.list().len(),
+                registry.list_by_scope(praxis_core::agents::AgentScope::Builtin).len(),
+                registry.list_by_scope(praxis_core::agents::AgentScope::Global).len(),
+            );
+
+            println!();
+            println!("{}", "═".repeat(50).dimmed());
+            if all_ok {
+                println!("{} All checks passed!", "✓".green().bold());
+            } else {
+                println!("{} Some checks need attention (see above)", "⚠".yellow().bold());
+            }
+        }
+
+        // ─── Quickstart ────────────────────────────────────
+        Commands::Quickstart => {
+            println!("{} {} — Quickstart Guide", "→".cyan(), "praxis".bold());
+            println!("{}", "═".repeat(50).dimmed());
+            println!();
+
+            let data_dir = get_data_dir();
+            let projects_path = data_dir.join("projects.json");
+            let has_projects = std::fs::read_to_string(&projects_path)
+                .ok()
+                .and_then(|c| serde_json::from_str::<Vec<serde_json::Value>>(&c).ok())
+                .map(|p| !p.is_empty())
+                .unwrap_or(false);
+
+            if !has_projects {
+                println!("{} Step 1: Create your first project", "→".cyan().bold());
+                println!();
+                println!("  {} my-app", "praxis init".yellow());
+                println!();
+                println!("  This creates a project at: {}/projects/my-app/", data_dir.display());
+                println!();
+                println!("{} Step 2: Add an LLM provider", "→".cyan().bold());
+                println!();
+                println!("  {} openai https://api.openai.com/v1 --api-key-stdin", "praxis provider add".yellow());
+                println!("  (then paste your API key and press Enter)");
+                println!();
+                println!("  Or use an environment variable in config.toml:");
+                println!("    [providers.openai]");
+                println!("    base_url = \"https://api.openai.com/v1\"");
+                println!("    api_key = \"env:OPENAI_API_KEY\"");
+                println!();
+                println!("{} Step 3: Run your first goal", "→".cyan().bold());
+                println!();
+                println!("  {} --project my-app --goal \"Build a hello world CLI\"", "praxis run".yellow());
+                println!();
+                println!("{} Step 4: Watch it run in real-time", "→".cyan().bold());
+                println!();
+                println!("  {}", "praxis monitor".yellow());
+                println!();
+                println!("{} Step 5: Open the dashboard", "→".cyan().bold());
+                println!();
+                println!("  {}", "praxis dashboard".yellow());
+                println!();
+            } else {
+                // Has projects — show status
+                println!("{} You have projects set up!", "✓".green().bold());
+                println!();
+
+                // List projects
+                let projects: Vec<serde_json::Value> = std::fs::read_to_string(&projects_path)
+                    .ok()
+                    .and_then(|c| serde_json::from_str(&c).ok())
+                    .unwrap_or_default();
+                println!("  {} Projects:", "→".cyan());
+                for p in &projects {
+                    let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                    println!("    {} {}", "•".dimmed(), name.cyan());
+                }
+                println!();
+
+                // Check vault
+                let vault_path = data_dir.join("credentials.vault.json");
+                let has_vault = vault_path.exists();
+                if !has_vault {
+                    println!("  {} No API keys in vault. Add one:", "⚠".yellow());
+                    println!("    {} openai https://api.openai.com/v1 --api-key-stdin", "praxis provider add".yellow());
+                    println!();
+                }
+
+                println!("  {} Next steps:", "→".cyan());
+                println!("    {} --project <name> --goal \"your goal\"", "praxis run".yellow());
+                println!("    {} (watch in real-time)", "praxis monitor".yellow());
+                println!("    {} (web dashboard)", "praxis dashboard".yellow());
+            }
+
+            println!("{}", "═".repeat(50).dimmed());
+            println!("  Docs: https://github.com/praxis-ai/praxis");
+            println!("  Help: {}", "praxis help".yellow());
+        }
     }
 
     Ok(())

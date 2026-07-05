@@ -5,8 +5,11 @@ import { storeToRefs } from 'pinia'
 import { useAppStore } from './stores/app'
 import { useApi, apiPort, setApiPort } from './composables/useApi'
 import { useUpdater } from './composables/useUpdater'
+import { useApiStatus } from './composables/useApiStatus'
 import TitleBar from './components/layout/TitleBar.vue'
 import Icon from './components/ui/Icon.vue'
+import ToastContainer from './components/ui/ToastContainer.vue'
+import OnboardingOverlay from './components/OnboardingOverlay.vue'
 import LoginView from './views/LoginView.vue'
 import SettingsDialog from './views/SettingsDialog.vue'
 
@@ -15,6 +18,7 @@ const route = useRoute()
 const store = useAppStore()
 const api = useApi()
 const updater = useUpdater()
+const apiStatus = useApiStatus()
 
 // ─── Store refs ───────────────────────────────────────────────────
 const { projects } = storeToRefs(store)
@@ -69,8 +73,12 @@ const navItems = [
 
 const currentRouteName = computed(() => route.name as string || 'dashboard')
 
+// ─── Mobile sidebar toggle ─────────────────────────────────────────
+const sidebarOpen = ref(false)
+
 function navigateTo(item: typeof navItems[number]) {
   router.push(item.route)
+  sidebarOpen.value = false
 }
 
 // ─── Tauri Events ─────────────────────────────────────────────────
@@ -253,8 +261,30 @@ function handleLogin(token: string) {
 
       <!-- Main Layout -->
       <div class="layout">
+        <!-- Mobile sidebar toggle -->
+        <button
+          class="sidebar-toggle"
+          @click="sidebarOpen = !sidebarOpen"
+          title="Toggle menu"
+        >
+          <Icon :name="sidebarOpen ? 'x' : 'menu'" :size="20" />
+        </button>
+
+        <!-- Sidebar backdrop (mobile) -->
+        <div
+          v-if="sidebarOpen"
+          class="sidebar-backdrop"
+          @click="sidebarOpen = false"
+        />
+
         <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" :class="{ open: sidebarOpen }">
+          <!-- Connection indicator -->
+          <div class="sidebar-connection" :class="apiStatus.status.value">
+            <span class="connection-dot" />
+            <span class="connection-label">{{ apiStatus.statusLabel.value }}</span>
+          </div>
+
           <!-- Navigation -->
           <div class="sidebar-nav">
             <button
@@ -303,8 +333,8 @@ function handleLogin(token: string) {
 
           <div class="sidebar-footer">
             <div class="sidebar-user" @click="openSettings()">
-              <div class="user-avatar">I</div>
-              <span class="user-name">Ivan</span>
+              <div class="user-avatar">P</div>
+              <span class="user-name">praxis</span>
               <button class="sidebar-gear-btn" title="Settings">
                 <Icon name="settings" :size="16" />
               </button>
@@ -324,6 +354,12 @@ function handleLogin(token: string) {
       v-if="showSettings"
       @close="closeSettings()"
     />
+
+    <!-- Toast notifications -->
+    <ToastContainer />
+
+    <!-- First-run onboarding -->
+    <OnboardingOverlay />
 
     <!-- New Project Modal -->
     <div v-if="showNewProject" class="modal-overlay" @click.self="showNewProject = false">
@@ -376,6 +412,113 @@ function handleLogin(token: string) {
 </template>
 
 <style scoped>
+/* ─── Connection Indicator ─────────────────────────────────────── */
+
+.sidebar-connection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2) var(--space-3) 0;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.sidebar-connection.connected {
+  background: rgba(34, 197, 94, 0.08);
+  color: #4ade80;
+}
+
+.sidebar-connection.disconnected {
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+}
+
+.sidebar-connection.checking {
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
+}
+
+.connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.sidebar-connection.connected .connection-dot {
+  box-shadow: 0 0 6px currentColor;
+}
+
+.sidebar-connection.checking .connection-dot {
+  animation: connPulse 1.5s infinite;
+}
+
+@keyframes connPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ─── Mobile sidebar toggle ────────────────────────────────────── */
+
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 60;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .sidebar-toggle {
+    display: flex;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    width: 240px;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    width: 100%;
+  }
+}
+
 /* ─── Sidebar Status ──────────────────────────────────────────── */
 
 .sidebar-section {

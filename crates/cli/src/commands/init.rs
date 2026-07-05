@@ -1,26 +1,4 @@
-//! Init command — create a new project in AppData.
-
-use std::path::PathBuf;
-
-/// Get the central data directory.
-fn get_data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("PRAXIS_DATA_DIR") {
-        return PathBuf::from(dir);
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("praxis");
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(".config").join("praxis");
-        }
-    }
-    PathBuf::from(".praxis-data")
-}
+//! Init command — create a new project in the praxis data directory.
 
 /// Default forge.toml template for new projects.
 /// Must stay in sync with `DEFAULT_FORGE_TOML` in `crates/core/src/api/routes.rs`.
@@ -89,7 +67,7 @@ phase_timeout_seconds = 300
 # max_cost_usd = 5.0        # stop after $5 estimated cost (comment to disable)
 "#;
 
-/// Create a new project in AppData.
+/// Create a new project.
 ///
 /// Creates a per-project directory structure:
 /// ```text
@@ -105,7 +83,7 @@ phase_timeout_seconds = 300
 ///         └── injections/    ← mid-loop injection files
 /// ```
 pub fn init_project(name: &str) -> anyhow::Result<()> {
-    let data_dir = get_data_dir();
+    let data_dir = crate::get_data_dir();
     std::fs::create_dir_all(&data_dir)?;
 
     let projects_path = data_dir.join("projects.json");
@@ -148,7 +126,7 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
     projects.push(project);
     std::fs::write(&projects_path, serde_json::to_string_pretty(&projects)?)?;
 
-    println!("  Created project '{}' in AppData", name);
+    println!("  Created project '{}'", name);
     println!("  Data directory: {}", data_dir.display());
     println!("  Project directory: {}", project_dir.display());
     println!("  Config: {}", config_path.display());
