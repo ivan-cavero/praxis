@@ -8,23 +8,21 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import Icon from '../ui/Icon.vue'
 import { useAppStore } from '../../stores/app'
-import { useWebSocket } from '../../composables/useWebSocket'
 import { useApi } from '../../composables/useApi'
+import { useApiStatus } from '../../composables/useApiStatus'
 
 const store = useAppStore()
 
 const isTauri = ref(false)
 const isMaximized = ref(false)
-const ws = useWebSocket()
 const api = useApi()
+const apiStatus = useApiStatus()
 let unlistenResize: (() => void) | null = null
 
 const sessions = ref<number>(0)
 const agentsRunning = ref<number>(0)
 
-const connectionLabel = computed(() =>
-  ws.connected.value ? 'Online' : 'Offline'
-)
+const connectionLabel = computed(() => apiStatus.statusLabel.value)
 
 onMounted(async () => {
   // Load counts periodically
@@ -103,7 +101,7 @@ onUnmounted(() => {
     <!-- Center: connection status + live data + drag region -->
     <div class="titlebar-center" data-tauri-drag-region>
       <div class="titlebar-status">
-        <span class="tb-status-dot" :class="{ online: ws.connected.value }" />
+        <span class="tb-status-dot" :class="{ online: apiStatus.status.value === 'connected' }" />
         <span class="tb-status-label">{{ connectionLabel }}</span>
         <span class="tb-separator">|</span>
         <span class="tb-metric">
