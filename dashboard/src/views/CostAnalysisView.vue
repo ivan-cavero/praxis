@@ -386,9 +386,9 @@ function formatTokens(tokens: number): string {
   letter-spacing: 0.05em;
 }
 
-.cell-status.completed { color: var(--success, #22c55e); }
-.cell-status.failed { color: var(--danger, #ef4444); }
-.cell-status.running { color: var(--warning, #f59e0b); }
+.cell-status.completed { color: var(--success); }
+.cell-status.failed { color: var(--error); }
+.cell-status.running { color: var(--warning); }
 .cell-status.stopped { color: var(--text-muted); }
 
 .animate-spin {
@@ -398,5 +398,30 @@ function formatTokens(tokens: number): string {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ═══ Responsive ═══ */
+
+@media (max-width: 767px) {
+  .metric-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Tables: horizontally scrollable on mobile */
+  .project-table, .session-table {
+    overflow-x: auto;
+  }
+
+  .project-table .table-header,
+  .project-table .table-row {
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+    min-width: 500px;
+  }
+
+  .session-table .table-header,
+  .session-table .table-row {
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+    min-width: 600px;
+  }
 }
 </style>

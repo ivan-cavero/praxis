@@ -641,4 +641,21 @@ watch(() => ws.events.value, (allEvents) => {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ═══ Responsive ═══ */
+
+@media (max-width: 767px) {
+  .pipeline-header {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .session-selector {
+    width: 100%;
+  }
+
+  .session-select {
+    max-width: 100%;
+  }
+}
 </style>
