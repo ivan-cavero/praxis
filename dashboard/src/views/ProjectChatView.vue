@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * ProjectChatView — Multi-agent chat with tabs per agent (Slack channels style).
+ * ProjectChatView — Unified multi-agent chat.
  *
- * Each agent configured in the project gets its own chat tab.
- * Messages are isolated per agent. WebSocket events route to the correct tab.
+ * One goal → orchestrator dispatches to agents → unified message stream.
+ * Options dialog (budget, skills, worktree) configurable before sending.
  */
 import { ref, computed, inject, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
-import { useApi, type Project, type RoleDetail, type ProviderDetail, type SkillInfo } from '../composables/useApi'
+import { useApi, type Project, type SkillInfo } from '../composables/useApi'
 import { useWebSocket, getEventPayload, type AgentOutputEvent } from '../composables/useWebSocket'
 import { useToast } from '../composables/useToast'
 import Icon from '../components/ui/Icon.vue'
@@ -29,86 +29,10 @@ const isLoading = ref(true)
 
 const projectId = computed(() => route.params.id as string)
 
-// ─── Agent roles from project config ───────────────────────────────
+// ─── Tabs (removed — single unified view) ──────────────────────
+// The chat is now a single view. No agent tabs. One goal → orchestrator → agents.
 
-const agentRoles = ref<Record<string, RoleDetail>>({})
-const agentList = computed(() => Object.keys(agentRoles.value))
-
-// ─── Forge config providers (from the project's [providers] section) ──
-
-const forgeProviders = ref<Record<string, ProviderDetail>>({})
-
-// ─── Vault keys — which providers have API keys configured ─────────
-
-const vaultProviders = ref<Set<string>>(new Set())
-
-/**
- * Resolve provider info for each agent using forge config providers first,
- * falling back to model prefix detection only as a last resort.
- */
-const agentProviderInfo = computed(() => {
-  const info: Record<string, { provider: string; status: 'ok' | 'missing' | 'unknown' }> = {}
-  const entries = Object.entries(forgeProviders.value)
-
-  for (const [name, role] of Object.entries(agentRoles.value)) {
-    // 1. Try exact default_model match against forge providers
-    let matchedProvider: string | null = null
-    for (const [pName, pDetail] of entries) {
-      if (pDetail.default_model === role.model) {
-        matchedProvider = pName
-        break
-      }
-    }
-
-    // 2. If no exact match, use the first forge provider (serves all models
-    //    via a common API — typical for OpenAI-compatible proxies like NaN)
-    if (matchedProvider === null && entries.length > 0) {
-      matchedProvider = entries[0][0]
-    }
-
-    if (matchedProvider !== null) {
-      info[name] = {
-        provider: matchedProvider,
-        status: vaultProviders.value.has(matchedProvider) ? 'ok' : 'missing',
-      }
-    } else {
-      // 3. Fallback: prefix-based detection (no forge providers configured)
-      const detected = detectProvider(role.model)
-      info[name] = {
-        provider: detected,
-        status: detected === 'unknown' ? 'unknown'
-          : vaultProviders.value.has(detected) ? 'ok' : 'missing',
-      }
-    }
-  }
-  return info
-})
-
-/** Prefix-based detection (fallback when forge config has no providers). */
-const PROVIDER_PREFIXES: Record<string, string> = {
-  'gpt-': 'openai',
-  'text-embedding-': 'openai',
-  'claude-': 'anthropic',
-  'gemini-': 'gemini',
-  'deepseek-': 'nan',
-  'llama-': 'ollama',
-  'mistral-': 'ollama',
-  'qwen-': 'ollama',
-  'codellama-': 'ollama',
-}
-
-function detectProvider(model: string): string {
-  const lower = model.toLowerCase()
-  const matched = Object.entries(PROVIDER_PREFIXES).find(([prefix]) => lower.startsWith(prefix))
-  return matched ? matched[1] : 'unknown'
-}
-
-// ─── Tabs ──────────────────────────────────────────────────────────
-
-const activeAgent = ref('')
-const tabOrder = computed(() => ['all', ...agentList.value])
-
-// ─── Chat messages per agent ───────────────────────────────────────
+// ─── Chat messages (unified, no per-agent split) ────────────────
 
 interface ChatMessage {
   id: string
@@ -118,24 +42,17 @@ interface ChatMessage {
   agent?: string
 }
 
-const agentMessages = ref<Map<string, ChatMessage[]>>(new Map())
+const messages = ref<ChatMessage[]>([])
 
-/** Messages for the currently active tab. */
-const currentMessages = computed(() => {
-  if (activeAgent.value === 'all') {
-    // Merge all agent messages sorted by timestamp
-    const all: ChatMessage[] = []
-    for (const msgs of agentMessages.value.values()) {
-      for (const m of msgs) all.push(m)
-    }
-    return all.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-  }
-  return agentMessages.value.get(activeAgent.value) || []
-})
+/** All messages, sorted by timestamp. */
+const currentMessages = computed(() =>
+  [...messages.value].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+)
 
 const inputText = ref('')
 const isSending = ref(false)
 const inputTextarea = ref<HTMLTextAreaElement | null>(null)
+const showOptions = ref(false)
 
 /** Auto-resize the textarea to fit content (up to a max height). */
 function autoResize(): void {
@@ -151,16 +68,12 @@ function handleNewline(): void {
   nextTick(() => autoResize())
 }
 
-/** Push a message to a specific agent's message list. */
-function pushMessage(agent: string, msg: ChatMessage) {
-  const key = agent || 'all'
-  const existing = agentMessages.value.get(key) || []
-  agentMessages.value = new Map(agentMessages.value).set(key, [...existing, msg])
+/** Push a message to the unified message list. */
+function pushMessage(_agent: string, msg: ChatMessage) {
+  messages.value = [...messages.value, msg]
 }
 
-// ─── Git branch ────────────────────────────────────────────────────
-
-const gitBranch = ref('main')
+// ─── Git branch (removed — not needed in chat) ──────────────────
 
 onMounted(async () => {
   isLoading.value = true
@@ -168,25 +81,6 @@ onMounted(async () => {
     if (projectId.value) {
       project.value = await api.getProject(projectId.value)
       store.selectProject(projectId.value)
-
-      // Load vault keys to know which providers are configured
-      try {
-        const vault = await api.getVaultKeys()
-        vaultProviders.value = new Set(vault.providers.filter(p => p.has_key).map(p => p.provider))
-      } catch {
-        toast.warning('Could not load vault keys — API keys may not be configured')
-      }
-
-      // Load project config to get agent roles + providers
-      try {
-        const config = await api.getProjectConfig(projectId.value)
-        agentRoles.value = config.roles
-        forgeProviders.value = config.providers
-        // Default to first agent tab
-        if (agentList.value.length > 0) activeAgent.value = agentList.value[0]
-      } catch {
-        toast.info('No agent config found for this project — using defaults')
-      }
     }
   } catch {
     toast.error('Failed to load project')
@@ -403,13 +297,13 @@ watch(() => ws.events.value, (allEvents) => {
   for (const event of allEvents) {
     const agentOut = getEventPayload<AgentOutputEvent>(event, 'AgentOutput')
     if (agentOut && agentOut.delta && agentOut.agent) {
-      pushMessage(agentOut.agent, {
+      messages.value = [...messages.value, {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: agentOut.delta,
         timestamp: event.timestamp,
         agent: agentOut.agent,
-      })
+      }]
     }
   }
 }, { deep: true })
@@ -428,84 +322,39 @@ watch(() => ws.events.value, (allEvents) => {
         <p class="chat-subtitle" v-else-if="isLoading">Loading project...</p>
       </div>
 
-      <!-- Settings + Git branch -->
+      <!-- Actions -->
       <div class="chat-header-actions">
+        <button
+          class="chat-options-btn"
+          @click="showOptions = true"
+          title="Goal options (budget, skills, worktree)"
+        >
+          <Icon name="settings" :size="15" />
+          <span class="chat-options-label">Options</span>
+        </button>
         <button
           v-if="openSettings"
           class="chat-settings-btn"
           @click="openSettings()"
-          title="Settings"
+          title="Project settings (agents, providers, limits)"
         >
-          <Icon name="settings" :size="15" />
+          <Icon name="robot" :size="15" />
         </button>
-        <div class="chat-git">
-          <Icon name="git-branch" :size="14" />
-          <input
-            v-model="gitBranch"
-            class="chat-git-input"
-            placeholder="branch"
-            title="Git branch"
-          />
-        </div>
       </div>
     </div>
 
-    <!-- Agent tabs (compact — provider status indicator) -->
-    <div v-if="agentList.length > 0" class="chat-tabs">
-      <button
-        v-for="tab in tabOrder"
-        :key="tab"
-        class="chat-tab"
-        :class="{
-          active: activeAgent === tab,
-          'tab-provider-missing': tab !== 'all' && agentProviderInfo[tab]?.status === 'missing',
-          'tab-provider-unknown': tab !== 'all' && agentProviderInfo[tab]?.status === 'unknown',
-        }"
-        :title="tab === 'all'
-          ? 'Show all messages'
-          : `${tab} — ${agentRoles[tab]?.model || 'no model'} via ${agentProviderInfo[tab]?.provider || '?'} (${agentProviderInfo[tab]?.status === 'ok' ? '✅ key configured' : agentProviderInfo[tab]?.status === 'missing' ? '⚠️ no API key' : '❓ unknown provider'})`"
-        @click="activeAgent = tab"
-      >
-        <template v-if="tab === 'all'">
-          <Icon name="list" :size="12" />
-          All
-        </template>
-        <template v-else>
-          <!-- Warning dot if provider missing -->
-          <span
-            v-if="agentProviderInfo[tab]?.status === 'missing'"
-            class="tab-warn-dot"
-            title="No API key configured for this provider"
-          />
-          <span>{{ tab }}</span>
-        </template>
-      </button>
-    </div>
-    <div v-else class="chat-tabs chat-tabs-empty">
-      <span class="chat-no-agents">
-        <Icon name="robot" :size="12" />
-        No agents configured — configure providers and roles in Settings
-      </span>
-    </div>
-
-    <!-- Orchestrator hint (shown in 'All' tab) -->
-    <div v-if="activeAgent === 'all'" class="chat-orch-hint">
-      <Icon name="list" :size="12" />
-      One goal → orchestrator → agents → done
+    <!-- Orchestrator hint -->
+    <div class="chat-orch-hint">
+      <Icon name="brain" :size="12" />
+      One goal → orchestrator → agents → done. Use Shift+Enter for multi-line, or --- for multi-goal.
     </div>
 
     <!-- Messages -->
     <div class="chat-messages">
       <div v-if="currentMessages.length === 0" class="chat-empty">
         <Icon name="message" :size="48" class="empty-icon" />
-        <template v-if="activeAgent === 'all'">
-          <p>No messages yet</p>
-          <p class="empty-hint">Send a goal and the orchestrator will distribute it across agents</p>
-        </template>
-        <template v-else>
-          <p>Chat with <strong>{{ activeAgent }}</strong></p>
-          <p class="empty-hint">Send a goal and this agent will work through it</p>
-        </template>
+        <p>No messages yet</p>
+        <p class="empty-hint">Send a goal and the orchestrator will distribute it across agents</p>
       </div>
       <div v-else v-for="msg in currentMessages" :key="msg.id" class="chat-msg" :class="msg.role">
         <div class="msg-avatar">
@@ -547,54 +396,13 @@ watch(() => ws.events.value, (allEvents) => {
       </div>
     </div>
 
-    <!-- Budget controls (collapsible) -->
-    <details class="budget-controls">
-      <summary>Budget, Skills & Options</summary>
-      <div class="budget-row">
-        <label>
-          <span>Until command</span>
-          <input v-model="untilCommand" placeholder="cargo test" class="budget-input" />
-        </label>
-        <label>
-          <span>Max tokens</span>
-          <input v-model.number="maxTokens" type="number" placeholder="1000000" class="budget-input" />
-        </label>
-        <label>
-          <span>Max cost ($)</span>
-          <input v-model.number="maxCost" type="number" step="0.01" placeholder="5.00" class="budget-input" />
-        </label>
-        <label class="worktree-toggle">
-          <span>Git worktree</span>
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="useWorktree" />
-            <span>Isolate in worktree</span>
-          </label>
-        </label>
-      </div>
-      <div v-if="availableSkills.length > 0" class="skills-section">
-        <span class="skills-title">Built-in Skills</span>
-        <div class="skills-grid">
-          <button
-            v-for="skill in availableSkills"
-            :key="skill.id"
-            class="skill-chip"
-            :class="{ 'skill-enabled': enabledSkills.includes(skill.id) }"
-            :title="skill.description"
-            @click="toggleSkill(skill.id)"
-          >
-            {{ skill.name }}
-          </button>
-        </div>
-      </div>
-    </details>
-
     <!-- Input — multi-line textarea for multi-goal support -->
     <div class="chat-input">
       <textarea
         ref="inputTextarea"
         v-model="inputText"
         class="chat-input-field"
-        :placeholder="'Describe what you want to build... (Enter to send, Shift+Enter for new line. Use --- or numbered list for multi-goal)'"
+        :placeholder="'Describe what you want to build... (Enter to send, Shift+Enter for new line. Use --- for multi-goal)'"
         :disabled="isSending"
         rows="1"
         @keydown.enter.exact.prevent="sendMessage"
@@ -605,7 +413,7 @@ watch(() => ws.events.value, (allEvents) => {
         class="chat-send-btn"
         :disabled="!inputText.trim() || isSending"
         @click="sendMessage"
-        title="Send (Enter)"
+        title="Send goal (Enter)"
       >
         <Icon v-if="isSending" name="refresh" :size="16" class="animate-spin" />
         <Icon v-else name="send" :size="16" />
@@ -619,6 +427,72 @@ watch(() => ws.events.value, (allEvents) => {
         <Icon v-if="isPlanning" name="refresh" :size="16" class="animate-spin" />
         <Icon v-else name="code" :size="16" />
       </button>
+    </div>
+
+    <!-- Options dialog (budget, skills, worktree) -->
+    <div v-if="showOptions" class="options-overlay" @click.self="showOptions = false">
+      <div class="options-dialog">
+        <div class="options-header">
+          <h2>Goal Options</h2>
+          <button class="options-close" @click="showOptions = false">
+            <Icon name="x" :size="18" />
+          </button>
+        </div>
+        <div class="options-body">
+          <!-- Budget -->
+          <div class="options-section">
+            <h3 class="options-section-title">Budget Limits</h3>
+            <div class="options-row">
+              <label class="options-field">
+                <span class="options-label">Until command</span>
+                <input v-model="untilCommand" placeholder="cargo test" class="options-input" />
+              </label>
+            </div>
+            <div class="options-row">
+              <label class="options-field">
+                <span class="options-label">Max tokens</span>
+                <input v-model.number="maxTokens" type="number" placeholder="1000000" class="options-input" />
+              </label>
+              <label class="options-field">
+                <span class="options-label">Max cost ($)</span>
+                <input v-model.number="maxCost" type="number" step="0.01" placeholder="5.00" class="options-input" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Worktree -->
+          <div class="options-section">
+            <h3 class="options-section-title">Git Worktree</h3>
+            <label class="options-checkbox-row">
+              <input type="checkbox" v-model="useWorktree" class="options-checkbox" />
+              <div class="options-checkbox-text">
+                <span class="options-checkbox-label">Isolate in worktree</span>
+                <span class="options-checkbox-desc">Creates a separate git worktree for this session</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Skills -->
+          <div v-if="availableSkills.length > 0" class="options-section">
+            <h3 class="options-section-title">Skills</h3>
+            <div class="skills-grid">
+              <button
+                v-for="skill in availableSkills"
+                :key="skill.id"
+                class="skill-chip"
+                :class="{ 'skill-enabled': enabledSkills.includes(skill.id) }"
+                :title="skill.description"
+                @click="toggleSkill(skill.id)"
+              >
+                {{ skill.name }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="options-footer">
+          <button class="btn btn-primary" @click="showOptions = false">Done</button>
+        </div>
+      </div>
     </div>
 
     <!-- Plan modal -->
@@ -700,99 +574,6 @@ watch(() => ws.events.value, (allEvents) => {
   text-overflow: ellipsis;
 }
 
-.chat-header-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.chat-no-agents {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-disabled);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  border: 1px dashed var(--border-subtle);
-}
-
-/* ─── Agent Tabs ──────────────────────────────────────────── */
-
-.chat-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  padding: 0 var(--space-4);
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-  overflow-x: auto;
-}
-.chat-tabs-empty {
-  padding: var(--space-2) var(--space-4);
-  align-items: center;
-}
-
-.chat-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: all var(--transition-fast);
-  position: relative;
-}
-.chat-tab:hover {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-}
-.chat-tab.active {
-  color: var(--text-primary);
-  border-bottom-color: var(--primary);
-  font-weight: 500;
-}
-
-.tab-model {
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  color: var(--text-disabled);
-  margin-left: 2px;
-}
-
-/* Provider warning states */
-.tab-provider-missing {
-  color: var(--warning) !important;
-}
-.tab-provider-missing:hover {
-  background: color-mix(in srgb, var(--warning) 10%, transparent) !important;
-}
-.tab-provider-missing.active {
-  border-bottom-color: var(--warning) !important;
-}
-
-.tab-warn-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warning);
-  flex-shrink: 0;
-  animation: warnPulse 2s infinite;
-}
-@keyframes warnPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 .chat-header-actions {
   display: flex;
   align-items: center;
@@ -816,27 +597,6 @@ watch(() => ws.events.value, (allEvents) => {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
-
-.chat-git {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-}
-.chat-git-input {
-  width: 70px;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-family: inherit;
-  outline: none;
-}
-.chat-git-input::placeholder { color: var(--text-disabled); }
 
 /* ─── Messages ───────────────────────────────────────────────────── */
 
@@ -1164,107 +924,178 @@ watch(() => ws.events.value, (allEvents) => {
   color: var(--success, #22c55e);
 }
 
-/* ─── Budget controls ───────────────────────────────────────────── */
+/* ─── Options dialog ───────────────────────────────────────────── */
 
-.budget-controls {
-  padding: var(--space-1) var(--space-4);
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.budget-controls summary {
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-.budget-row {
+.options-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
   display: flex;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
 }
 
-.budget-row label {
+.options-dialog {
+  width: 500px;
+  max-width: 90vw;
+  max-height: 80vh;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
+}
+
+.options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.options-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.options-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.options-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.options-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.options-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.options-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.options-row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.options-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.options-label {
   font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 
-.budget-row label span {
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.budget-input {
-  padding: 4px 8px;
+.options-input {
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-family: var(--font-mono, monospace);
-  width: 140px;
   outline: none;
+  transition: border-color var(--transition-fast);
 }
 
-.budget-input:focus {
+.options-input:focus {
   border-color: var(--primary);
 }
 
-.worktree-toggle {
+.options-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.options-checkbox {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.options-checkbox-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.options-checkbox-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.options-checkbox-desc {
   font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
+  color: var(--text-muted);
 }
 
-.checkbox-label input[type="checkbox"] {
-  cursor: pointer;
-}
-
-/* ─── Skills section ────────────────────────────────────────────── */
-
-.skills-section {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
+.options-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--border-subtle);
 }
 
-.skills-title {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  display: block;
-  margin-bottom: var(--space-1);
-}
+/* ─── Skills ──────────────────────────────────────────────────── */
 
 .skills-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .skill-chip {
-  padding: 4px 10px;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   transition: all var(--transition-fast);
   font-family: inherit;
@@ -1279,5 +1110,31 @@ watch(() => ws.events.value, (allEvents) => {
   background: var(--primary);
   color: var(--bg-base);
   border-color: var(--primary);
+}
+
+/* ─── Options button in header ──────────────────────────────── */
+
+.chat-options-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.chat-options-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.chat-options-label {
+  font-weight: 500;
 }
 </style>
