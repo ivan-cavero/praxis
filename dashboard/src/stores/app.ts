@@ -57,8 +57,8 @@ async function refreshAll() {
     activeConfig.value = null
   }
 
-  async function createProject(name: string, description = '') {
-    const project = await api.createProject(name, description)
+  async function createProject(name: string, description = '', path = '') {
+    const project = await api.createProject(name, description, path)
     projects.value = [...projects.value, project]
     return project
   }

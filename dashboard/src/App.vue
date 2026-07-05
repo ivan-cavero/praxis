@@ -43,6 +43,7 @@ provide('openSettings', openSettings)
 const showNewProject = ref(false)
 const newProjectName = ref('')
 const newProjectDescription = ref('')
+const newProjectPath = ref('')
 const isCreatingProject = ref(false)
 const createError = ref<string | null>(null)
 
@@ -51,9 +52,14 @@ async function handleCreateProject() {
   isCreatingProject.value = true
   createError.value = null
   try {
-    await store.createProject(newProjectName.value.trim(), newProjectDescription.value.trim())
+    await store.createProject(
+      newProjectName.value.trim(),
+      newProjectDescription.value.trim(),
+      newProjectPath.value.trim(),
+    )
     newProjectName.value = ''
     newProjectDescription.value = ''
+    newProjectPath.value = ''
     showNewProject.value = false
   } catch (caughtError: unknown) {
     createError.value = caughtError instanceof Error ? caughtError.message : 'Failed to create project'
@@ -388,6 +394,15 @@ function handleLogin(token: string) {
               class="input"
               placeholder="What is this project about?"
             />
+          </div>
+          <div class="input-group">
+            <label class="input-label">Codebase Path (optional)</label>
+            <input
+              v-model="newProjectPath"
+              class="input"
+              placeholder="/path/to/your/codebase"
+            />
+            <span class="input-hint">Point to an existing codebase, or leave empty to create a new directory</span>
           </div>
           <div v-if="createError" class="form-error">
             <Icon name="alert-circle" :size="14" />

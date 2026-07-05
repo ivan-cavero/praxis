@@ -131,11 +131,11 @@ export function useApi() {
   // Projects
   const getProjects = () => apiFetch<Project[]>('/projects')
   const getProject = (id: string) => apiFetch<Project>(`/projects/${id}`)
-  const createProject = (name: string, description = '') =>
+  const createProject = (name: string, description = '', path = '') =>
     apiFetch<Project>('/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, path: path || undefined }),
     })
   const updateProject = (id: string, data: { name?: string; description?: string; forge_toml?: string }) =>
     apiFetch<Project>(`/projects/${id}`, {
