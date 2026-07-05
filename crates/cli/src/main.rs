@@ -222,9 +222,96 @@ fn resolve_config_path(project_name: Option<&str>) -> Option<PathBuf> {
 
 /// Load ForgeConfig from project, or return default empty config.
 fn load_project_config(project_name: Option<&str>) -> praxis_core::ForgeConfig {
-    resolve_config_path(project_name)
+    resolve_config_path(project_name.as_deref())
         .and_then(|path| praxis_core::load_forge_config(&path).ok())
         .unwrap_or_default()
+}
+
+/// Add or update a `[providers.<name>]` section in a project's config.toml.
+///
+/// Reads the project's config.toml, adds/replaces the provider section, and writes it back.
+/// The user never has to edit TOML manually.
+fn add_provider_to_project_config(
+    project_name: Option<&str>,
+    provider_name: &str,
+    base_url: &str,
+    api_key_ref: &str,
+    default_model: Option<&str>,
+) -> Result<String, String> {
+    let data_dir = get_data_dir();
+    let projects_path = data_dir.join("projects.json");
+    let content = std::fs::read_to_string(&projects_path)
+        .map_err(|e| format!("Cannot read projects.json: {}", e))?;
+    let projects: Vec<serde_json::Value> = serde_json::from_str(&content)
+        .map_err(|e| format!("Cannot parse projects.json: {}", e))?;
+
+    if projects.is_empty() {
+        return Err("No projects found. Run `praxis init <name>` first.".to_string());
+    }
+
+    let project = match project_name {
+        Some(name) => projects.iter().find(|p| {
+            p.get("name").and_then(|v| v.as_str()) == Some(name)
+        }).ok_or_else(|| format!("Project '{}' not found", name))?,
+        None => projects.last().unwrap(),
+    };
+
+    let proj_name = project.get("name").and_then(|v| v.as_str()).unwrap_or("default");
+    let proj_path = project.get("path").and_then(|v| v.as_str())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("projects").join(proj_name));
+
+    let config_path = proj_path.join("config.toml");
+    let toml_content = std::fs::read_to_string(&config_path)
+        .unwrap_or_default();
+
+    // Build the new provider section
+    let mut section = format!(
+        "[providers.{}]\nbase_url = \"{}\"\napi_key = \"{}\"\n",
+        provider_name, base_url, api_key_ref
+    );
+    if let Some(model) = default_model {
+        section.push_str(&format!("default_model = \"{}\"\n", model));
+    }
+
+    // Check if [providers.<name>] already exists
+    let section_header = format!("[providers.{}]", provider_name);
+    let updated_toml = if toml_content.contains(&section_header) {
+        // Replace the existing section
+        let start = toml_content.find(&section_header);
+        if let Some(start_idx) = start {
+            // Find the end of the section (next [ section header or EOF)
+            let after_header = &toml_content[start_idx..];
+            let end_idx = after_header[1..].find("\n[")
+                .map(|i| start_idx + 1 + i + 1)
+                .unwrap_or(toml_content.len());
+            let mut result = String::new();
+            result.push_str(&toml_content[..start_idx]);
+            result.push_str(&section);
+            // Add newline if there's more content
+            if end_idx < toml_content.len() {
+                result.push('\n');
+                result.push_str(&toml_content[end_idx..]);
+            }
+            result
+        } else {
+            toml_content
+        }
+    } else {
+        // Append the new section
+        let mut result = toml_content.clone();
+        if !result.ends_with('\n') {
+            result.push('\n');
+        }
+        result.push('\n');
+        result.push_str(&section);
+        result
+    };
+
+    std::fs::write(&config_path, &updated_toml)
+        .map_err(|e| format!("Failed to write config.toml: {}", e))?;
+
+    Ok(proj_name.to_string())
 }
 
 #[derive(Parser)]
@@ -685,7 +772,11 @@ enum ProviderCommands {
         name: String,
     },
 
-    /// Add a custom OpenAI-compatible provider and save the API key to the vault
+    /// Add a custom OpenAI-compatible provider — saves API key to vault AND wires it to the project config automatically
+    ///
+    /// EXAMPLES:
+    ///   praxis provider add openai https://api.openai.com/v1 --api-key-stdin --model gpt-4o
+    ///   praxis provider add anthropic https://api.anthropic.com/v1 --api-key sk-ant-... --model claude-sonnet-4-20250514 --project my-app
     Add {
         /// Provider name (e.g., "openai", "anthropic", "custom")
         name: String,
@@ -704,6 +795,10 @@ enum ProviderCommands {
         /// Default model for this provider
         #[arg(long)]
         model: Option<String>,
+
+        /// Project to wire this provider into (defaults to most recent project)
+        #[arg(long)]
+        project: Option<String>,
     },
 }
 
@@ -1640,7 +1735,7 @@ async fn main() -> anyhow::Result<()> {
                 let config = load_project_config(None);
                 if config.providers.is_empty() {
                     println!("{} No providers configured", "→".cyan());
-                    println!("  {} Use {} to add one", "→".dimmed(), "praxis provider add <name> <base_url> <api_key>".yellow());
+                    println!("  {} Use {} to add one", "→".dimmed(), "praxis provider add <name> <base_url> --api-key-stdin".yellow());
                 } else {
                     println!("{} Configured providers ({})", "→".cyan(), config.providers.len());
                     for (name, provider) in &config.providers {
@@ -1675,7 +1770,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("  {} Provider '{}' not found in config", "✗".red(), name);
                 }
             }
-            ProviderCommands::Add { name, base_url, api_key, api_key_stdin, model } => {
+            ProviderCommands::Add { name, base_url, api_key, api_key_stdin, model, project } => {
                 println!("{} Adding provider: {}", "→".cyan(), name);
 
                 // Get the API key securely
@@ -1726,18 +1821,26 @@ async fn main() -> anyhow::Result<()> {
 
                 println!("  Base URL: {}", base_url);
                 println!("  API Key: {} (saved to vault)", masked);
-                println!();
-                println!("{} Provider '{}' saved to vault", "✓".green(), name.cyan());
-                println!("  Vault: {}", vault_path.display());
-                println!();
-                println!("  Add to your project's config.toml:");
-                println!("    [providers.{}]", name);
-                println!("    base_url = \"{}\"", base_url);
-                println!("    api_key = \"{}\"", key_ref);
-                if let Some(m) = model {
-                    println!("    default_model = \"{}\"", m);
-                } else {
-                    println!("    default_model = \"<model-name>\"");
+
+                // Auto-wire the provider into the project's config.toml
+                match add_provider_to_project_config(
+                    project.as_deref(),
+                    &name,
+                    &base_url,
+                    &key_ref,
+                    model.as_deref(),
+                ) {
+                    Ok(proj_name) => {
+                        println!("{} Provider '{}' saved to vault and wired to project '{}'", "✓".green(), name.cyan(), proj_name.cyan());
+                        if let Some(m) = &model {
+                            println!("  Default model: {}", m);
+                        }
+                    }
+                    Err(e) => {
+                        println!("{} API key saved to vault, but could not wire to project config:", "⚠".yellow());
+                        println!("  {}", e);
+                        println!("  The key is in the vault. Create a project with {} to use it.", "praxis init".yellow());
+                    }
                 }
             }
         },
@@ -1757,17 +1860,13 @@ async fn main() -> anyhow::Result<()> {
             McpCommands::Add { name, command, args } => {
                 println!("{} Adding MCP server: {}", "→".cyan(), name);
                 println!("  Command: {} {:?}", command.dimmed(), args);
-                println!("  {} Add to forge.toml:", "→".cyan());
-                println!("    [[mcp_servers]]");
-                println!("    name = \"{}\"", name);
-                println!("    command = \"{}\"", command);
-                if !args.is_empty() {
-                    println!("    args = {:?}", args);
-                }
+                println!("  {} MCP servers are managed via the dashboard Settings.", "→".cyan());
+                println!("  {} Open with: {}", "→".dimmed(), "praxis dashboard".yellow());
             }
             McpCommands::Remove { name } => {
                 println!("{} Removing MCP server: {}", "→".cyan(), name);
-                println!("  {} Remove from forge.toml in project settings", "→".dimmed());
+                println!("  {} MCP servers are managed via the dashboard Settings.", "→".cyan());
+                println!("  {} Open with: {}", "→".dimmed(), "praxis dashboard".yellow());
             }
             McpCommands::Test { name } => {
                 println!("{} Testing MCP server: {}", "→".cyan(), name);

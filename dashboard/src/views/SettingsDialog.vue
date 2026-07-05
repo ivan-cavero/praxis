@@ -10,6 +10,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi, type LimitsDetail } from '../composables/useApi'
 import { useAppStore } from '../stores/app'
 import { useUpdater } from '../composables/useUpdater'
+import { useToast } from '../composables/useToast'
 import { storeToRefs } from 'pinia'
 import Icon from '../components/ui/Icon.vue'
 import AgentsConfig from '../components/dashboard/AgentsConfig.vue'
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 const api = useApi()
 const store = useAppStore()
 const updater = useUpdater()
+const toast = useToast()
 const { version, uptime } = storeToRefs(store)
 
 // ─── Tabs (computed — 'limits' only shows when a project is active) ──
@@ -115,14 +117,16 @@ const saveError = ref<string | null>(null)
 const selectedProvider = ref<string | null>(null)
 const newProvider = ref('')
 const newApiKey = ref('')
+const newBaseUrl = ref('')
+const newModel = ref('')
 const showInput = ref(false)
 
 const knownProviders = [
-  { name: 'nan', label: 'Nan Builders', placeholder: 'sk-nan-...', desc: 'qwen3.6 model' },
-  { name: 'openai', label: 'OpenAI', placeholder: 'sk-proj-...', desc: 'GPT models' },
-  { name: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...', desc: 'Claude models' },
-  { name: 'gemini', label: 'Google Gemini', placeholder: 'AIza... or API key', desc: 'Gemini models' },
-  { name: 'ollama', label: 'Ollama', placeholder: 'http://localhost:11434', desc: 'Local models' },
+  { name: 'nan', label: 'Nan Builders', base_url: 'https://api.nan.builders/v1', placeholder: 'sk-nan-...', desc: 'qwen3.6 model', model: 'qwen3.6' },
+  { name: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com/v1', placeholder: 'sk-proj-...', desc: 'GPT models', model: 'gpt-4o' },
+  { name: 'anthropic', label: 'Anthropic', base_url: 'https://api.anthropic.com/v1', placeholder: 'sk-ant-...', desc: 'Claude models', model: 'claude-sonnet-4-20250514' },
+  { name: 'gemini', label: 'Google Gemini', base_url: 'https://generativelanguage.googleapis.com/v1', placeholder: 'AIza... or API key', desc: 'Gemini models', model: 'gemini-2.0-flash' },
+  { name: 'ollama', label: 'Ollama', base_url: 'http://localhost:11434', placeholder: 'http://localhost:11434', desc: 'Local models', model: 'llama3.2' },
 ]
 
 async function loadProviders() {
@@ -133,8 +137,8 @@ async function loadProviders() {
     if (providers.value.length > 0 && !selectedProvider.value) {
       selectedProvider.value = providers.value[0].provider
     }
-  } catch (e) {
-    saveError.value = 'Failed to load providers'
+  } catch {
+    // Vault might not be accessible — don't spam toast on every load
   } finally {
     loading.value = false
   }
@@ -146,16 +150,58 @@ async function saveKey() {
   saveError.value = null
 
   try {
+    // 1. Save the API key to the vault
     await api.post('/vault/keys', {
       provider: newProvider.value,
       api_key: newApiKey.value,
     })
+
+    // 2. Wire the provider into the active project's config.toml
+    const activeProject = store.activeProject
+    if (activeProject?.id) {
+      const currentConfig = store.activeConfig?.raw || activeProject.forge_toml || ''
+      const keyRef = `vault:${newProvider.value}`
+      const baseUrl = newBaseUrl.value || knownProviders.find(k => k.name === newProvider.value)?.base_url || 'https://api.openai.com/v1'
+      const model = newModel.value || knownProviders.find(k => k.name === newProvider.value)?.model || ''
+
+      // Build the new [providers.<name>] section
+      let section = `[providers.${newProvider.value}]\nbase_url = "${baseUrl}"\napi_key = "${keyRef}"\n`
+      if (model) {
+        section += `default_model = "${model}"\n`
+      }
+
+      // Add or replace the section in the TOML
+      const sectionHeader = `[providers.${newProvider.value}]`
+      let updatedToml: string
+      if (currentConfig.includes(sectionHeader)) {
+        // Replace existing section
+        const startIdx = currentConfig.indexOf(sectionHeader)
+        const afterHeader = currentConfig.slice(startIdx)
+        const endIdx = afterHeader.slice(1).indexOf('\n[')
+        const realEnd = endIdx >= 0 ? startIdx + 1 + endIdx + 1 : currentConfig.length
+        updatedToml = currentConfig.slice(0, startIdx) + section + (realEnd < currentConfig.length ? '\n' + currentConfig.slice(realEnd) : '')
+      } else {
+        // Append new section
+        updatedToml = currentConfig.endsWith('\n') ? currentConfig + '\n' + section : currentConfig + '\n\n' + section
+      }
+
+      await store.saveProjectConfig(activeProject.id, updatedToml)
+      toast.success(`Provider '${newProvider.value}' saved and wired to project '${activeProject.name}'`)
+    } else {
+      toast.success(`Provider '${newProvider.value}' saved to vault`)
+      toast.warning('No active project — provider not wired to any config')
+    }
+
     newProvider.value = ''
     newApiKey.value = ''
+    newBaseUrl.value = ''
+    newModel.value = ''
     showInput.value = false
     await loadProviders()
   } catch (caughtError: unknown) {
-    saveError.value = caughtError instanceof Error ? caughtError.message : 'Failed to save key'
+    const message = caughtError instanceof Error ? caughtError.message : 'Failed to save provider'
+    saveError.value = message
+    toast.error(message)
   } finally {
     saving.value = null
   }
@@ -165,11 +211,33 @@ async function deleteKey(provider: string) {
   saving.value = provider
   saveError.value = null
   try {
+    // 1. Delete the key from the vault
     await api.del(`/vault/keys/${provider}`)
+
+    // 2. Remove the provider from the active project's config.toml
+    const activeProject = store.activeProject
+    if (activeProject?.id) {
+      const currentConfig = store.activeConfig?.raw || activeProject.forge_toml || ''
+      const sectionHeader = `[providers.${provider}]`
+      if (currentConfig.includes(sectionHeader)) {
+        const startIdx = currentConfig.indexOf(sectionHeader)
+        const afterHeader = currentConfig.slice(startIdx)
+        const endIdx = afterHeader.slice(1).indexOf('\n[')
+        const realEnd = endIdx >= 0 ? startIdx + 1 + endIdx + 1 : currentConfig.length
+        // Remove the section and any preceding newline
+        let updatedToml = currentConfig.slice(0, startIdx).replace(/\n+$/, '') + '\n' + currentConfig.slice(realEnd)
+        if (updatedToml.startsWith('\n')) updatedToml = updatedToml.slice(1)
+        await store.saveProjectConfig(activeProject.id, updatedToml)
+      }
+    }
+
     if (selectedProvider.value === provider) selectedProvider.value = null
     await loadProviders()
+    toast.success(`Provider '${provider}' removed`)
   } catch (caughtError: unknown) {
-    saveError.value = caughtError instanceof Error ? caughtError.message : 'Failed to delete key'
+    const message = caughtError instanceof Error ? caughtError.message : 'Failed to delete provider'
+    saveError.value = message
+    toast.error(message)
   } finally {
     saving.value = null
   }
@@ -177,6 +245,11 @@ async function deleteKey(provider: string) {
 
 function selectKnownProvider(name: string) {
   newProvider.value = name
+  const known = knownProviders.find(k => k.name === name)
+  if (known) {
+    newBaseUrl.value = known.base_url
+    newModel.value = known.model
+  }
   if (!showInput.value) showInput.value = true
 }
 
@@ -382,14 +455,22 @@ async function handleCheckUpdate() {
               <div class="provider-details">
                 <!-- Add Provider Form -->
                 <div v-if="showInput" class="add-key-card">
-                  <h3 class="add-key-title">Add API Key</h3>
+                  <h3 class="add-key-title">Add Provider</h3>
                   <div class="input-group">
-                    <label class="input-label">Provider</label>
+                    <label class="input-label">Provider Name</label>
                     <input
                       v-model="newProvider"
                       class="input"
                       placeholder="e.g. nan, openai, anthropic"
                       autofocus
+                    />
+                  </div>
+                  <div class="input-group">
+                    <label class="input-label">Base URL</label>
+                    <input
+                      v-model="newBaseUrl"
+                      class="input"
+                      placeholder="https://api.openai.com/v1"
                     />
                   </div>
                   <div class="input-group">
@@ -402,6 +483,18 @@ async function handleCheckUpdate() {
                       @keydown.enter="saveKey"
                     />
                   </div>
+                  <div class="input-group">
+                    <label class="input-label">Default Model (optional)</label>
+                    <input
+                      v-model="newModel"
+                      class="input"
+                      placeholder="gpt-4o, claude-sonnet-4-20250514, etc."
+                    />
+                  </div>
+                  <p class="form-hint">
+                    The API key is saved to the vault. The provider is automatically wired to
+                    <strong>{{ store.activeProject?.name || 'the active project' }}</strong>.
+                  </p>
                   <div class="add-key-actions">
                     <button class="btn btn-ghost" @click="showInput = false">Cancel</button>
                     <button
@@ -411,7 +504,7 @@ async function handleCheckUpdate() {
                     >
                       <Icon v-if="saving" name="refresh" :size="14" class="animate-spin" />
                       <Icon v-else name="check" :size="14" />
-                      {{ saving ? 'Saving...' : 'Save Key' }}
+                      {{ saving ? 'Saving...' : 'Save Provider' }}
                     </button>
                   </div>
                 </div>
@@ -1143,6 +1236,17 @@ async function handleCheckUpdate() {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
 }
 
 .add-key-actions {
