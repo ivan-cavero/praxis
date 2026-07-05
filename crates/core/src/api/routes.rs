@@ -513,6 +513,10 @@ pub struct CreateProjectRequest {
     /// Optional forge.toml content. Auto-generated if empty.
     #[serde(default)]
     pub forge_toml: String,
+    /// Optional path to an existing codebase. If provided, the project points
+    /// to this directory instead of creating a new one under data_dir/projects.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -695,15 +699,30 @@ pub mod projects {
             request.forge_toml
         };
 
-        // Create per-project directory structure
-        let project_dir = state.data_dir.join("projects").join(&request.name);
-        std::fs::create_dir_all(&project_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let _ = std::fs::create_dir_all(project_dir.join("skills"));
-        let _ = std::fs::create_dir_all(project_dir.join("plans"));
-        let _ = std::fs::create_dir_all(project_dir.join("injections"));
+        // Use custom path if provided, otherwise create per-project directory
+        let project_dir = match &request.path {
+            Some(p) if !p.is_empty() => {
+                let dir = std::path::PathBuf::from(p);
+                if !dir.exists() {
+                    std::fs::create_dir_all(&dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                }
+                dir
+            }
+            _ => {
+                let dir = state.data_dir.join("projects").join(&request.name);
+                std::fs::create_dir_all(&dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                let _ = std::fs::create_dir_all(dir.join("skills"));
+                let _ = std::fs::create_dir_all(dir.join("plans"));
+                let _ = std::fs::create_dir_all(dir.join("injections"));
+                dir
+            }
+        };
 
-        // Write config.toml into the project directory
-        let _ = std::fs::write(project_dir.join("config.toml"), &forge_toml);
+        // Write config.toml into the project directory (only if it doesn't exist)
+        let config_path = project_dir.join("config.toml");
+        if !config_path.exists() {
+            let _ = std::fs::write(&config_path, &forge_toml);
+        }
 
         let entry = ProjectEntry {
             id: id.clone(),
