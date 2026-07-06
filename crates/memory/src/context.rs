@@ -3,14 +3,23 @@
 //! Ensures agents never exceed model context limits.
 //! Applies compression pipeline when pressure is high.
 
+use std::sync::OnceLock;
 
+/// Global BPE tokenizer (cl100k_base). Loaded once on first use.
+/// `None` if the BPE download fails (offline environments).
+static TOKENIZER: OnceLock<Option<tiktoken_rs::CoreBPE>> = OnceLock::new();
+
+/// Get the global tokenizer, if available.
+fn global_tokenizer() -> Option<&'static tiktoken_rs::CoreBPE> {
+    TOKENIZER.get_or_init(|| tiktoken_rs::cl100k_base().ok()).as_ref()
+}
 
 // ─── Token Counter ────────────────────────────────────────────
 
-/// Counts tokens in messages using a simple estimator.
+/// Counts tokens in messages using the `cl100k_base` BPE tokenizer.
 ///
-/// For production: use tiktoken-rs or model-specific tokenizer.
-/// This is a fast approximation for budget calculations.
+/// Falls back to a chars-per-token heuristic when the tokenizer is
+/// unavailable (e.g. offline environments).
 pub struct TokenCounter {
     /// Average chars per token (model-dependent).
     chars_per_token: f32,
@@ -35,8 +44,15 @@ impl TokenCounter {
         Self { chars_per_token: 4.0 }
     }
 
-    /// Estimate tokens for a string.
+    /// Count tokens for a string.
+    ///
+    /// Uses the real `cl100k_base` BPE tokenizer when available (accurate for
+    /// GPT models, close approximation for Claude/Gemini/Llama). Falls back
+    /// to the chars-per-token heuristic if the tokenizer is unavailable.
     pub fn count_tokens(&self, text: &str) -> u32 {
+        if let Some(encoding) = global_tokenizer() {
+            return encoding.encode_with_special_tokens(text).len() as u32;
+        }
         (text.len() as f32 / self.chars_per_token).ceil() as u32
     }
 
@@ -416,9 +432,7 @@ impl CompressionPipeline {
 
     /// Estimate total tokens in messages.
     fn estimate_tokens(messages: &[Message]) -> usize {
-        messages.iter().map(|m| {
-            (m.content.len() as f32 / 4.0).ceil() as usize + 4
-        }).sum()
+        TokenCounter::default_token_counter().count_messages(messages) as usize
     }
 }
 
