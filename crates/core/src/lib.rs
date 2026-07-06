@@ -497,6 +497,36 @@ impl CoreRuntime {
         })
     }
 
+    /// Truncate `task.context` from the front if it exceeds the context budget.
+    ///
+    /// Uses the real BPE tokenizer (cl100k_base) for accurate token counting.
+    /// Keeps the most recent content (front-truncation) so the agent always sees
+    /// the latest state. Logs a warning when truncation occurs.
+    fn clamp_context_to_budget(&self, task: &mut orchestrator::Task) {
+        let Some(budget) = &self.context_budget else {
+            return;
+        };
+        let counter = praxis_memory::context::TokenCounter::default_token_counter();
+        let token_count = counter.count_tokens(&task.context);
+        if token_count as usize > budget.hard_limit {
+            let max_chars = (budget.hard_limit as f32 * 4.0) as usize;
+            if task.context.len() > max_chars {
+                let start = task.context.len() - max_chars;
+                let truncated_start = task.context[start..]
+                    .find('\n')
+                    .map(|pos| start + pos + 1)
+                    .unwrap_or(start);
+                let removed = truncated_start;
+                task.context = task.context[truncated_start..].to_string();
+                tracing::warn!(
+                    "Context for agent '{}' exceeded budget ({} tokens > {} limit), \
+                     truncated {} chars from front",
+                    task.role, token_count, budget.hard_limit, removed
+                );
+            }
+        }
+    }
+
     /// Evaluate drift and handle any recovery action.
     async fn evaluate_drift(&mut self, agent_id: Option<&str>) {
         // Force evaluate to get current ASI (doesn't trigger recovery)
@@ -1355,6 +1385,16 @@ impl CoreRuntime {
             );
         }
 
+        // Initialize context budget if not already set.
+        // Default: 128k window, 70% hard limit = 89,600 tokens — covers GPT-4o,
+        // Claude 3.5, and Gemini 1.5 context windows.
+        if self.context_budget.is_none() {
+            self.context_budget = Some(praxis_memory::context::ContextBudget::new(
+                128_000,
+                praxis_memory::context::BudgetProfile::Balanced,
+            ));
+        }
+
         // Register quality gates for review/test/security phases
         self.register_default_gates();
 
@@ -1469,6 +1509,9 @@ impl CoreRuntime {
 
                     // Inject skills content (SKILL.md) into the task context
                     self.inject_skills(&mut task);
+
+                    // Clamp context to model budget (front-truncate if over limit)
+                    self.clamp_context_to_budget(&mut task);
 
                     let resolved_role = self
                         .agent_registry
@@ -1709,6 +1752,9 @@ impl CoreRuntime {
                         }
                     }
                     // ── End MemoryRAG injection ──────────────────────────────────
+
+                    // Clamp context to model budget (front-truncate if over limit)
+                    self.clamp_context_to_budget(&mut task);
 
                     let resolved_role = self
                         .agent_registry
@@ -2254,6 +2300,9 @@ impl CoreRuntime {
 
                 // Inject skills content (SKILL.md) into the task context
                 self.inject_skills(&mut task);
+
+                // Clamp context to model budget (front-truncate if over limit)
+                self.clamp_context_to_budget(&mut task);
 
                 let resolved_role = self
                     .agent_registry
