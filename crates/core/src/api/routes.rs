@@ -1789,22 +1789,22 @@ fn build_registry(state: &AppState) -> crate::agents::AgentRegistry {
 
 /// Serialize an AgentDefinition to Markdown+YAML format for disk persistence.
 ///
-/// Uses `serde_yaml::to_string` for the frontmatter to ensure proper escaping
+/// Uses `serde_yaml_neo::to_string` for the frontmatter to ensure proper escaping
 /// of all YAML special characters (newlines, colons, booleans, numbers, etc.).
 /// The Markdown body (system prompt) is appended after the closing `---`.
 fn serialize_agent_md(def: &crate::agents::AgentDefinition) -> String {
-    // serde_yaml::to_string produces a YAML document with a leading "---\n"
+    // serde_yaml_neo::to_string produces a YAML document with a leading "---\n"
     // document marker and ends with "\n". We use it directly for the frontmatter.
-    let yaml = serde_yaml::to_string(&def.frontmatter)
+    let yaml = serde_yaml_neo::to_string(&def.frontmatter)
         .unwrap_or_else(|e| {
             tracing::error!("Failed to serialize agent frontmatter: {}", e);
             String::new()
         });
 
-    // serde_yaml outputs "---\n<fields>\n" — we need to add the closing "---"
+    // serde_yaml_neo outputs "---\n<fields>\n" — we need to add the closing "---"
     // and then the Markdown body.
     // The yaml string already has "---\n" at the start and ends with "\n".
-    // We strip the leading "---\n" (serde_yaml adds it as a document marker)
+    // We strip the leading "---\n" (serde_yaml_neo adds it as a document marker)
     // and reformat to our frontmatter style.
     let yaml_body = yaml.strip_prefix("---\n").unwrap_or(&yaml);
     format!("---\n{yaml_body}---\n\n{}", def.system_prompt)

@@ -31,7 +31,7 @@ fn build_registry() -> AgentRegistry {
 
 /// Serialize an agent definition to Markdown+YAML for disk.
 ///
-/// Uses `serde_yaml::to_string` for the frontmatter to ensure proper escaping.
+/// Uses `serde_yaml_neo::to_string` for the frontmatter to ensure proper escaping.
 fn serialize_agent_md(
     name: &str,
     description: &str,
@@ -56,7 +56,7 @@ fn serialize_agent_md(
         can_spawn: can_spawn.to_vec(),
     };
 
-    let yaml = serde_yaml::to_string(&frontmatter)
+    let yaml = serde_yaml_neo::to_string(&frontmatter)
         .unwrap_or_else(|e| {
             eprintln!("{}: failed to serialize frontmatter: {}", "error".red(), e);
             String::new()

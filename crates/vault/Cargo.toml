@@ -15,7 +15,7 @@ thiserror.workspace = true
 uuid.workspace = true
 
 # Encryption for secure credential storage
-aes-gcm = { version = "0.10", features = ["std"] }
+aes-gcm = "0.11.0"
 base64 = "0.22"
 sha2 = "0.10"
 

@@ -123,7 +123,7 @@ pub enum ParseError {
     #[error("missing frontmatter delimiters (---)")]
     MissingDelimiters,
     #[error("YAML parse error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] serde_yaml_neo::Error),
     #[error("empty system prompt (body is empty)")]
     EmptyBody,
 }
@@ -167,7 +167,7 @@ pub fn parse_agent_md(content: &str) -> Result<AgentDefinition, ParseError> {
         return Err(ParseError::EmptyBody);
     }
 
-    let frontmatter: AgentFrontmatter = serde_yaml::from_str(yaml_block)?;
+    let frontmatter: AgentFrontmatter = serde_yaml_neo::from_str(yaml_block)?;
 
     Ok(AgentDefinition {
         frontmatter,

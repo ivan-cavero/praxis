@@ -20,6 +20,7 @@ fn derive_key(password: &str) -> [u8; 32] {
 }
 
 /// Encrypt a value using AES-256-GCM with a random IV.
+#[allow(deprecated)]
 fn encrypt(value: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let nonce = aes_gcm::Nonce::from([0u8; 12]);
@@ -32,6 +33,7 @@ fn encrypt(value: &str, key: &[u8; 32]) -> Result<String, VaultError> {
 }
 
 /// Decrypt a base64-encoded AES-256-GCM ciphertext.
+#[allow(deprecated)]
 fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let data = STANDARD.decode(encrypted)
         .map_err(|e| VaultError::DecryptionError(e.to_string()))?;

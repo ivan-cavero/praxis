@@ -75,7 +75,7 @@ impl AuthState {
 
     /// Generate a random secret and save it to a file.
     fn generate_and_save(secret_path: &std::path::Path) -> Vec<u8> {
-        use rand::RngCore;
+        use rand::Rng;
         let mut secret = vec![0u8; 64];
         rand::rng().fill_bytes(&mut secret);
 

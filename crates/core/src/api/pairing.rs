@@ -14,7 +14,7 @@ use axum::{
     response::{Html, Json},
 };
 use base64::Engine;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -471,7 +471,7 @@ fn sha256_hex(input: &str) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();
     hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 // ─── HTML pages for browser confirmation ────────────────────────
