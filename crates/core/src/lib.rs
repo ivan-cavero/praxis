@@ -1438,6 +1438,7 @@ impl CoreRuntime {
             // Check for parallel_reviewers in goal config (first matching goal)
             let parallel_count = config.goals.first().and_then(|g| g.parallel_reviewers);
             let phase_agents = get_agents_for_phase(&current_phase, &config, parallel_count);
+            let results_before = results.len();
 
             if phase_agents.len() > 1 && matches!(current_phase, machine::phase::Phase::Reviewing) {
                 // ── Parallel execution for review phases ──
@@ -1981,17 +1982,19 @@ impl CoreRuntime {
             // ── End drift evaluation + EMC ──────────────────────────
 
             // ── Pathology detection ──────────────────────────────
-            // Check the last agent's output for destructive/stuck patterns.
-            if let Some(last_result) = results.last() {
-                let phase_str = format!("{:?}", current_phase);
-                let token_count = last_result.token_usage.output;
+            // Check every agent that ran in THIS iteration (not just results.last()).
+            // In parallel review phases, a stuck agent may not be the last result
+            // added — JoinSet completion order is non-deterministic.
+            let phase_str = format!("{:?}", current_phase);
+            let mut fatal_pathology = false;
+            for result in &results[results_before..] {
+                let token_count = result.token_usage.output;
                 if let Some(alert) = self.pathology_detector.record_iteration(
                     self.loop_controller.iteration,
-                    &last_result.content,
+                    &result.content,
                     &phase_str,
                     Some(token_count),
                 ) {
-                    // Publish pathology alert on the EventBus
                     self.bus.publish(
                         praxis_shared::protocol::MessageKind::PathologyDetected(
                             praxis_shared::protocol::PathologyAlert {
@@ -2016,9 +2019,13 @@ impl CoreRuntime {
                             "Fatal pathology: {}. Stopping loop immediately.",
                             alert.details
                         );
+                        fatal_pathology = true;
                         break;
                     }
                 }
+            }
+            if fatal_pathology {
+                break;
             }
 
             // ── Completion criterion (outcome-based) ─────────────
@@ -2220,6 +2227,7 @@ impl CoreRuntime {
 
             let parallel_count = config.goals.first().and_then(|g| g.parallel_reviewers);
             let phase_agents = get_agents_for_phase(&current_phase, &config, parallel_count);
+            let results_before = results.len();
 
             for role_config in &phase_agents {
                 let mut task = orchestrator::Task::new(
@@ -2348,12 +2356,15 @@ impl CoreRuntime {
             }
             // ── End drift evaluation + EMC ──────────────────────────
 
-            if let Some(last_result) = results.last() {
-                let phase_str = format!("{:?}", current_phase);
-                let token_count = last_result.token_usage.output;
+            // ── Pathology detection (resume_goal) ──────────────
+            // Check every agent that ran in THIS iteration, not just results.last().
+            let phase_str = format!("{:?}", current_phase);
+            let mut fatal_pathology = false;
+            for result in &results[results_before..] {
+                let token_count = result.token_usage.output;
                 if let Some(alert) = self.pathology_detector.record_iteration(
                     self.loop_controller.iteration,
-                    &last_result.content,
+                    &result.content,
                     &phase_str,
                     Some(token_count),
                 ) {
@@ -2363,9 +2374,13 @@ impl CoreRuntime {
                         alert.details
                     );
                     if alert.severity == r#loop::PathologySeverity::Fatal {
+                        fatal_pathology = true;
                         break;
                     }
                 }
+            }
+            if fatal_pathology {
+                break;
             }
 
             if matches!(
