@@ -2022,10 +2022,15 @@ impl CoreRuntime {
             }
 
             // ── Completion criterion (outcome-based) ─────────────
-            // After quality-check phases, verify if the goal is actually achieved.
+            // Verify if the goal is achieved after each phase, not just review
+            // phases. This lets simple goals (e.g. with a CommandOutcomeVerifier
+            // like `until:cargo test`) complete early in Planning/Implementing
+            // without wasting iterations on Reviewing/Testing/SecurityScan.
             if matches!(
                 current_phase,
-                machine::phase::Phase::Reviewing
+                machine::phase::Phase::Planning
+                    | machine::phase::Phase::Implementing
+                    | machine::phase::Phase::Reviewing
                     | machine::phase::Phase::Testing
                     | machine::phase::Phase::SecurityScan
                     | machine::phase::Phase::Finalizing
@@ -2365,7 +2370,9 @@ impl CoreRuntime {
 
             if matches!(
                 current_phase,
-                machine::phase::Phase::Reviewing
+                machine::phase::Phase::Planning
+                    | machine::phase::Phase::Implementing
+                    | machine::phase::Phase::Reviewing
                     | machine::phase::Phase::Testing
                     | machine::phase::Phase::SecurityScan
                     | machine::phase::Phase::Finalizing
