@@ -467,6 +467,27 @@ impl CoreRuntime {
         self.context_pressure.store(scaled, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Compute context pressure from accumulated session tokens vs the budget.
+    ///
+    /// Pressure = `tokens_used` (session-wide, accumulated across all agents and
+    /// iterations) / `hard_limit`. This grows over the session so EMC (emergency
+    /// consolidation at >85%) actually triggers when the context window fills up.
+    ///
+    /// Previously this used a single LLM call's tokens (`result.token_usage.total`),
+    /// which never reached the threshold — a single call is ~1–5k tokens vs an
+    /// 89,600 hard_limit, so pressure was always ~0.01 and EMC was dead code.
+    fn compute_context_pressure(&self) -> f32 {
+        self.context_budget.as_ref().map_or(0.0, |budget| {
+            let used = self.loop_controller.tokens_used as f32;
+            let limit = budget.hard_limit as f32;
+            if limit > 0.0 {
+                (used / limit).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        })
+    }
+
     /// Evaluate drift and handle any recovery action.
     async fn evaluate_drift(&mut self, agent_id: Option<&str>) {
         // Force evaluate to get current ASI (doesn't trigger recovery)
@@ -1555,11 +1576,7 @@ impl CoreRuntime {
                             let result = results.last().unwrap();
 
                             // ── Drift metrics recording (parallel) ──────────
-                            let pressure = self.context_budget.as_ref().map_or(0.0, |budget| {
-                                let used = result.token_usage.total as f32;
-                                let limit = budget.hard_limit as f32;
-                                if limit > 0.0 { (used / limit).clamp(0.0, 1.0) } else { 0.0 }
-                            });
+                            let pressure = self.compute_context_pressure();
                             self.set_context_pressure(pressure);
 
                             let drift_sample = crate::drift::metrics::MetricSample {
@@ -1840,11 +1857,7 @@ impl CoreRuntime {
 
                     // ── Drift metrics recording ─────────────────────────
                     // Estimate context pressure from token usage vs budget
-                    let pressure = self.context_budget.as_ref().map_or(0.0, |budget| {
-                        let used = result.token_usage.total as f32;
-                        let limit = budget.hard_limit as f32;
-                        if limit > 0.0 { (used / limit).clamp(0.0, 1.0) } else { 0.0 }
-                    });
+                    let pressure = self.compute_context_pressure();
                     self.set_context_pressure(pressure);
 
                     let drift_sample = crate::drift::metrics::MetricSample {
@@ -2259,11 +2272,7 @@ impl CoreRuntime {
                 }
 
                 // ── Drift metrics recording (resume_goal) ────────────
-                let pressure = self.context_budget.as_ref().map_or(0.0, |budget| {
-                    let used = result.token_usage.total as f32;
-                    let limit = budget.hard_limit as f32;
-                    if limit > 0.0 { (used / limit).clamp(0.0, 1.0) } else { 0.0 }
-                });
+                let pressure = self.compute_context_pressure();
                 self.set_context_pressure(pressure);
 
                 let drift_sample = crate::drift::metrics::MetricSample {
