@@ -119,6 +119,14 @@ pub struct CoreRuntime {
     pub context_budget: Option<praxis_memory::context::ContextBudget>,
     /// Current context pressure (0.0–1.0) for drift detection (stored as atomic f32*1000).
     pub context_pressure: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Result of the most recent gate evaluation, fed into drift MetricSamples.
+    ///
+    /// Drift metrics are recorded per-agent right after execution, but gates
+    /// run later (only in Reviewing/Testing/SecurityScan phases). Without this,
+    /// the ASI's gate_pass_rate dimension (weight 0.15) always saw 0% and
+    /// permanently flagged drift. This field carries the last real gate result
+    /// into the next iteration's metric samples (one-iteration lag).
+    pub last_gate_passed: bool,
     /// Project name for checkpoint metadata (set by CLI/API when loading a project).
     pub project_name: Option<String>,
     /// Whether to write a human-readable STATE.md file to the working directory.
@@ -176,6 +184,7 @@ impl CoreRuntime {
             summarizer_agent: None,
             context_budget: None,
             context_pressure: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            last_gate_passed: true,
             project_name: None,
             write_state_file: false,
             skills_content: None,
@@ -1588,7 +1597,7 @@ impl CoreRuntime {
                                 tool_calls: tool_exec.tools_called.len() as u32,
                                 tool_errors: tool_exec.tools_called.iter().filter(|t| !t.success).count() as u32,
                                 output_length_chars: result.content.len(),
-                                gate_passed: false,
+                                gate_passed: self.last_gate_passed,
                                 context_pressure: pressure,
                             };
                             if let Some(report) = self.drift_guard.record_and_evaluate(drift_sample, Some(&result.agent_id)) {
@@ -1869,7 +1878,7 @@ impl CoreRuntime {
                         tool_calls: tool_exec.tools_called.len() as u32,
                         tool_errors: tool_exec.tools_called.iter().filter(|t| !t.success).count() as u32,
                         output_length_chars: result.content.len(),
-                        gate_passed: false,
+                        gate_passed: self.last_gate_passed,
                         context_pressure: pressure,
                     };
                     if let Some(report) = self.drift_guard.record_and_evaluate(drift_sample, Some(&result.agent_id)) {
@@ -1891,6 +1900,7 @@ impl CoreRuntime {
                 let review_results = extract_review_results(&results);
                 self.loop_controller.add_results(review_results);
                 let gates_pass = self.loop_controller.all_gates_pass();
+                self.last_gate_passed = gates_pass;
 
                 if !gates_pass {
                     // Use CrossModelFeedbackLoop for structured feedback,
@@ -2284,7 +2294,7 @@ impl CoreRuntime {
                     tool_calls: 0,
                     tool_errors: 0,
                     output_length_chars: result.content.len(),
-                    gate_passed: false,
+                    gate_passed: self.last_gate_passed,
                     context_pressure: pressure,
                 };
                 if let Some(report) = self.drift_guard.record_and_evaluate(drift_sample, Some(&result.agent_id)) {
@@ -2304,6 +2314,7 @@ impl CoreRuntime {
                 let review_results = extract_review_results(&results);
                 self.loop_controller.add_results(review_results);
                 let gates_pass = self.loop_controller.all_gates_pass();
+                self.last_gate_passed = gates_pass;
 
                 if !gates_pass {
                     feedback = consolidate_feedback(&results);
