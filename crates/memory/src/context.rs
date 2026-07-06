@@ -286,7 +286,14 @@ impl CompressionPipeline {
         }
     }
 
-    /// Step 2: Compress old history (keep last 5, summarize rest).
+    /// Step 2: Compress old history via observation masking (keep last 5, drop rest).
+    ///
+    /// Drops old messages entirely and keeps the most recent `keep` intact, with a
+    /// single short marker recording how many were dropped. This is observation
+    /// masking, which arXiv:2508.21433 (NeurIPS '25, "The Complexity Trap") shows
+    /// matches or exceeds LLM summarization quality at half the cost — and is far
+    /// better than the previous approach of truncating each message to 50 chars,
+    /// which destroyed ~95% of content while still consuming tokens.
     fn compress_history(context: &mut ContextWindow, budget: &mut ContextBudget) -> Option<CompressionResult> {
         if context.messages.len() <= 5 {
             return None;
@@ -296,26 +303,17 @@ impl CompressionPipeline {
         let keep = 5;
         let to_remove = context.messages.len() - keep;
 
-        // Summarize removed messages
-        let summary: String = context.messages[..to_remove]
-            .iter()
-            .map(|m| format!("{}: {}", m.role, &m.content[..m.content.len().min(50)]))
-            .collect::<Vec<_>>()
-            .join("; ");
-
-        let summary_msg = Message {
+        let marker = Message {
             role: "system".to_string(),
-            content: format!("[Context summary of {} previous messages: {}]", to_remove, summary),
+            content: format!("[{} earlier messages masked to free context]", to_remove),
         };
 
-        // Replace old messages with summary
         context.messages = {
-            let mut new = vec![summary_msg];
+            let mut new = vec![marker];
             new.extend(context.messages[to_remove..].to_vec());
             new
         };
 
-        let _saved = before.saturating_sub(Self::estimate_tokens(&context.messages));
         budget.allocated = Self::estimate_tokens(&context.messages);
 
         Some(CompressionResult {
