@@ -1796,8 +1796,8 @@ impl CoreRuntime {
                         agent.execute(&task).await
                     };
 
-                    // Execute any tool calls found in the agent's output
-                    let tool_exec = self.execute_tool_calls(&raw_result.content).await;
+                    // Execute tool calls from the initial agent response
+                    let mut tool_exec = self.execute_tool_calls(&raw_result.content).await;
                     let mut result = if tool_exec.output != raw_result.content {
                         TaskResult {
                             content: tool_exec.output,
@@ -1807,7 +1807,7 @@ impl CoreRuntime {
                         raw_result
                     };
 
-                    // Publish ToolCalled events for each tool that was invoked
+                    // Publish ToolCalled events for the initial round
                     for tc in &tool_exec.tools_called {
                         self.bus.publish(
                             praxis_shared::protocol::MessageKind::ToolCalled {
@@ -1820,14 +1820,30 @@ impl CoreRuntime {
                         );
                     }
 
-                    // If tools were called, re-invoke the agent with tool results
-                    // so the LLM can react to what the tools returned
-                    if !tool_exec.tools_called.is_empty() {
+                    // Accumulate tool call metrics across all rounds
+                    let mut total_tool_calls = tool_exec.tools_called.len() as u32;
+                    let mut total_tool_errors = tool_exec
+                        .tools_called
+                        .iter()
+                        .filter(|t| !t.success)
+                        .count() as u32;
+
+                    // Tool call loop: re-invoke agent with tool results, execute
+                    // new tool calls from the follow-up response, repeat until no
+                    // tools are called or max rounds reached.
+                    const MAX_TOOL_ROUNDS: usize = 5;
+                    for round in 1..=MAX_TOOL_ROUNDS {
+                        if tool_exec.tools_called.is_empty() {
+                            break;
+                        }
+
                         tracing::info!(
-                            "Agent {} called {} tool(s), re-invoking with results",
+                            "Agent {} called {} tool(s) in round {}, re-invoking with results",
                             result.agent_id,
-                            tool_exec.tools_called.len()
+                            tool_exec.tools_called.len(),
+                            round
                         );
+
                         let follow_up_agent = match provider_router.resolve(&role_config.model) {
                             Ok(provider) => {
                                 crate::actor::roles::AgentFactory::create_with_provider_and_bus(
@@ -1852,14 +1868,49 @@ impl CoreRuntime {
                             budget: None,
                         };
                         let follow_up_result = follow_up_agent.execute(&follow_up_task).await;
+
+                        // Execute tool calls from the follow-up response only
+                        // (not the full accumulated content — avoids re-executing
+                        // tools from previous rounds)
+                        tool_exec = self.execute_tool_calls(&follow_up_result.content).await;
+
                         result = TaskResult {
                             content: format!(
-                                "{}\n\n─── FOLLOW-UP AFTER TOOL RESULTS ───\n{}",
+                                "{}\n\n─── FOLLOW-UP AFTER TOOL RESULTS (round {}) ───\n{}",
                                 result.content,
-                                follow_up_result.content
+                                round,
+                                tool_exec.output
                             ),
                             ..result
                         };
+
+                        // Publish ToolCalled events for this round
+                        for tc in &tool_exec.tools_called {
+                            self.bus.publish(
+                                praxis_shared::protocol::MessageKind::ToolCalled {
+                                    agent: result.agent_id.clone(),
+                                    tool: format!("{}/{}", tc.server, tc.tool_name),
+                                    duration_ms: tc.duration_ms,
+                                    success: tc.success,
+                                },
+                                "core",
+                            );
+                        }
+
+                        total_tool_calls += tool_exec.tools_called.len() as u32;
+                        total_tool_errors += tool_exec
+                            .tools_called
+                            .iter()
+                            .filter(|t| !t.success)
+                            .count() as u32;
+
+                        if round == MAX_TOOL_ROUNDS && !tool_exec.tools_called.is_empty() {
+                            tracing::warn!(
+                                "Agent {} hit max tool rounds ({}) — stopping tool call loop",
+                                result.agent_id,
+                                MAX_TOOL_ROUNDS
+                            );
+                        }
                     }
 
                     // Process delegation requests from the agent's output
@@ -1922,8 +1973,8 @@ impl CoreRuntime {
                         latency_ms: result.duration_ms,
                         output_tokens: result.token_usage.output,
                         input_tokens: result.token_usage.input,
-                        tool_calls: tool_exec.tools_called.len() as u32,
-                        tool_errors: tool_exec.tools_called.iter().filter(|t| !t.success).count() as u32,
+                        tool_calls: total_tool_calls,
+                        tool_errors: total_tool_errors,
                         output_length_chars: result.content.len(),
                         gate_passed: self.last_gate_passed,
                         context_pressure: pressure,
