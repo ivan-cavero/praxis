@@ -11,9 +11,10 @@ praxis init my-api
 ```
 
 Creates:
-- `my-api/forge.toml` — Project configuration
-- `my-api/.forge/` — Project data directory
-- `my-api/.gitignore`
+- `~/.config/praxis/projects/my-api/config.toml` — Project configuration
+- `~/.config/praxis/projects/my-api/skills/` — Project skills directory
+- `~/.config/praxis/projects/my-api/plans/` — Generated plans
+- `~/.config/praxis/projects/my-api/injections/` — Mid-loop injections
 
 ### `praxis run`
 
@@ -37,7 +38,7 @@ praxis run --goal "..." --headless
 ```
 
 **Options:**
-- `--goal <text>` — Goal description or name from forge.toml
+- `--goal <text>` — Goal description or name from config.toml
 - `--file <path>` — Read goal from file
 - `--resume` — Resume last interrupted session
 - `--session <id>` — Resume specific session
@@ -73,17 +74,6 @@ praxis session logs <id>      # View session logs
 praxis session logs <id> --tail  # Stream logs in real-time
 ```
 
-## Configuration Commands
-
-```bash
-praxis config show            # Show current configuration
-praxis config get <key>       # Get a config value (dot notation)
-praxis config set <key> <val> # Set a config value
-praxis config edit            # Open config in $EDITOR
-praxis config import <file>   # Import configuration
-praxis config export <file>   # Export configuration
-```
-
 ## Context Commands
 
 ```bash
@@ -96,6 +86,7 @@ praxis context force-compress --session <id>  # Force EMC
 
 ```bash
 praxis provider list           # List configured providers
+praxis provider add <name>     # Add a provider (e.g., openai, anthropic)
 praxis provider test <name>    # Test provider connection
 ```
 
@@ -103,19 +94,19 @@ praxis provider test <name>    # Test provider connection
 
 ```bash
 praxis mcp list               # List connected MCP servers
-praxis mcp add <name> <cmd>   # Add MCP server
-praxis mcp remove <name>      # Remove MCP server
-praxis mcp test <name>        # Test MCP server
+# Note: MCP servers are managed via the dashboard Settings page
 ```
 
 ## Deploy Commands
 
 ```bash
-praxis deploy setup <host>    # Configure VPS deployment
-praxis deploy push            # Push project to VPS
-praxis deploy status          # Check VPS status
-praxis deploy logs --tail     # Stream logs from VPS
+praxis deploy setup <host>    # Configure VPS deployment (stub — not implemented)
+praxis deploy push            # Push project to VPS (stub — not implemented)
+praxis deploy status          # Check VPS status (stub — not implemented)
+praxis deploy logs --tail     # Stream logs from VPS (stub — not implemented)
 ```
+
+> **Note:** VPS deployment is not part of the core vision. Deploy manually via SSH + `praxis server`.
 
 ## Desktop & Dashboard
 
@@ -123,17 +114,6 @@ praxis deploy logs --tail     # Stream logs from VPS
 praxis desktop                # Open desktop app
 praxis dashboard              # Open web dashboard
 praxis monitor                # Open terminal UI
-```
-
-## Enterprise Commands
-
-```bash
-praxis org create <name>      # Create organization
-praxis org list               # List organizations
-praxis org switch <id>        # Switch organization
-
-praxis billing show           # Show billing info
-praxis billing invoices       # List invoices
 ```
 
 ## Global Options

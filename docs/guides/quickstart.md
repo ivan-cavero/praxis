@@ -5,29 +5,30 @@ Get from zero to running your first goal in 5 minutes.
 ## Step 1: Install
 
 ```bash
-curl -fsSL https://praxis.dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ivan-cavero/praxis/main/scripts/install.sh | bash
 ```
 
 ## Step 2: Create a Project
 
 ```bash
 praxis init my-api
-cd my-api
 ```
 
-This creates:
+This creates a project directory at `~/.config/praxis/projects/my-api/` containing:
+
 ```
 my-api/
-├── forge.toml      # Project configuration
-├── .forge/         # Project data
-└── .gitignore
+├── config.toml      # Project configuration
+├── skills/          # Project-specific skills
+├── plans/           # Generated plans
+└── injections/      # Mid-loop injections
 ```
 
 ## Step 3: Configure Your API Key
 
 ```bash
 # Set your OpenAI API key
-praxis config set providers.openai.api_key "sk-..."
+praxis provider add openai --api-key "sk-..."
 
 # Or use environment variable
 export OPENAI_API_KEY="sk-..."
@@ -67,15 +68,17 @@ praxis context force-compress --session <session-id>
 
 ## Step 7: Deploy (Optional)
 
+Deployment to VPS is not yet implemented. For now, run praxis on a remote machine via SSH:
+
 ```bash
-# Deploy to a VPS
-praxis deploy setup user@your-vps.com
-praxis deploy push
+ssh user@your-vps.com
+# Clone the repo, install, and run:
+praxis run --goal "your goal"
 ```
 
 ## What Just Happened?
 
-1. **Project created** with forge.toml defining roles (architect, coder, reviewer, security, tester)
+1. **Project created** with config.toml defining roles (architect, coder, reviewer, security, tester)
 2. **Orchestrator** read the goal, spawned agents with different models
 3. **Architect** designed the system structure
 4. **Coder** generated code
@@ -90,4 +93,4 @@ praxis deploy push
 
 - [Configuration Reference](./configuration.md) — Customize agents and workflows
 - [CLI Reference](./cli.md) — All available commands
-- [Architecture](../adr/ARCHITECTURE.md) — How the system works internally
+- [Architecture](../adr/000-architecture-overview.md) — How the system works internally

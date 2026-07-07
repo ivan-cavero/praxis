@@ -35,7 +35,7 @@ The goal is understanding, not just working code.
 - **Actor framework**: `ractor` — every agent is an actor with its own mailbox
 - **Async runtime**: `tokio` (full features)
 - **HTTP/WebSocket**: `axum` + `tower-http`
-- **Persistence**: SQLite (`rusqlite` + `r2d2` pool), Qdrant (vector DB, embedded), `moka` (cache), `DashMap` (hot state)
+- **Persistence**: SQLite (`rusqlite` + `r2d2` pool) with episodic memory persistence, Qdrant (vector DB, remote only), `moka` (cache), `DashMap` (hot state)
 - **LLM providers**: OpenAI, Anthropic, Gemini, Ollama — via `reqwest` (rustls-tls)
 - **CLI/TUI**: `clap` + `ratatui`
 - **Desktop**: Tauri v2 (embeds the core binary)
@@ -134,7 +134,7 @@ praxis/
 │   ├── core/             # Runtime: ractor actors, state machine, orchestrator, API
 │   ├── providers/        # LLM implementations: OpenAI, Anthropic, Gemini, Ollama
 │   ├── mcp-host/         # MCP client: discovery, protocol, tool registry
-│   ├── memory/           # Hot (DashMap), Episodic (Qdrant), Consolidated
+│   ├── memory/           # Hot (DashMap), Episodic (SQLite + Qdrant), Consolidated
 │   ├── persistence/      # Event store: SQLite (embedded, WAL mode)
 │   ├── vault/            # Credential management: keyring, tauri, env
 │   └── cli/              # CLI binary: clap + ratatui
@@ -218,11 +218,15 @@ praxis/
 # Rust
 cargo build                          # build workspace
 cargo build --release                # release build (LTO + strip)
-cargo test                           # run all tests
+cargo test --workspace --exclude desktop   # unit tests (desktop needs dashboard/dist first)
 cargo nextest run                    # faster test runner (if installed)
 cargo clippy --all-targets -- -D warnings   # lint, fail on warnings
 cargo fmt --check                    # format check
 cargo +nightly miri test             # UB detection for unsafe code
+cargo bench -p praxis-core           # run benchmarks
+
+# Desktop tests (requires dashboard build first)
+cd dashboard && bun run build && cargo test -p desktop
 
 # Dashboard (bun only)
 cd dashboard && bun install          # install deps
@@ -233,6 +237,8 @@ cd dashboard && bun run preview      # preview production build
 # Docker
 docker-compose up -d                 # full stack
 ```
+
+> **Note:** `cargo test --workspace` excludes `desktop` because `tauri::generate_context!()` requires `dashboard/dist` at compile time. Run desktop tests separately after building the dashboard.
 
 ---
 

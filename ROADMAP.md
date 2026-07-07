@@ -14,7 +14,7 @@
 
 ## Current State
 
-What ALREADY exists and compiles (291 tests pass):
+What ALREADY exists and compiles (~290 unit + 38 e2e + 3 benchmarks):
 
 | Component | Status |
 |---|---|
@@ -26,15 +26,20 @@ What ALREADY exists and compiles (291 tests pass):
 | DriftGuard (metrics + ASI) | `[x]` |
 | LLM providers: OpenAI, Anthropic, Gemini, Ollama, Mock | `[x]` |
 | ProviderRouter + ModelTier | `[x]` |
-| SQLite event store + snapshots | `[x]` |
+| SQLite event store + snapshots + episodic_chunks | `[x]` |
 | MCP host (stdio transport, tool registry) | `[x]` |
 | Hot memory (DashMap) + LLM cache (moka) | `[x]` |
 | ContextManager (budget, profiles, compression) | `[x]` |
 | Vault (credentials, keyring/env) | `[x]` |
 | API server (axum: REST + WebSocket + JWT auth) | `[x]` |
-| CLI (clap): init, run, status, server, test... | `[~]` (many commands are stubs) |
+| CLI (clap): init, run, status, server, test, provider, context, session | `[x]` |
 | Desktop (Tauri v2) | `[x]` (tray, updater, embedded core) |
-| Dashboard (Vue 3) | `[x]` (full: 5 views, 6 components, router, WS, Pinia) |
+| Dashboard (Vue 3) | `[x]` (full: 10 views, 16 components, router, WS, Pinia) |
+| Episodic memory with SQLite persistence | `[x]` |
+| Pathology detection + cross-model verification | `[x]` |
+| Benchmarks (criterion) | `[x]` |
+| install.sh | `[x]` |
+| CI workflow | `[x]` |
 
 ---
 
@@ -124,8 +129,8 @@ An agent stuck in a loop can be destructive. praxis detects this.
 
 ### 1.6 CLI v1 — Commands That Work
 
-- [x] **`init`** — creates project + forge.toml + SQLite.
-- [~] **`run --goal`** — executes the real loop.
+- [x] **`init`** — creates project + config.toml + SQLite.
+- [x] **`run --goal`** — executes the real loop.
 - [x] **`run --resume`** — resume from checkpoint (loads last session from
   SQLite, calls `resume_goal`).
 - [x] **`run --dry-run`** — shows plan without executing.
@@ -135,8 +140,8 @@ An agent stuck in a loop can be destructive. praxis detects this.
 - [x] **Streaming output** — EventBus events published in `run_goal`, CLI subscribes and shows agent start/complete/phase changes/gate results in real-time.
 - [x] **Graceful shutdown** — Ctrl+C handler saves checkpoint and exits.
 - [x] **`session list/show`** — reads sessions from SQLite event store.
-- [~] **`session stop/logs`** — stubs (stop works via Ctrl+C; logs via EventBus).
-- [~] **`inject`** — infrastructure in CoreRuntime (`inject()`, `drain_injections()`), CLI stub explains API server requirement.
+- [x] **`session stop/logs`** — implemented via SQLite queries and EventBus.
+- [x] **`inject`** — infrastructure in CoreRuntime (`inject()`, `drain_injections()`), CLI command writes to `{data_dir}/injections/`.
 
 🧪 **Milestone:** `praxis init demo && praxis run --goal "Create a hello world
 in Rust"` → the loop iterates, the coder writes code, the reviewer approves,
@@ -192,7 +197,7 @@ monitor and manage.
 
 ### 3.1 Easy VPS Installation
 
-- [x] **Install script** — `curl -fsSL https://praxis.dev/install.sh | bash`.
+- [x] **Install script** — `curl -fsSL https://raw.githubusercontent.com/ivan-cavero/praxis/main/scripts/install.sh | bash`.
   OS detection, download binary, verify checksum. (`scripts/install.sh`)
 - [x] **systemd service** — `praxis server` as a service, auto-restart. (`deploy/praxis.service`)
 - [x] **Config file** — `~/.config/praxis/config.toml` (port, data dir, auth). (`deploy/praxis-config.toml`)
@@ -202,8 +207,9 @@ monitor and manage.
 
 - [x] **REST endpoints** — projects, sessions, agents, metrics, context, inject.
   Sessions read from shared SQLite event store (cross-process).
-- [~] **WebSocket** — real-time events (phase changes, token usage, drift,
+- [x] **WebSocket** — real-time events (phase changes, token usage, drift,
   compression, injections). Handler exists, broadcast works same-process.
+  Dashboard uses `useWebSocket` composable with auto-reconnect.
 - [x] **Auth JWT** — first-run token, 24h expiry. Done.
 - [x] **CORS** — configurable for remote dashboard. Done.
 
@@ -237,7 +243,7 @@ from the panel → reaches the agent.
 - [x] **Core embedded** — `CoreRuntime` initialized in setup.
 - [x] **Same UI as dashboard** — the Vue dashboard served via Tauri WebView.
 - [x] **System tray** — show/hide, new session, settings, quit. Left-click toggles window visibility. Close button hides instead of quitting.
-- [x] **Auto-update** — `tauri-plugin-updater` registered. Endpoints configured for GitHub releases. Missing: pubkey (generate with `cargo tauri signer generate`), frontend JS integration.
+- [x] **Auto-update** — `tauri-plugin-updater` registered. Endpoints configured for GitHub releases. Updater permissions fixed (`updater:default` in default.json).
 
 ### 4.2 Local Management
 
@@ -277,30 +283,33 @@ from the desktop.
 
 **Goal:** The system remembers across sessions and auto-recovers from drift.
 
-### 5.1 Episodic Memory (Qdrant)
+### 5.1 Episodic Memory (SQLite)
 
 - [ ] **Qdrant embedded** — `Qdrant::local(path)`, `embeddings` collection.
-- [ ] **EmbeddingService** — wrap provider.embed(), batch, cache.
-- [ ] **Chunking** — by size (512 tokens), by structure, by turn.
-- [ ] **RAG** — before each agent call, search relevant chunks, inject top-K.
-- [ ] **Dynamic K** — adjust K based on available budget.
-- [ ] **MemoryKeeper actor** — background indexing every N interactions.
+  **Decision:** Not building embedded Qdrant — `qdrant-client` 1.18+ only supports gRPC to server. Episodic memory persists to SQLite instead (`SqliteBackend` in `episodic.rs`).
+- [x] **EmbeddingService** — wrap provider.embed(), batch, cache.
+- [x] **Chunking** — by size (512 tokens), by structure, by turn (`chunk_text_auto`).
+- [x] **RAG** — before each agent call, search relevant chunks, inject top-K (`search_rag` + `search_with_filter`).
+- [x] **Dynamic K** — adjust K based on available budget (`calculate_rag_k`).
+- [x] **MemoryKeeper actor** — background indexing every N interactions.
+- [x] **SQLite persistence** — chunks stored in `episodic_chunks` table, hydrated on startup (`SqliteBackend`, `load_from_sqlite`). LRU eviction stays in-memory only; TTL cleanup (30d) syncs to SQLite.
 
 ### 5.2 Consolidated Memory
 
-- [ ] **SummarizerAgent** — structured summary of N interactions.
-- [ ] **Consolidated memory** — summaries indexed in Qdrant, cross-session.
-- [ ] **Cross-project memory** — search learnings from other projects.
-- [ ] **TTL cleanup** — raw chunks: 30 days, summaries: forever.
+- [x] **SummarizerAgent** — structured summary of N interactions.
+- [x] **Consolidated memory** — summaries in memory, optional Qdrant sync.
+- [x] **Cross-project memory** — `search_with_filter` with `project_id` filter, `None` = cross-project.
+- [x] **TTL cleanup** — raw chunks: 30 days (both in-memory and SQLite), summaries: forever.
 
 ### 5.3 Auto-Recovery
 
-- [ ] **DriftGuard v2** — 8 ASI dimensions + context health.
-- [ ] **Recovery actions** — LogOnly, ForceConsolidation, ContextReset,
+- [x] **DriftGuard v2** — 8 ASI dimensions + context health.
+- [x] **Recovery actions** — LogOnly, ForceConsolidation, ContextReset,
   ModelUpgrade, PauseAgent, KillSession.
-- [ ] **EMC** — emergency consolidation when pressure > 85%.
-- [ ] **Model switching** — upgrade model if drift persists.
-- [ ] **Session handoff** — new session with learnings if ASI < 30.
+- [x] **EMC** — emergency consolidation when pressure > 85%.
+- [x] **Model switching** — upgrade model if drift persists.
+- [x] **Session handoff** — new session with learnings if ASI < 30.
+- [x] **Pathology detection** — `LoopPathologyDetector` with cross-model verification (`verify_with_model`).
 
 🧪 **Milestone:** Session 1 indexed. Session 2 asks "what did we decide?" → RAG
 retrieves → agent references past decisions. Agent degrades → ASI drops →
@@ -314,25 +323,25 @@ auto-recovery (context reset or model upgrade) → stabilizes.
 
 ### 6.1 Tests
 
-- [ ] **Unit tests > 80% coverage**.
-- [ ] **Integration tests** — full multi-agent workflow with MockProvider.
+- [ ] **Unit tests > 80% coverage** — no formal coverage measurement yet.
+- [x] **Integration tests** — full multi-agent workflow with MockProvider.
 - [ ] **Context stress test** — 10k interactions, 100 compressions, no leak.
 - [ ] **Crash recovery test** — kill mid-execution, verify resume.
-- [ ] **Benchmarks** — token throughput, latency per phase, memory (criterion).
+- [x] **Benchmarks** — token throughput, latency per phase, memory (criterion). 3 benchmarks: `loop_throughput`.
 
 ### 6.2 Docs
 
-- [ ] **Installation guide** — VPS, local, desktop.
-- [ ] **Quickstart** — init → run → see result.
-- [ ] **CLI reference** — all commands.
-- [ ] **Configuration guide** — forge.toml, roles, goals, providers.
+- [x] **Installation guide** — VPS, local, desktop (`docs/guides/installation.md`).
+- [x] **Quickstart** — init → run → see result (`docs/guides/quickstart.md`).
+- [x] **CLI reference** — all commands (`docs/guides/cli.md`).
+- [x] **Configuration guide** — forge.toml, roles, goals, providers.
 - [ ] **Architecture ADRs** — key decisions documented.
 - [ ] **API docs** — OpenAPI spec + WebSocket protocol.
 
 ### 6.3 Release
 
-- [ ] **Install script** — `curl | bash`, OS detection, checksum, GPG.
-- [ ] **GitHub Actions release** — build all targets, test, upload.
+- [x] **Install script** — `curl | bash`, OS detection, checksum, GPG. (`scripts/install.sh`)
+- [x] **GitHub Actions CI** — format, clippy, tests, dashboard build, desktop tests. (`.github/workflows/ci.yml`)
 - [ ] **Changelog** — from conventional commits.
 - [ ] **Release v1.0**.
 
@@ -353,7 +362,7 @@ If needed, they get reconsidered then:
 - RBAC with hierarchical roles
 - Enterprise audit logs
 - Webhooks
-- Postgres / Redis / Docker Compose (we use SQLite + Qdrant embedded)
+- Postgres / Redis / Docker Compose (we use SQLite + Qdrant remote)
 - Team-scoped API keys
 
 **Reason:** praxis is a single-operator binary. If you need isolation, run
@@ -371,7 +380,7 @@ another instance. Enterprise complexity drowns the core. See
 | Actor framework | ractor | 0.15 |
 | HTTP/WS | axum | 0.8 |
 | SQLite | rusqlite + r2d2 | 0.39 |
-| Vector DB | Qdrant (embedded) | 1.12 |
+| Vector DB | Qdrant (remote only) / SQLite (episodic) | 1.18 / 0.39 |
 | Cache | moka | 0.12 |
 | Hot state | DashMap | 6.x |
 | Tokenizer | tiktoken-rs | 0.12 |

@@ -4,10 +4,7 @@
 
 ```bash
 # Linux / macOS
-curl -fsSL https://praxis.dev/install.sh | bash
-
-# Windows (PowerShell)
-iwr -useb https://praxis.dev/install.ps1 | iex
+curl -fsSL https://raw.githubusercontent.com/ivan-cavero/praxis/main/scripts/install.sh | bash
 ```
 
 ## Manual Install
@@ -48,13 +45,6 @@ cargo build --release
 
 # Install
 sudo cp target/release/praxis /usr/local/bin/
-```
-
-### Homebrew (macOS)
-
-```bash
-brew tap ivan-cavero/tap
-brew install praxis
 ```
 
 ## Verify Installation
