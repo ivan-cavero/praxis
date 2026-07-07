@@ -1,0 +1,48 @@
+# ─── .dockerignore ─────────────────────────────────────────────────
+# Keep the Docker build context small and avoid invalidating the
+# cargo layer cache on unrelated file changes.
+
+# Build artifacts
+target/
+**/target/
+dist/
+**/dist/
+
+# Dashboard (not needed in the CLI-only image — built separately)
+dashboard/node_modules/
+dashboard/.vite/
+dashboard/dist/
+
+# Desktop (Tauri — ships as native installer, not in this image)
+desktop/src-tauri/target/
+
+# Git
+.git/
+.gitignore
+
+# Docs and metadata
+docs/
+*.md
+!AGENTS.md
+!VISION.md
+LICENSE
+
+# CI and editor config
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Data and config (runtime, not build-time)
+data/
+config/
+*.db
+*.sqlite
+*.sqlite3
+*.vault.json
+
+# Environment
+.env
+.env.*

@@ -1,0 +1,38 @@
+# ─── praxis release-please automation ──────────────────────────────
+#
+# Automates versioning and changelog generation from conventional commits.
+#
+# On every push to main, release-please:
+#   1. Collects new conventional commits since the last release.
+#   2. Updates CHANGELOG.md, bumps versions in Cargo.toml files, and
+#      opens/updates a "release PR" (e.g. "chore(main): release 0.5.2").
+#
+# When the release PR is merged, release-please creates a v* tag.
+# That tag triggers:
+#   - release.yml  → Tauri desktop installers + GitHub Release
+#   - docker.yml   → container image to GHCR
+#
+# Manual releases still work: pushing a v* tag by hand triggers the
+# same downstream workflows.
+
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Create release PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main

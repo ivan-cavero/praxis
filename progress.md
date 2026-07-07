@@ -250,9 +250,9 @@ Automation and release improvements.
 - [x] Add E2E test step (Playwright)
 
 ### 9B — Release automation
-- [ ] Automated changelog from conventional commits
-- [ ] Docker image build + push to GHCR
-- [ ] Release-please or auto-PR workflow
+- [x] Automated changelog from conventional commits — release-please v4 config + workflow; maintains CHANGELOG.md, bumps Cargo.toml versions, opens release PR
+- [x] Docker image build + push to GHCR — fixed broken Dockerfile (project-x → praxis), multi-stage build, .dockerignore, docker.yml workflow pushes to ghcr.io on tags/main
+- [x] Release-please or auto-PR workflow — release-please.yml opens release PR on push to main; merged PR tags v* which triggers release.yml + docker.yml
 
 ### 9C — Monitoring
 - [ ] GET /api/health — DB, LLM provider status
