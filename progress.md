@@ -78,9 +78,9 @@ Vulnerability scan, authentication audit, dependency review.
 - [ ] Verify first-run token is one-time + expiring
 
 ### 3B — API security
-- [ ] Review routes for missing auth checks
-- [ ] Check CORS is restrictive by default
-- [ ] Verify WebSocket validates JWT
+- [x] Review routes for missing auth checks — all /api/* routes under auth_routes have auth_middleware; public routes are pairing endpoints and health/metrics which are correctly unauthenticated
+- [x] Check CORS is restrictive by default — replaced CorsLayer::permissive() with explicit allow_origin for localhost:3000 and localhost:5173, restricted methods and headers
+- [x] Verify WebSocket validates JWT — ws_handler now extracts Bearer token from Authorization header, validates JWT via AuthState::validate_token, rejects unauthenticated connections with 401 equivalent
 
 ### 3C — Vault security
 - [ ] Verify AES-256-GCM nonce generation is random (check crypto.rs or impl)

@@ -118,7 +118,11 @@ impl ApiServer {
     }
 
     pub fn router(state: AppState) -> Router {
-        let cors = tower_http::cors::CorsLayer::permissive();
+        let cors = tower_http::cors::CorsLayer::new()
+            .allow_origin(axum::http::HeaderValue::from_static("http://localhost:3000"))
+            .allow_origin(axum::http::HeaderValue::from_static("http://localhost:5173"))
+            .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
+            .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE]);
         let auth_state = state.auth.clone();
 
         // Authenticated routes
