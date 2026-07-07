@@ -182,9 +182,9 @@ egistry.rs
 - [x] Store file change snapshots in event store
 
 ### 6C — Workflow engine
-- [ ] Implement GoalEngine with DAG-based goal resolution
-- [ ] Implement WorkflowEngine with conditional branching
-- [ ] Wire into run_goal, allow workflow defs in forge.toml
+- [x] Implement GoalEngine with DAG-based goal resolution
+- [x] Implement WorkflowEngine with conditional branching
+- [x] Wire into run_goal, allow workflow defs in forge.toml
 
 ### 6D — Agent delegation (wire existing delegation.rs)
 - [ ] Connect delegation system to agent execution

@@ -5,10 +5,10 @@
 //! - [`GateOutcome`]: gate pass/fail result used for conditional branching.
 
 pub mod goal;
-pub mod workflow;
+pub mod engine;
 
 pub use goal::GoalEngine;
-pub use workflow::{GateOutcome, WorkflowEngine, parse_phase};
+pub use engine::{GateOutcome, WorkflowEngine, parse_phase};
 
 // Re-export shared config types for convenience.
 pub use praxis_shared::config::{
