@@ -8,47 +8,12 @@
 //! passed or failed. When no workflow is defined, the engine falls back to
 //! the default linear sequence, preserving existing behavior.
 //!
-//! The [`GoalEngine`] resolves which workflow a goal uses, falling back to
-//! `None` (default sequence) when the goal doesn't name a workflow or the
-//! named workflow doesn't exist in the config.
+//! The [`crate::workflow::GoalEngine`] resolves which workflow a goal uses,
+//! falling back to `None` (default sequence) when the goal doesn't name a
+//! workflow or the named workflow doesn't exist in the config.
 
-use praxis_shared::config::{BranchCondition, WorkflowDefinition, WorkflowPhase};
+use praxis_shared::config::{BranchCondition, WorkflowDefinition};
 use praxis_shared::types::Phase;
-
-// ─── GoalEngine ────────────────────────────────────────────────
-
-/// Resolves which workflow a goal should use.
-///
-/// Goals optionally name a workflow via `goal.workflow`. If the name matches
-/// a workflow in the config, that workflow drives the phase loop. Otherwise
-/// the default linear sequence is used (returned as `None`).
-pub struct GoalEngine;
-
-impl Default for GoalEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl GoalEngine {
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// Resolve the workflow definition for a goal.
-    ///
-    /// Returns `Some(WorkflowDefinition)` if the goal names a workflow that
-    /// exists in `workflows`, or `None` if the goal has no workflow or the
-    /// named workflow is not found (falls back to default sequence).
-    pub fn resolve(
-        &self,
-        goal_workflow: Option<&str>,
-        workflows: &[WorkflowDefinition],
-    ) -> Option<&WorkflowDefinition> {
-        let name = goal_workflow?;
-        workflows.iter().find(|w| w.name == name)
-    }
-}
 
 // ─── WorkflowEngine ────────────────────────────────────────────
 
@@ -214,29 +179,6 @@ mod tests {
                 phase("Testing", &["tester"]),
             ],
         }
-    }
-
-    #[test]
-    fn test_goal_engine_resolves_named_workflow() {
-        let engine = GoalEngine::new();
-        let workflows = vec![simple_workflow()];
-        let resolved = engine.resolve(Some("test"), &workflows);
-        assert!(resolved.is_some());
-        assert_eq!(resolved.unwrap().name, "test");
-    }
-
-    #[test]
-    fn test_goal_engine_returns_none_for_missing_workflow() {
-        let engine = GoalEngine::new();
-        let workflows = vec![simple_workflow()];
-        assert!(engine.resolve(Some("nonexistent"), &workflows).is_none());
-    }
-
-    #[test]
-    fn test_goal_engine_returns_none_for_no_workflow() {
-        let engine = GoalEngine::new();
-        let workflows = vec![simple_workflow()];
-        assert!(engine.resolve(None, &workflows).is_none());
     }
 
     #[test]

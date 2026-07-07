@@ -15,6 +15,7 @@ use crate::machine;
 use crate::orchestrator;
 use crate::orchestrator::TaskResult;
 use crate::runtime::CoreRuntime;
+use crate::workflow;
 use crate::{CoreError, InjectedMessage, Result};
 
 use praxis_agent_traits::persistence::EventStore;
@@ -1192,7 +1193,11 @@ impl CoreRuntime {
         // Best-effort: skipped silently if no event store or not in a git repo.
         if let Some(store) = &self.event_store
             && let Some(cwd) = std::env::current_dir().ok()
-            && let Err(e) = crate::rollback::capture_baseline(store, self.session_id.unwrap(), &cwd)
+            && let Err(e) = crate::rollback::capture_baseline(
+                store,
+                self.session_id.expect("session_id set above"),
+                &cwd,
+            )
         {
             tracing::warn!("Failed to capture rollback baseline: {}", e);
         }
@@ -1210,6 +1215,17 @@ impl CoreRuntime {
         let mut results = Vec::new();
         let mut feedback = String::new();
         let mut current_phase = machine::phase::Phase::Planning;
+
+        // Resolve the workflow for this goal (if any). When a workflow is
+        // active, it drives phase transitions and agent selection instead of
+        // the hardcoded get_next_phase / get_agents_for_phase functions.
+        let goal_workflow = config.goals.first().and_then(|g| g.workflow.as_deref());
+        let mut workflow_engine = workflow::GoalEngine::new()
+            .resolve(goal_workflow, &config.workflows)
+            .map(workflow::WorkflowEngine::new);
+        if workflow_engine.is_some() {
+            tracing::info!("Using workflow: {}", goal_workflow.unwrap_or("?"));
+        }
 
         loop {
             if current_phase.is_terminal() {
@@ -1238,9 +1254,14 @@ impl CoreRuntime {
                 self.loop_controller.iteration
             );
 
-            // Check for parallel_reviewers in goal config (first matching goal)
+            // Select agents for this phase. When a workflow is active, use the
+            // workflow's agent list; otherwise fall back to the default mapping.
             let parallel_count = config.goals.first().and_then(|g| g.parallel_reviewers);
-            let phase_agents = get_agents_for_phase(&current_phase, &config, parallel_count);
+            let phase_agents = if let Some(engine) = &workflow_engine {
+                get_workflow_agents(engine, &config, parallel_count, &current_phase)
+            } else {
+                get_agents_for_phase(&current_phase, &config, parallel_count)
+            };
             let results_before = results.len();
 
             if phase_agents.len() > 1 && matches!(current_phase, machine::phase::Phase::Reviewing) {
@@ -1397,7 +1418,7 @@ impl CoreRuntime {
                             }
 
                             results.push(result);
-                            let result = results.last().unwrap();
+                            let result = results.last().expect("results populated by push above");
 
                             // Push interaction to sliding window for history tracking
                             self.push_agent_interaction(
@@ -1747,7 +1768,7 @@ impl CoreRuntime {
                     }
 
                     results.push(result);
-                    let result = results.last().unwrap();
+                    let result = results.last().expect("results populated by push above");
 
                     // Push interaction to sliding window for history tracking
                     self.push_agent_interaction(
@@ -1835,14 +1856,23 @@ impl CoreRuntime {
                         break;
                     }
 
+                    // When a workflow is active, let it decide the next phase
+                    // (conditional branching on GateFailed). Otherwise default
+                    // to Fixing.
+                    let fail_phase = if let Some(engine) = &mut workflow_engine {
+                        engine.next_phase(workflow::GateOutcome::Failed)
+                    } else {
+                        machine::phase::Phase::Fixing
+                    };
                     tracing::info!(
-                        "Gate failed on {:?}. Going to Fixing. Feedback: {} chars",
+                        "Gate failed on {:?}. Going to {:?}. Feedback: {} chars",
                         current_phase,
+                        fail_phase,
                         feedback.len()
                     );
-                    current_phase = machine::phase::Phase::Fixing;
+                    current_phase = fail_phase;
                     self.loop_controller
-                        .advance(machine::phase::Phase::Fixing)
+                        .advance(fail_phase)
                         .map_err(CoreError::StateMachine)?;
                     self.loop_controller.increment_iteration();
                     continue;
@@ -2013,7 +2043,11 @@ impl CoreRuntime {
                 }
             }
 
-            let next_phase = get_next_phase(&current_phase);
+            let next_phase = if let Some(engine) = &mut workflow_engine {
+                engine.next_phase(workflow::GateOutcome::Passed)
+            } else {
+                get_next_phase(&current_phase)
+            };
             match self.loop_controller.advance(next_phase) {
                 Ok(transition) => {
                     self.bus.publish(
@@ -2138,6 +2172,12 @@ impl CoreRuntime {
         let mut feedback = String::new();
         let mut current_phase = saved_phase;
 
+        // Resolve the workflow for this goal (same as run_goal).
+        let goal_workflow = config.goals.first().and_then(|g| g.workflow.as_deref());
+        let mut workflow_engine = workflow::GoalEngine::new()
+            .resolve(goal_workflow, &config.workflows)
+            .map(workflow::WorkflowEngine::new);
+
         // Same loop as run_goal
         loop {
             if current_phase.is_terminal() {
@@ -2166,7 +2206,11 @@ impl CoreRuntime {
             );
 
             let parallel_count = config.goals.first().and_then(|g| g.parallel_reviewers);
-            let phase_agents = get_agents_for_phase(&current_phase, &config, parallel_count);
+            let phase_agents = if let Some(engine) = &workflow_engine {
+                get_workflow_agents(engine, &config, parallel_count, &current_phase)
+            } else {
+                get_agents_for_phase(&current_phase, &config, parallel_count)
+            };
             let results_before = results.len();
 
             for role_config in &phase_agents {
@@ -2224,7 +2268,7 @@ impl CoreRuntime {
                 };
 
                 results.push(result);
-                let result = results.last().unwrap();
+                let result = results.last().expect("results populated by push above");
 
                 // Push interaction to sliding window for history tracking
                 self.push_agent_interaction(
@@ -2286,9 +2330,14 @@ impl CoreRuntime {
 
                 if !gates_pass {
                     feedback = consolidate_feedback(&results);
-                    current_phase = machine::phase::Phase::Fixing;
+                    let fail_phase = if let Some(engine) = &mut workflow_engine {
+                        engine.next_phase(workflow::GateOutcome::Failed)
+                    } else {
+                        machine::phase::Phase::Fixing
+                    };
+                    current_phase = fail_phase;
                     self.loop_controller
-                        .advance(machine::phase::Phase::Fixing)
+                        .advance(fail_phase)
                         .map_err(CoreError::StateMachine)?;
                     self.loop_controller.increment_iteration();
                     continue;
@@ -2397,7 +2446,11 @@ impl CoreRuntime {
                 }
             }
 
-            let next_phase = get_next_phase(&current_phase);
+            let next_phase = if let Some(engine) = &mut workflow_engine {
+                engine.next_phase(workflow::GateOutcome::Passed)
+            } else {
+                get_next_phase(&current_phase)
+            };
             match self.loop_controller.advance(next_phase) {
                 Ok(_) => {}
                 Err(e) => {
@@ -2544,6 +2597,62 @@ fn get_agents_for_phase(
         machine::phase::Phase::Finalizing => Vec::new(),
         _ => Vec::new(),
     }
+}
+
+/// Resolve agents for a phase using a workflow engine.
+///
+/// Looks up each agent name from the workflow's phase definition in the
+/// config's roles. Falls back to `default_role` when no roles are configured
+/// (mock mode). Applies `parallel_reviewers` expansion for Reviewing phases.
+fn get_workflow_agents(
+    engine: &workflow::WorkflowEngine,
+    config: &ForgeConfig,
+    parallel_reviewers: Option<u32>,
+    current_phase: &machine::phase::Phase,
+) -> Vec<orchestrator::RoleConfig> {
+    let lookup = |name: &str| -> Option<orchestrator::RoleConfig> {
+        config.roles.get(name).cloned().or_else(|| {
+            if config.roles.is_empty() {
+                Some(default_role(name))
+            } else {
+                None
+            }
+        })
+    };
+
+    let agent_names = engine.agents_for_phase();
+
+    // Apply parallel reviewer expansion for Reviewing phases.
+    if matches!(current_phase, machine::phase::Phase::Reviewing)
+        && let Some(count) = parallel_reviewers.filter(|c| *c > 0)
+        && agent_names.len() <= 1
+    {
+        let base_name = agent_names
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("reviewer");
+        let mut agents: Vec<orchestrator::RoleConfig> = Vec::new();
+        for index in 0..count {
+            let mut role = lookup(base_name).unwrap_or_else(|| default_role(base_name));
+            role.name = format!("{}-{}", base_name, index + 1);
+            let angles = [
+                "Focus on correctness, edge cases, and logic errors.",
+                "Focus on code style, readability, and best practices.",
+                "Focus on performance, resource usage, and optimization opportunities.",
+                "Focus on security vulnerabilities and unsafe code patterns.",
+                "Focus on test coverage and maintainability.",
+            ];
+            let angle = angles[index as usize % angles.len()];
+            role.system_prompt = role
+                .system_prompt
+                .or_else(|| Some(default_role(base_name).system_prompt.unwrap_or_default()))
+                .map(|p| format!("{}\n\nYour specific focus: {}", p, angle));
+            agents.push(role);
+        }
+        return agents;
+    }
+
+    agent_names.iter().filter_map(|name| lookup(name)).collect()
 }
 
 fn default_role(name: &str) -> orchestrator::RoleConfig {

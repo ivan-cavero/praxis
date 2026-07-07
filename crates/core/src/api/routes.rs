@@ -653,7 +653,11 @@ pub mod vault {
             .map(|provider| {
                 let has_key = state.vault.get(&provider).unwrap_or_default().is_some();
                 let key_masked = if has_key {
-                    let key = state.vault.get(&provider).expect("has_key verified above").expect("vault value present");
+                    let key = state
+                        .vault
+                        .get(&provider)
+                        .expect("has_key verified above")
+                        .expect("vault value present");
                     if key.len() > 8 {
                         format!("{}...{}", &key[..4], &key[key.len() - 4..])
                     } else {
