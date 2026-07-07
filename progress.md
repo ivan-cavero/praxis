@@ -190,10 +190,10 @@ egistry.rs
 - [x] Add max_sub_agents config to forge.toml roles
 
 ### 6E — Undo/redo for changes
-- [ ] Add praxis undo CLI command
-- [ ] Add praxis redo CLI command
-- [ ] Store change history in SQLite
-- [ ] Add undo/redo API endpoints
+- [x] Add praxis undo CLI command
+- [x] Add praxis redo CLI command
+- [x] Store change history in SQLite
+- [x] Add undo/redo API endpoints
 
 ---
 
