@@ -106,7 +106,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 - [x] Add micro-animations: hover states, button presses, status changes
 - [x] Add proper empty state illustration for each view
 - [x] Add toast notifications for all async operations
-- [ ] Ensure consistent spacing, typography, color tokens everywhere
+- [x] Ensure consistent spacing, typography, color tokens everywhere
 
 ### 4B — Responsive & mobile
 - [ ] Test all views at 320px, 768px, 1024px, 1440px

@@ -180,7 +180,7 @@ function isRecent(event: SystemEvent): boolean {
 .session-timeline {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   font-size: 13px;
 }
 
@@ -191,9 +191,9 @@ function isRecent(event: SystemEvent): boolean {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 48px 24px;
-  color: var(--text-muted, #666);
+  gap: var(--space-2);
+  padding: var(--space-12) var(--space-6);
+  color: var(--text-muted);
 }
 
 .timeline-empty-icon {
@@ -214,7 +214,7 @@ function isRecent(event: SystemEvent): boolean {
 .timeline-feed {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   max-height: 600px;
   overflow-y: auto;
   padding-right: 4px;
@@ -229,7 +229,7 @@ function isRecent(event: SystemEvent): boolean {
 }
 
 .timeline-feed::-webkit-scrollbar-thumb {
-  background: var(--border-color, #333);
+  background: var(--border-color);
   border-radius: 2px;
 }
 
@@ -238,20 +238,20 @@ function isRecent(event: SystemEvent): boolean {
 .timeline-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .timeline-group-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 0;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted, #666);
-  border-bottom: 1px solid var(--border-color, #222);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .timeline-group-label {
@@ -261,10 +261,10 @@ function isRecent(event: SystemEvent): boolean {
 .timeline-group-count {
   font-size: 10px;
   font-weight: 500;
-  background: var(--bg-secondary, #1a1a2e);
+  background: var(--bg-secondary);
   padding: 1px 6px;
   border-radius: 10px;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
 }
 
 /* ── Items ───────────────────────────────────────────────── */
@@ -272,19 +272,19 @@ function isRecent(event: SystemEvent): boolean {
 .timeline-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .timeline-item {
   display: flex;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
   transition: background 0.15s ease;
 }
 
 .timeline-item:hover {
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+  background: var(--bg-secondary);
 }
 
 .timeline-item-recent {
@@ -301,7 +301,7 @@ function isRecent(event: SystemEvent): boolean {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 5px;
+  margin-top: var(--space-1);
 }
 
 .timeline-item-content {
@@ -309,20 +309,20 @@ function isRecent(event: SystemEvent): boolean {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .timeline-item-text {
-  color: var(--text-primary, #eee);
+  color: var(--text-primary);
   line-height: 1.4;
   word-break: break-word;
 }
 
 .timeline-item-meta {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   font-size: 11px;
-  color: var(--text-muted, #666);
+  color: var(--text-muted);
 }
 
 .timeline-item-time {
@@ -360,8 +360,8 @@ function isRecent(event: SystemEvent): boolean {
 .timeline-more {
   text-align: center;
   font-size: 11px;
-  color: var(--text-muted, #666);
-  padding: 8px;
-  border-top: 1px solid var(--border-color, #222);
+  color: var(--text-muted);
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
 }
 </style>
