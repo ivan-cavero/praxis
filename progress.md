@@ -103,7 +103,7 @@ Vulnerability scan, authentication audit, dependency review.
 Beautiful, responsive, fast, delightful Vue 3 dashboard.
 
 ### 4A — Visual polish
-- [ ] Add smooth page transitions (Vue <Transition>) between all views
+- [x] Add smooth page transitions (Vue <Transition>) between all views
 - [ ] Add skeleton loading states for MetricCard, tables, agent grid
 - [ ] Add micro-animations: hover states, button presses, status changes
 - [ ] Add proper empty state illustration for each view

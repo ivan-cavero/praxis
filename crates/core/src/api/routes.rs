@@ -1435,7 +1435,7 @@ pub mod sessions {
                     Ok(_event) => {
                         // Check if this session is still active; if not, stop listening.
                         let still_active = {
-                            let runs = active_runs_for_listener.read().unwrap();
+                            let runs = active_runs_for_listener.read().expect("RwLock not poisoned");
                             runs.contains_key(&sid_for_listener)
                         };
                         if !still_active {
@@ -1482,7 +1482,7 @@ pub mod sessions {
 
             // Update session registry
             {
-                let mut reg = registry.write().unwrap();
+                let mut reg = registry.write().expect("RwLock not poisoned");
                 if let Some(entry) = reg.iter_mut().find(|s| s.id == sid_for_registry) {
                     entry.status = match &result {
                         Ok(r) if r.passed => "completed".to_string(),
@@ -1498,7 +1498,7 @@ pub mod sessions {
 
             // Remove from active runs
             {
-                let mut runs = active_runs.write().unwrap();
+                let mut runs = active_runs.write().expect("RwLock not poisoned");
                 runs.remove(&sid_for_task);
             }
 
@@ -1573,16 +1573,16 @@ pub mod sessions {
     ) -> Result<Json<SessionStateResponse>, StatusCode> {
         // Check active runs for live data
         let (tokens_used, cost_usd, status) = {
-            let runs = state.active_runs.read().unwrap();
+            let runs = state.active_runs.read().expect("RwLock not poisoned");
             if let Some(run) = runs.get(&id) {
                 (
                     run.tokens_used.load(std::sync::atomic::Ordering::Relaxed),
-                    *run.cost_usd.read().unwrap(),
+                    *run.cost_usd.read().expect("RwLock not poisoned"),
                     "running".to_string(),
                 )
             } else {
                 // Not active — check the session registry for final data
-                let registry = state.session_registry.read().unwrap();
+                let registry = state.session_registry.read().expect("RwLock not poisoned");
                 if let Some(entry) = registry.iter().find(|s| s.id == id) {
                     (entry.tokens_used, entry.cost_usd, entry.status.clone())
                 } else {
@@ -1593,7 +1593,7 @@ pub mod sessions {
 
         // Get phase + iteration from the session registry or event store
         let (phase, iteration) = {
-            let registry = state.session_registry.read().unwrap();
+            let registry = state.session_registry.read().expect("RwLock not poisoned");
             if let Some(entry) = registry.iter().find(|s| s.id == id) {
                 (entry.phase.clone(), entry.iteration)
             } else {
@@ -1621,7 +1621,7 @@ pub mod sessions {
     ) -> Result<Json<serde_json::Value>, StatusCode> {
         // If this is an active run, set the shutdown flag for graceful stop
         let was_active = {
-            let runs = state.active_runs.read().unwrap();
+            let runs = state.active_runs.read().expect("RwLock not poisoned");
             if let Some(run) = runs.get(&id) {
                 run.shutdown
                     .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1859,7 +1859,7 @@ pub mod routes {
     }
 
     pub async fn token_metrics(State(state): State<Arc<AppState>>) -> Json<TokenMetricsResponse> {
-        let counters = state.token_counters.read().unwrap();
+        let counters = state.token_counters.read().expect("RwLock not poisoned");
         Json(TokenMetricsResponse {
             total_input: counters.total_input,
             total_output: counters.total_output,
@@ -1872,7 +1872,7 @@ pub mod routes {
     pub async fn context_metrics(
         State(state): State<Arc<AppState>>,
     ) -> Json<ContextMetricsResponse> {
-        let session_count = state.session_registry.read().unwrap().len() as u32;
+        let session_count = state.session_registry.read().expect("RwLock not poisoned").len() as u32;
 
         // Read context pressure from the most recent checkpoint
         let (avg_pressure, max_pressure) = if let Some(store) = &state.event_store {
@@ -1976,9 +1976,9 @@ pub mod routes {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
-        let session_count = state.session_registry.read().unwrap().len() as u32;
+        let session_count = state.session_registry.read().expect("RwLock not poisoned").len() as u32;
         let total_tokens = {
-            let counters = state.token_counters.read().unwrap();
+            let counters = state.token_counters.read().expect("RwLock not poisoned");
             counters.total_input + counters.total_output
         };
         Json(MetricsSummaryResponse {

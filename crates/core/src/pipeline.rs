@@ -1190,6 +1190,17 @@ impl CoreRuntime {
         // Assign a session ID
         self.session_id = Some(uuid::Uuid::new_v4());
         self.propagate_session_to_memory(self.session_id.unwrap());
+        // Capture a git rollback baseline (HEAD commit + uncommitted diff).
+        // Best-effort: skipped silently if no event store or not in a git repo.
+        if let Some(store) = &self.event_store
+            && let Some(cwd) = std::env::current_dir().ok()
+        {
+            if let Err(e) =
+                crate::rollback::capture_baseline(store, self.session_id.unwrap(), &cwd)
+            {
+                tracing::warn!("Failed to capture rollback baseline: {}", e);
+            }
+        }
 
         self.loop_controller.start();
         self.bus.publish(

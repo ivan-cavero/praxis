@@ -350,10 +350,12 @@ function handleLogin(token: string) {
 
         <!-- Main Content Area -->
         <div class="main-content">
-          <router-view />
+          <Transition name="page" mode="out-in">
+            <router-view />
+          </Transition>
         </div>
       </div>
-    </div>
+  </div>
 
     <!-- Settings Dialog (overlay) -->
     <SettingsDialog

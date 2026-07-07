@@ -20,6 +20,7 @@ pub mod r#loop;
 pub mod machine;
 pub mod orchestrator;
 pub mod pipeline;
+pub mod rollback;
 pub mod runtime;
 pub mod skills;
 pub mod workflow;

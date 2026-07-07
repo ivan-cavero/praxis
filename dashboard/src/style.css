@@ -295,7 +295,18 @@ button { font-family: inherit; }
 
 .animate-slide-up { animation: slideUp 0.25s ease-out; }
 .animate-slide-in-right { animation: slideInRight 0.25s ease-out; }
-.animate-scale-in { animation: scaleIn 0.2s ease-out; }
+.page-enter-active,
+.page-leave-active {
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
 .animate-pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
 .animate-float { animation: float 4s ease-in-out infinite; }
 

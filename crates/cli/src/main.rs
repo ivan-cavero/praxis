@@ -273,7 +273,7 @@ fn add_provider_to_project_config(
             .iter()
             .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
             .ok_or_else(|| format!("Project '{}' not found", name))?,
-        None => projects.last().unwrap(),
+        None => projects.last().ok_or("No projects configured")?,
     };
 
     let proj_name = project
@@ -2806,7 +2806,7 @@ async fn main() -> anyhow::Result<()> {
                         agent
                     );
                     let path = injections_dir.join(&filename);
-                    match std::fs::write(&path, serde_json::to_string_pretty(&injection).unwrap()) {
+                    match std::fs::write(&path, serde_json::to_string_pretty(&injection).map_err(|e| format!("Failed to serialize injection: {e}"))?) {
                         Ok(()) => {
                             println!(
                                 "{} Injection written for agent '{}'",
@@ -3033,7 +3033,7 @@ async fn main() -> anyhow::Result<()> {
             // For plan mode, we run the goal but with a manual completion criterion
             // so it stops after the first Planning + Designing iteration.
             runtime = runtime
-                .with_completion(praxis_core::CompletionCriterion::from_string("manual").unwrap());
+                .with_completion(praxis_core::CompletionCriterion::from_string("manual").map_err(|e| format!("Invalid completion criterion: {e}"))?);
 
             println!("  {} Running Planning + Designing phases...", "→".dimmed());
 
@@ -3310,7 +3310,7 @@ async fn main() -> anyhow::Result<()> {
             println!();
 
             // Pick the most recent session (last in list)
-            let session_id = session_ids.last().unwrap();
+            let session_id = session_ids.last().ok_or("No sessions found")?;
             println!(
                 "{} Watching most recent session: {}",
                 "→".cyan(),

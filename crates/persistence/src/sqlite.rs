@@ -172,6 +172,16 @@ impl SqliteEventStore {
             CREATE INDEX IF NOT EXISTS idx_episodic_session ON episodic_chunks(session_id);
             CREATE INDEX IF NOT EXISTS idx_episodic_project ON episodic_chunks(project_id);
             CREATE INDEX IF NOT EXISTS idx_episodic_timestamp ON episodic_chunks(timestamp);
+
+            -- Session baselines table (for rollback support)
+            -- Stores the git HEAD commit + uncommitted diff captured at run_goal start.
+            CREATE TABLE IF NOT EXISTS session_baselines (
+                session_id      TEXT PRIMARY KEY,
+                baseline_commit TEXT NOT NULL,
+                uncommitted_diff TEXT NOT NULL,
+                project_path    TEXT NOT NULL,
+                captured_at     TEXT NOT NULL
+            );
             ",
         )
         .map_err(|e| format!("Migration error: {}", e))?;
@@ -188,6 +198,73 @@ impl SqliteEventStore {
     pub fn pool(&self) -> &r2d2::Pool<SqliteConnectionManager> {
         &self.pool
     }
+
+    /// Save a session baseline (git HEAD commit + uncommitted diff) for rollback.
+    ///
+    /// Called at `run_goal` start so the session's file changes can be reverted.
+    /// Overwrites any prior baseline for the same session (idempotent re-capture).
+    pub fn save_session_baseline(&self, baseline: &SessionBaseline) -> Result<(), String> {
+        let _lock = self.write_lock.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO session_baselines
+                (session_id, baseline_commit, uncommitted_diff, project_path, captured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                baseline.session_id,
+                baseline.baseline_commit,
+                baseline.uncommitted_diff,
+                baseline.project_path,
+                baseline.captured_at,
+            ],
+        )
+        .map_err(|e| format!("Baseline save error: {}", e))?;
+        Ok(())
+    }
+
+    /// Load a session baseline previously saved by `save_session_baseline`.
+    pub fn get_session_baseline(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionBaseline>, String> {
+        let conn = self.conn()?;
+        let result = conn
+            .query_row(
+                "SELECT session_id, baseline_commit, uncommitted_diff, project_path, captured_at
+                 FROM session_baselines WHERE session_id = ?1",
+                params![session_id],
+                |row| {
+                    Ok(SessionBaseline {
+                        session_id: row.get(0)?,
+                        baseline_commit: row.get(1)?,
+                        uncommitted_diff: row.get(2)?,
+                        project_path: row.get(3)?,
+                        captured_at: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Baseline query error: {}", e))?;
+        Ok(result)
+    }
+}
+
+/// A git baseline captured at the start of a session, used for rollback.
+///
+/// Stores the HEAD commit hash and any uncommitted working-tree diff so a
+/// session's file changes can be reverted to the exact pre-session state.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionBaseline {
+    /// Session UUID this baseline belongs to (string form).
+    pub session_id: String,
+    /// Git commit hash of HEAD at session start (empty if not a git repo).
+    pub baseline_commit: String,
+    /// Uncommitted working-tree diff at session start (empty if clean / not a repo).
+    pub uncommitted_diff: String,
+    /// Absolute path of the project working directory at capture time.
+    pub project_path: String,
+    /// RFC3339 timestamp of capture.
+    pub captured_at: String,
 }
 
 #[async_trait]
@@ -587,5 +664,70 @@ mod tests {
         // Clean up
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[tokio::test]
+    async fn test_session_baseline_roundtrip() {
+        let store = SqliteEventStore::in_memory().expect("Failed to create store");
+
+        let baseline = SessionBaseline {
+            session_id: Uuid::new_v4().to_string(),
+            baseline_commit: "abc123def456".to_string(),
+            uncommitted_diff: "--- a/foo.rs\n+++ b/foo.rs\n".to_string(),
+            project_path: "/tmp/project".to_string(),
+            captured_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        store
+            .save_session_baseline(&baseline)
+            .expect("save baseline failed");
+
+        let loaded = store
+            .get_session_baseline(&baseline.session_id)
+            .expect("get baseline failed");
+        assert!(loaded.is_some());
+
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.baseline_commit, "abc123def456");
+        assert_eq!(loaded.uncommitted_diff, "--- a/foo.rs\n+++ b/foo.rs\n");
+        assert_eq!(loaded.project_path, "/tmp/project");
+    }
+
+    #[tokio::test]
+    async fn test_session_baseline_upsert() {
+        let store = SqliteEventStore::in_memory().expect("Failed to create store");
+        let sid = Uuid::new_v4().to_string();
+
+        let first = SessionBaseline {
+            session_id: sid.clone(),
+            baseline_commit: "commit1".to_string(),
+            uncommitted_diff: String::new(),
+            project_path: "/tmp".to_string(),
+            captured_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        store.save_session_baseline(&first).expect("save first");
+
+        let second = SessionBaseline {
+            session_id: sid.clone(),
+            baseline_commit: "commit2".to_string(),
+            uncommitted_diff: String::new(),
+            project_path: "/tmp".to_string(),
+            captured_at: "2026-01-02T00:00:00Z".to_string(),
+        };
+        store.save_session_baseline(&second).expect("save second");
+
+        let loaded = store
+            .get_session_baseline(&sid)
+            .expect("get baseline failed")
+            .expect("baseline missing");
+        assert_eq!(loaded.baseline_commit, "commit2");
+    }
+
+    #[tokio::test]
+    async fn test_session_baseline_missing() {
+        let store = SqliteEventStore::in_memory().expect("Failed to create store");
+        let loaded = store
+            .get_session_baseline("nonexistent-uuid")
+            .expect("get should not error");
+        assert!(loaded.is_none());
     }
 }
