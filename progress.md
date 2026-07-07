@@ -279,10 +279,10 @@ Competitive analysis and innovation.
 - [x] Create docs/competitor-analysis-market.md — created with 4-competitor comparison, Ralph loop analysis, port/don't-port recommendations, 8 key insights
 
 ### 10C — Innovation proposals
-- [ ] Research multi-repo goal support
-- [ ] Research agent/model marketplace concept
-- [ ] Research community goal templates
-- [ ] Create docs/innovation-proposals.md
+- [x] Research multi-repo goal support — analyzed Cursor cloud agent multi-repo; designed praxis workspace manifest (praxis-workspace.toml) + per-repo completion; verdict: Build (medium)
+- [x] Research agent/model marketplace concept — analyzed Claude Code plugins/marketplaces; designed praxis registry (git-based catalog); verdict: Defer (security: untrusted autonomous agents); interim: praxis agent import
+- [x] Research community goal templates — analyzed Claude Code skills/$ARGUMENTS; designed praxis goal templates (.md + $ARGUMENTS substitution, 3 scopes); verdict: Build (medium, lowest complexity)
+- [x] Create docs/innovation-proposals.md — created with 3 proposals, VISION alignment filter, architecture fit, complexity assessment, phasing, 6 key insights
 
 ---
 
