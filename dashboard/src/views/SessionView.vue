@@ -22,6 +22,16 @@ const liveTokens = ref(0)
 const liveCost = ref(0)
 const livePhase = ref('')
 const liveIteration = ref(0)
+let tokenFlashTimeout: ReturnType<typeof setTimeout> | null = null
+const tokenFlash = ref(false)
+
+watch(liveTokens, (newVal, oldVal) => {
+  if (oldVal !== undefined && newVal > oldVal) {
+    tokenFlash.value = true
+    if (tokenFlashTimeout) clearTimeout(tokenFlashTimeout)
+    tokenFlashTimeout = setTimeout(() => { tokenFlash.value = false }, 800)
+  }
+})
 
 let statePollInterval: ReturnType<typeof setInterval> | null = null
 
@@ -222,7 +232,7 @@ onUnmounted(() => {
         </div>
         <div class="detail-card">
           <div class="detail-card-label">Tokens</div>
-          <div class="detail-card-value">{{ (liveTokens || session.tokens_used || 0).toLocaleString() }}</div>
+          <div class="detail-card-value" :class="{ 'token-flash': tokenFlash }">{{ (liveTokens || session.tokens_used || 0).toLocaleString() }}</div>
         </div>
         <div class="detail-card">
           <div class="detail-card-label">Cost</div>
@@ -398,6 +408,16 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
+}
+.token-flash {
+  color: #22c55e;
+  animation: tokenFlashPulse 0.8s ease;
+}
+
+@keyframes tokenFlashPulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 .state-file-section {

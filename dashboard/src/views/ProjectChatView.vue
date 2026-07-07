@@ -303,6 +303,16 @@ const maxCost = ref<number | null>(null)
 const useWorktree = ref(false)
 const availableSkills = ref<SkillInfo[]>([])
 const enabledSkills = ref<string[]>([])
+let tokenFlashTimeout: ReturnType<typeof setTimeout> | null = null
+const tokenFlash = ref(false)
+
+watch(liveTokens, (newVal, oldVal) => {
+  if (oldVal !== undefined && newVal > oldVal) {
+    tokenFlash.value = true
+    if (tokenFlashTimeout) clearTimeout(tokenFlashTimeout)
+    tokenFlashTimeout = setTimeout(() => { tokenFlash.value = false }, 800)
+  }
+})
 
 onMounted(async () => {
   try {
@@ -564,7 +574,7 @@ watch(() => ws.events.value.length, () => {
       </div>
       <div class="live-state-item">
         <span class="live-state-label">Tokens</span>
-        <span class="live-state-value">{{ liveTokens.toLocaleString() }}</span>
+        <span class="live-state-value" :class="{ 'token-flash': tokenFlash }">{{ liveTokens.toLocaleString() }}</span>
       </div>
       <div class="live-state-item">
         <span class="live-state-label">Cost</span>
@@ -1140,6 +1150,16 @@ watch(() => ws.events.value.length, () => {
   font-family: var(--font-mono, monospace);
   color: var(--text-secondary);
   font-weight: 500;
+}
+.token-flash {
+  color: #22c55e !important;
+  animation: tokenFlashPulse 0.8s ease;
+}
+
+@keyframes tokenFlashPulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 .status-running {
