@@ -352,12 +352,18 @@ impl DriftGuard {
         let agent_sample = sample.clone();
         self.metrics.record(sample);
 
-        // Track per-agent metrics
+        // Track per-agent metrics and compute per-agent ASI
         if let Some(agent_id) = agent_id {
             let agent_collector = self.agent_metrics
                 .entry(agent_id.to_string())
                 .or_insert_with(|| MetricsCollector::with_baseline_size(5));
             agent_collector.record(agent_sample);
+
+            // Compute per-agent ASI once a baseline is established
+            if agent_collector.has_baseline() {
+                let (agent_score, _) = self.asi_calculator.from_collector(agent_collector);
+                self.agent_asi.insert(agent_id.to_string(), agent_score);
+            }
         }
 
         if !self.metrics.has_baseline() {
