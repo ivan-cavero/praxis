@@ -40,7 +40,7 @@ Eliminate production-code unwraps, clippy warnings, dead code, missing error han
 - [x] Add #[instrument(skip(self))] to all pub async fn in CoreRuntime — added to run_goal, resume_goal
 - [x] Add #[instrument] to gate.rs and phase.rs public fns — added to Gate::evaluate(), GateRegistry::evaluate_phase(), StateMachine::transition(), StateMachine::detect_cycle()
 - [x] Add #[instrument] to drift/metrics.rs, asi.rs, recovery.rs — added to recovery.rs evaluate() and record_and_evaluate()
-- [ ] Add #[instrument] to all provider.chat() and provider.stream() methods
+- [x] Add #[instrument] to all provider.chat() and provider.stream() methods — added to OpenAI, Anthropic, Gemini, Ollama, Mock providers
 
 ### 1D — unsafe audit
 - [x] Find ALL unsafe blocks in crates/ (exclude #[cfg(test)]) — one found: vault/src/env.rs:136 (std::env::set_var in load_dotenv)
