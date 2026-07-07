@@ -273,3 +273,110 @@ pub async fn get_api_port(state: State<'_, AppState>) -> Result<u16, String> {
     let guard = state.api_port.read().await;
     guard.ok_or_else(|| "API server not yet started".to_string())
 }
+
+// ─── Tests ────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_load_session_empty_store() {
+        let store = SqliteEventStore::in_memory().unwrap();
+        let result = load_session(&Arc::new(store), &Uuid::new_v4()).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_session_with_snapshot() {
+        let store = SqliteEventStore::in_memory().unwrap();
+        let id = Uuid::new_v4();
+
+        // Create a minimal snapshot manually via the event store
+        use praxis_agent_traits::persistence::StoredSnapshot;
+        let mut state = serde_json::Map::new();
+        state.insert("goal".to_string(), serde_json::json!("test goal"));
+        state.insert("phase".to_string(), serde_json::json!("Planning"));
+        state.insert("iteration".to_string(), serde_json::json!(42));
+
+        let snap = StoredSnapshot {
+            aggregate_id: id,
+            aggregate_type: "session".to_string(),
+            state: serde_json::Value::Object(state),
+            version: 1,
+            updated_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+
+        store.save_snapshot(snap).await.unwrap();
+
+        let result = load_session(&Arc::new(store), &id).await;
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.goal, "test goal");
+        assert_eq!(info.iteration, 42);
+        assert_eq!(info.phase, "Planning");
+        assert_eq!(info.status, "running");
+    }
+
+    #[tokio::test]
+    async fn test_load_session_completed() {
+        let store = SqliteEventStore::in_memory().unwrap();
+        let id = Uuid::new_v4();
+
+        use praxis_agent_traits::persistence::StoredSnapshot;
+        let mut state = serde_json::Map::new();
+        state.insert("goal".to_string(), serde_json::json!("done goal"));
+        state.insert("phase".to_string(), serde_json::json!("Completed"));
+        state.insert("iteration".to_string(), serde_json::json!(10));
+
+        let snap = StoredSnapshot {
+            aggregate_id: id,
+            aggregate_type: "session".to_string(),
+            state: serde_json::Value::Object(state),
+            version: 1,
+            updated_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+
+        store.save_snapshot(snap).await.unwrap();
+
+        let result = load_session(&Arc::new(store), &id).await;
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().status, "completed");
+    }
+
+    #[test]
+    fn test_version_info_serialization() {
+        let info = VersionInfo {
+            version: "0.5.1".to_string(),
+            commit: "abc1234".to_string(),
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("0.5.1"));
+        assert!(json.contains("abc1234"));
+    }
+
+    #[test]
+    fn test_status_info_serialization() {
+        let info = StatusInfo {
+            running: true,
+            uptime_secs: 120,
+            version: "0.5.1".to_string(),
+            iteration: 5,
+            phase: "Implementing".to_string(),
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("true"));
+        assert!(json.contains("120"));
+    }
+
+    #[test]
+    fn test_metrics_info_serialization() {
+        let info = MetricsInfo {
+            total_tokens: 50000,
+            active_sessions: 1,
+            iteration: 3,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("50000"));
+    }
+}
