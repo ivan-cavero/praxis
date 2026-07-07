@@ -241,7 +241,7 @@ fn resolve_config_path(project_name: Option<&str>) -> Option<PathBuf> {
 
 /// Load ForgeConfig from project, or return default empty config.
 fn load_project_config(project_name: Option<&str>) -> praxis_core::ForgeConfig {
-    resolve_config_path(project_name.as_deref())
+    resolve_config_path(project_name)
         .and_then(|path| praxis_core::load_forge_config(&path).ok())
         .unwrap_or_default()
 }
@@ -1104,12 +1104,11 @@ async fn main() -> anyhow::Result<()> {
                         runtime = runtime.with_completion(
                             praxis_core::CompletionCriterion::from_until_command(cmd.clone()),
                         );
-                    } else if completion != "coding" {
-                        if let Some(criterion) =
+                    } else if completion != "coding"
+                        && let Some(criterion) =
                             praxis_core::CompletionCriterion::from_string(&completion)
-                        {
-                            runtime = runtime.with_completion(criterion);
-                        }
+                    {
+                        runtime = runtime.with_completion(criterion);
                     }
 
                     // Apply token/cost budget overrides from CLI
@@ -1132,7 +1131,7 @@ async fn main() -> anyhow::Result<()> {
                     }
 
                     let result = runtime
-                        .run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                        .run_goal(&g, config_path.as_deref(), vault.as_deref())
                         .await?;
 
                     // Clean up temp config file
@@ -1191,13 +1190,12 @@ async fn main() -> anyhow::Result<()> {
                             praxis_core::CompletionCriterion::from_until_command(cmd.clone()),
                         );
                         println!("  {} Until: {}", "→".dimmed(), cmd.cyan());
-                    } else if completion != "coding" {
-                        if let Some(criterion) =
+                    } else if completion != "coding"
+                        && let Some(criterion) =
                             praxis_core::CompletionCriterion::from_string(&completion)
-                        {
-                            runtime = runtime.with_completion(criterion);
-                            println!("  {} Completion: {}", "→".dimmed(), completion);
-                        }
+                    {
+                        runtime = runtime.with_completion(criterion);
+                        println!("  {} Completion: {}", "→".dimmed(), completion);
                     }
 
                     // Apply token/cost budget overrides from CLI
@@ -1341,7 +1339,7 @@ async fn main() -> anyhow::Result<()> {
 
                     // Run through the full agent pipeline
                     let result = runtime
-                        .run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                        .run_goal(&g, config_path.as_deref(), vault.as_deref())
                         .await?;
 
                     // Clean up temp config file
@@ -1457,7 +1455,7 @@ async fn main() -> anyhow::Result<()> {
                 });
 
                 let result = runtime
-                    .resume_goal(session_id, None, vault.as_ref().map(|v| &**v))
+                    .resume_goal(session_id, None, vault.as_deref())
                     .await?;
 
                 match result {
@@ -1794,10 +1792,10 @@ async fn main() -> anyhow::Result<()> {
                         .unwrap_or("?")
                         .dimmed()
                 );
-                if let Some(desc) = project.get("description").and_then(|v| v.as_str()) {
-                    if !desc.is_empty() {
-                        println!("  {} Description: {}", "→".cyan(), desc);
-                    }
+                if let Some(desc) = project.get("description").and_then(|v| v.as_str())
+                    && !desc.is_empty()
+                {
+                    println!("  {} Description: {}", "→".cyan(), desc);
                 }
                 println!(
                     "  {} Created: {}",
@@ -2019,7 +2017,7 @@ async fn main() -> anyhow::Result<()> {
                             event.event_type.cyan(),
                             event.version
                         );
-                        if let Some(pretty) = serde_json::to_string_pretty(&event.payload).ok() {
+                        if let Ok(pretty) = serde_json::to_string_pretty(&event.payload) {
                             for line in pretty.lines().take(3) {
                                 println!("    {}", line.dimmed());
                             }
@@ -2547,8 +2545,8 @@ async fn main() -> anyhow::Result<()> {
                     );
                 } else {
                     println!(
-                        "  {:<6} {:<12} {:<14} {}",
-                        "Iteration", "Pressure In", "Pressure Out", "Time"
+                        "  {:<6} {:<12} {:<14} Time",
+                        "Iteration", "Pressure In", "Pressure Out"
                     );
                     println!("  {}", "─".repeat(50));
                     for (_id, iteration, pressure_before, pressure_after, created_at) in
@@ -2742,8 +2740,7 @@ async fn main() -> anyhow::Result<()> {
                                 event.event_type.cyan(),
                                 event.version,
                             );
-                            if let Some(pretty) = serde_json::to_string_pretty(&event.payload).ok()
-                            {
+                            if let Ok(pretty) = serde_json::to_string_pretty(&event.payload) {
                                 for line in pretty.lines().take(5) {
                                     println!("    {}", line.dimmed());
                                 }
@@ -2773,7 +2770,7 @@ async fn main() -> anyhow::Result<()> {
                             println!("  {} Type: {}", "→".cyan(), snap.aggregate_type);
                             println!("  {} Version: {}", "→".cyan(), snap.version);
                             println!("  {} Updated: {}", "→".cyan(), snap.updated_at);
-                            if let Some(pretty) = serde_json::to_string_pretty(&snap.state).ok() {
+                            if let Ok(pretty) = serde_json::to_string_pretty(&snap.state) {
                                 println!();
                                 println!("  {} State:", "→".cyan());
                                 println!("{}", pretty.dimmed());
@@ -2914,7 +2911,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 let result = runtime
-                    .run_goal(&goal, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                    .run_goal(&goal, config_path.as_deref(), vault.as_deref())
                     .await?;
 
                 // Clean up temp config file
@@ -2957,27 +2954,27 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 // Check cumulative budget
-                if let Some(mt) = max_tokens {
-                    if total_tokens >= mt {
-                        println!(
-                            "{} Token budget exhausted: {}/{}",
-                            "⚠".yellow(),
-                            total_tokens,
-                            mt
-                        );
-                        break;
-                    }
+                if let Some(mt) = max_tokens
+                    && total_tokens >= mt
+                {
+                    println!(
+                        "{} Token budget exhausted: {}/{}",
+                        "⚠".yellow(),
+                        total_tokens,
+                        mt
+                    );
+                    break;
                 }
-                if let Some(mc) = max_cost {
-                    if total_cost >= mc {
-                        println!(
-                            "{} Cost budget exhausted: ${:.4}/${:.4}",
-                            "⚠".yellow(),
-                            total_cost,
-                            mc
-                        );
-                        break;
-                    }
+                if let Some(mc) = max_cost
+                    && total_cost >= mc
+                {
+                    println!(
+                        "{} Cost budget exhausted: ${:.4}/${:.4}",
+                        "⚠".yellow(),
+                        total_cost,
+                        mc
+                    );
+                    break;
                 }
 
                 if run_num < max_runs {
@@ -3041,7 +3038,7 @@ async fn main() -> anyhow::Result<()> {
             println!("  {} Running Planning + Designing phases...", "→".dimmed());
 
             let result = runtime
-                .run_goal(&goal, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                .run_goal(&goal, config_path.as_deref(), vault.as_deref())
                 .await?;
 
             // Clean up temp config

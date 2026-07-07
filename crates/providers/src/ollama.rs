@@ -167,11 +167,10 @@ impl LLMProvider for OllamaProvider {
                             }
 
                             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                                if let Some(content) = value["message"]["content"].as_str() {
-                                    if !content.is_empty() {
-                                        let _ =
-                                            tx.send(StreamChunk::Delta(content.to_string())).await;
-                                    }
+                                if let Some(content) = value["message"]["content"].as_str()
+                                    && !content.is_empty()
+                                {
+                                    let _ = tx.send(StreamChunk::Delta(content.to_string())).await;
                                 }
                                 if value["done"].as_bool().unwrap_or(false) {
                                     let usage = TokenUsage::new(

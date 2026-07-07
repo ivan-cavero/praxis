@@ -35,7 +35,7 @@ fn api_get(endpoint: &str, token: &str) -> Result<Value, String> {
         endpoint.trim_start_matches('/')
     );
     let output = Command::new("curl")
-        .args(&[
+        .args([
             "-s",
             "-H",
             &format!("Authorization: Bearer {}", token),
@@ -67,7 +67,7 @@ fn api_post(endpoint: &str, token: &str, body: &Value) -> Result<Value, String> 
         serde_json::to_string(body).map_err(|e| format!("Serialization error: {}", e))?;
 
     let output = Command::new("curl")
-        .args(&[
+        .args([
             "-s",
             "-X",
             "POST",
@@ -475,7 +475,7 @@ fn main() {
 
     // Detect if `gh` CLI is available
     let use_gh = Command::new("gh")
-        .args(&["--version"])
+        .args(["--version"])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);

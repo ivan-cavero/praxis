@@ -12,16 +12,11 @@ pub struct Transition {
 }
 
 /// Condition that must be met for a transition.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub enum TransitionCondition {
+    #[default]
     Automatic,
     AllAgentsComplete,
     GatePassed(String),
     MaxIterationsReached,
-}
-
-impl Default for TransitionCondition {
-    fn default() -> Self {
-        Self::Automatic
-    }
 }

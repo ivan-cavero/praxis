@@ -511,12 +511,11 @@ impl CoreRuntime {
         const MAX_RAG_CHUNKS: usize = 20;
         const MIN_RAG_CHUNKS: usize = 1;
 
-        let k = self.context_budget.as_ref().map_or(5, |budget| {
+        self.context_budget.as_ref().map_or(5, |budget| {
             let rag_budget = budget.section_budget(praxis_memory::context::Section::MemoryRag);
             let k = rag_budget / AVG_CHUNK_TOKENS;
             k.clamp(MIN_RAG_CHUNKS, MAX_RAG_CHUNKS)
-        });
-        k
+        })
     }
 
     /// Attach a context budget for budget-aware RAG injection and pressure tracking.
@@ -649,7 +648,7 @@ impl CoreRuntime {
         let Some(window) = window else {
             return;
         };
-        if window.len() == 0 {
+        if window.is_empty() {
             return;
         }
 
@@ -666,7 +665,7 @@ impl CoreRuntime {
         context_manager.prepare(&mut ctx_window);
 
         // Inject compressed history as a "Recent History" section
-        if ctx_window.len() > 0 {
+        if !ctx_window.is_empty() {
             let history = ctx_window
                 .messages
                 .iter()
@@ -702,8 +701,6 @@ impl CoreRuntime {
                 dimension: "overall".to_string(),
                 severity: if report.asi_score < 40.0 {
                     praxis_shared::protocol::DriftSeverity::Critical
-                } else if report.asi_score < 60.0 {
-                    praxis_shared::protocol::DriftSeverity::Warning
                 } else {
                     praxis_shared::protocol::DriftSeverity::Warning
                 },
@@ -858,30 +855,27 @@ impl CoreRuntime {
         // 2. Read file-based injections from data_dir/injections/
         if let Some(ref data_dir) = self.data_dir {
             let injections_dir = data_dir.join("injections");
-            if injections_dir.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&injections_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().is_some_and(|ext| ext == "json") {
-                            if let Ok(content) = std::fs::read_to_string(&path) {
-                                if let Ok(msg) = serde_json::from_str::<InjectedMessage>(&content) {
-                                    if msg.target_agent == agent_name || msg.target_agent == "all" {
-                                        tracing::info!(
-                                            "Picked up file injection for '{}': {}",
-                                            agent_name,
-                                            msg.content
-                                        );
-                                        relevant.push(msg);
-                                        // Only delete the file if it was successfully parsed and matched
-                                        let _ = std::fs::remove_file(&path);
-                                    }
-                                } else {
-                                    tracing::warn!(
-                                        "Failed to parse injection file: {}",
-                                        path.display()
-                                    );
-                                }
+            if injections_dir.is_dir()
+                && let Ok(entries) = std::fs::read_dir(&injections_dir)
+            {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|ext| ext == "json")
+                        && let Ok(content) = std::fs::read_to_string(&path)
+                    {
+                        if let Ok(msg) = serde_json::from_str::<InjectedMessage>(&content) {
+                            if msg.target_agent == agent_name || msg.target_agent == "all" {
+                                tracing::info!(
+                                    "Picked up file injection for '{}': {}",
+                                    agent_name,
+                                    msg.content
+                                );
+                                relevant.push(msg);
+                                // Only delete the file if it was successfully parsed and matched
+                                let _ = std::fs::remove_file(&path);
                             }
+                        } else {
+                            tracing::warn!("Failed to parse injection file: {}", path.display());
                         }
                     }
                 }
@@ -1220,10 +1214,7 @@ impl CoreRuntime {
                     continue;
                 }
             };
-            let provider = match self.resolve_provider_for_model(&child_def.model()) {
-                Some(p) => Some(p),
-                None => None,
-            };
+            let provider = self.resolve_provider_for_model(child_def.model());
 
             match crate::delegation::delegate_to_subagent(
                 &request,
@@ -1301,12 +1292,8 @@ impl CoreRuntime {
         let mut tools_called: Vec<ToolCallInfo> = Vec::new();
         let mut search_start = 0;
 
-        loop {
-            // Find the next ```tool marker
-            let open_start = match output[search_start..].find("```tool") {
-                Some(pos) => search_start + pos,
-                None => break,
-            };
+        while let Some(pos) = output[search_start..].find("```tool") {
+            let open_start = search_start + pos;
 
             // Find the opening newline after ```tool
             let content_start = match output[open_start..].find('\n') {
@@ -1537,17 +1524,16 @@ impl CoreRuntime {
             .strip_prefix("keyring:")
             .or_else(|| ref_str.strip_prefix("vault:"));
         if let Some(name) = vault_name {
-            if let Some(v) = vault {
-                if let Ok(Some(key)) = v.get(name) {
-                    if !key.is_empty() {
-                        tracing::info!(
-                            "Loaded API key for '{}' from vault (ref: {})",
-                            name,
-                            ref_str
-                        );
-                        return key;
-                    }
-                }
+            if let Some(v) = vault
+                && let Ok(Some(key)) = v.get(name)
+                && !key.is_empty()
+            {
+                tracing::info!(
+                    "Loaded API key for '{}' from vault (ref: {})",
+                    name,
+                    ref_str
+                );
+                return key;
             }
             tracing::warn!(
                 "Vault ref '{}' but no key found in vault for '{}'",
@@ -1559,15 +1545,15 @@ impl CoreRuntime {
 
         // 2. Environment variable reference: "env:VAR_NAME"
         if let Some(var_name) = ref_str.strip_prefix("env:") {
-            if let Ok(value) = std::env::var(var_name) {
-                if !value.is_empty() {
-                    tracing::info!(
-                        "Loaded API key for '{}' from env:{}",
-                        provider_name,
-                        var_name
-                    );
-                    return value;
-                }
+            if let Ok(value) = std::env::var(var_name)
+                && !value.is_empty()
+            {
+                tracing::info!(
+                    "Loaded API key for '{}' from env:{}",
+                    provider_name,
+                    var_name
+                );
+                return value;
             }
             tracing::warn!(
                 "Env var '{}' not set or empty for provider '{}'",
@@ -1579,16 +1565,15 @@ impl CoreRuntime {
 
         // 3. Empty ref: try vault by provider name as fallback
         if ref_str.is_empty() {
-            if let Some(v) = vault {
-                if let Ok(Some(key)) = v.get(provider_name) {
-                    if !key.is_empty() {
-                        tracing::info!(
-                            "Loaded API key for '{}' from vault (by name)",
-                            provider_name
-                        );
-                        return key;
-                    }
-                }
+            if let Some(v) = vault
+                && let Ok(Some(key)) = v.get(provider_name)
+                && !key.is_empty()
+            {
+                tracing::info!(
+                    "Loaded API key for '{}' from vault (by name)",
+                    provider_name
+                );
+                return key;
             }
             return String::new();
         }
@@ -1956,11 +1941,10 @@ impl CoreRuntime {
                             if let Some(report) = self
                                 .drift_guard
                                 .record_and_evaluate(drift_sample, Some(&result.agent_id))
+                                && let Some(action) = &report.recovery_action
                             {
-                                if let Some(action) = &report.recovery_action {
-                                    self.handle_recovery_action(action, Some(&result.agent_id))
-                                        .await;
-                                }
+                                self.handle_recovery_action(action, Some(&result.agent_id))
+                                    .await;
                             }
                             // ── End drift metrics ──────────────────────────
                         }
@@ -2304,11 +2288,10 @@ impl CoreRuntime {
                     if let Some(report) = self
                         .drift_guard
                         .record_and_evaluate(drift_sample, Some(&result.agent_id))
+                        && let Some(action) = &report.recovery_action
                     {
-                        if let Some(action) = &report.recovery_action {
-                            self.handle_recovery_action(action, Some(&result.agent_id))
-                                .await;
-                        }
+                        self.handle_recovery_action(action, Some(&result.agent_id))
+                            .await;
                     }
                     // ── End drift metrics ──────────────────────────────
                 }
@@ -2514,30 +2497,29 @@ impl CoreRuntime {
                     | machine::phase::Phase::Testing
                     | machine::phase::Phase::SecurityScan
                     | machine::phase::Phase::Finalizing
-            ) {
-                if let Some(criterion) = &mut self.completion_criterion {
-                    let outcome = criterion.evaluate(goal, &results).await;
+            ) && let Some(criterion) = &mut self.completion_criterion
+            {
+                let outcome = criterion.evaluate(goal, &results).await;
 
-                    match outcome {
-                        completion::OutcomeResult::Achieved { evidence, .. } => {
-                            tracing::info!(
-                                "Goal achieved (verified by {}). Evidence: {}",
-                                criterion.verifier_name(),
-                                &evidence[..evidence.len().min(200)]
-                            );
-                            current_phase = machine::phase::Phase::Completed;
-                            self.loop_controller
-                                .advance(machine::phase::Phase::Completed)
-                                .map_err(CoreError::StateMachine)?;
-                            break;
-                        }
-                        completion::OutcomeResult::Exhausted { reason } => {
-                            tracing::warn!("Goal exhausted: {}. Stopping loop.", reason);
-                            break;
-                        }
-                        completion::OutcomeResult::NotAchieved { reason } => {
-                            tracing::info!("Goal not yet achieved: {}. Continuing.", reason);
-                        }
+                match outcome {
+                    completion::OutcomeResult::Achieved { evidence, .. } => {
+                        tracing::info!(
+                            "Goal achieved (verified by {}). Evidence: {}",
+                            criterion.verifier_name(),
+                            &evidence[..evidence.len().min(200)]
+                        );
+                        current_phase = machine::phase::Phase::Completed;
+                        self.loop_controller
+                            .advance(machine::phase::Phase::Completed)
+                            .map_err(CoreError::StateMachine)?;
+                        break;
+                    }
+                    completion::OutcomeResult::Exhausted { reason } => {
+                        tracing::warn!("Goal exhausted: {}. Stopping loop.", reason);
+                        break;
+                    }
+                    completion::OutcomeResult::NotAchieved { reason } => {
+                        tracing::info!("Goal not yet achieved: {}. Continuing.", reason);
                     }
                 }
             }
@@ -2798,11 +2780,10 @@ impl CoreRuntime {
                 if let Some(report) = self
                     .drift_guard
                     .record_and_evaluate(drift_sample, Some(&result.agent_id))
+                    && let Some(action) = &report.recovery_action
                 {
-                    if let Some(action) = &report.recovery_action {
-                        self.handle_recovery_action(action, Some(&result.agent_id))
-                            .await;
-                    }
+                    self.handle_recovery_action(action, Some(&result.agent_id))
+                        .await;
                 }
                 // ── End drift metrics ──────────────────────────────
             }
@@ -2910,24 +2891,23 @@ impl CoreRuntime {
                     | machine::phase::Phase::Testing
                     | machine::phase::Phase::SecurityScan
                     | machine::phase::Phase::Finalizing
-            ) {
-                if let Some(criterion) = &mut self.completion_criterion {
-                    let outcome = criterion.evaluate(&goal, &results).await;
-                    match outcome {
-                        completion::OutcomeResult::Achieved { .. } => {
-                            current_phase = machine::phase::Phase::Completed;
-                            self.loop_controller
-                                .advance(machine::phase::Phase::Completed)
-                                .map_err(CoreError::StateMachine)?;
-                            break;
-                        }
-                        completion::OutcomeResult::Exhausted { reason } => {
-                            tracing::warn!("Goal exhausted: {}. Stopping.", reason);
-                            break;
-                        }
-                        completion::OutcomeResult::NotAchieved { reason } => {
-                            tracing::info!("Goal not yet achieved: {}. Continuing.", reason);
-                        }
+            ) && let Some(criterion) = &mut self.completion_criterion
+            {
+                let outcome = criterion.evaluate(&goal, &results).await;
+                match outcome {
+                    completion::OutcomeResult::Achieved { .. } => {
+                        current_phase = machine::phase::Phase::Completed;
+                        self.loop_controller
+                            .advance(machine::phase::Phase::Completed)
+                            .map_err(CoreError::StateMachine)?;
+                        break;
+                    }
+                    completion::OutcomeResult::Exhausted { reason } => {
+                        tracing::warn!("Goal exhausted: {}. Stopping.", reason);
+                        break;
+                    }
+                    completion::OutcomeResult::NotAchieved { reason } => {
+                        tracing::info!("Goal not yet achieved: {}. Continuing.", reason);
                     }
                 }
             }

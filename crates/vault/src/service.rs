@@ -120,7 +120,7 @@ impl VaultService {
         for (key, value) in entries {
             let resolved = if self.encrypted {
                 let master_key = self.master_key.as_ref().ok_or(VaultError::NoMasterKey)?;
-                decrypt(&value, master_key).unwrap_or_else(|_| value) // If decryption fails, store raw
+                decrypt(&value, master_key).unwrap_or(value) // If decryption fails, store raw
             } else {
                 value
             };

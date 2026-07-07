@@ -55,7 +55,7 @@ impl SummarizerAgent {
             memory
                 .by_session(session_id)
                 .into_iter()
-                .map(|c| c.clone())
+                .cloned()
                 .collect::<Vec<_>>()
         };
 

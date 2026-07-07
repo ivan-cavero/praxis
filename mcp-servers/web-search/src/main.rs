@@ -49,8 +49,7 @@ fn parse_ddg_html(html: &str) -> Vec<Value> {
                                     .unwrap_or(url.len());
                                 let encoded = &url[uddg_start..uddg_end];
                                 // Simple URL decode
-                                let decoded = url_decode(encoded);
-                                decoded
+                                url_decode(encoded)
                             } else {
                                 url.to_string()
                             }
@@ -68,14 +67,14 @@ fn parse_ddg_html(html: &str) -> Vec<Value> {
         }
 
         // DDG Lite also shows snippets in a div with class "result-snippet"
-        if trimmed.contains("result-snippet") {
-            if let Some(start) = trimmed.find("result-snippet\">") {
-                let start = start + 16;
-                if let Some(end) = trimmed[start..].find("</") {
-                    let snippet = &trimmed[start..start + end];
-                    if let Some(last) = results.last_mut() {
-                        last["snippet"] = json!(html_unescape(snippet.trim()));
-                    }
+        if trimmed.contains("result-snippet")
+            && let Some(start) = trimmed.find("result-snippet\">")
+        {
+            let start = start + 16;
+            if let Some(end) = trimmed[start..].find("</") {
+                let snippet = &trimmed[start..start + end];
+                if let Some(last) = results.last_mut() {
+                    last["snippet"] = json!(html_unescape(snippet.trim()));
                 }
             }
         }
@@ -103,11 +102,11 @@ fn url_decode(s: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '%' {
             let hex: String = chars.by_ref().take(2).collect();
-            if hex.len() == 2 {
-                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                    result.push(byte as char);
-                    continue;
-                }
+            if hex.len() == 2
+                && let Ok(byte) = u8::from_str_radix(&hex, 16)
+            {
+                result.push(byte as char);
+                continue;
             }
             result.push('%');
             result.push_str(&hex);
@@ -126,7 +125,7 @@ fn search_ddg(query: &str, max_results: usize) -> Result<Value, String> {
     let url = format!("https://lite.duckduckgo.com/lite/?q={}", urlencode(query));
 
     let output = Command::new("curl")
-        .args(&["-s", "-L", "-A", "Mozilla/5.0", &url])
+        .args(["-s", "-L", "-A", "Mozilla/5.0", &url])
         .output()
         .map_err(|e| format!("Failed to execute curl: {}", e))?;
 
@@ -156,12 +155,12 @@ fn search_brave(query: &str, max_results: usize, api_key: &str) -> Result<Value,
     );
 
     let output = Command::new("curl")
-        .args(&[
+        .args([
             "-s",
             "-H",
-            &format!("Accept: application/json"),
+            "Accept: application/json",
             "-H",
-            &format!("Accept-Encoding: gzip"),
+            "Accept-Encoding: gzip",
             "-H",
             &format!("X-Subscription-Token: {}", api_key),
             &url,
@@ -246,7 +245,7 @@ fn tool_extract(args: &Value) -> Result<Value, String> {
         .ok_or_else(|| "Missing required argument: url".to_string())?;
 
     let output = Command::new("curl")
-        .args(&[
+        .args([
             "-s",
             "-L",
             "-A",

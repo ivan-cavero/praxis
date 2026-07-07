@@ -113,14 +113,14 @@ impl LoopController {
         }
 
         // Phase timeout
-        if let Some(duration) = self.state_machine.phase_duration() {
-            if duration >= std::time::Duration::from_secs(self.limits.phase_timeout_seconds) {
-                return Some(LimitViolation::PhaseTimeout {
-                    phase: self.state_machine.current(),
-                    duration,
-                    max: std::time::Duration::from_secs(self.limits.phase_timeout_seconds),
-                });
-            }
+        if let Some(duration) = self.state_machine.phase_duration()
+            && duration >= std::time::Duration::from_secs(self.limits.phase_timeout_seconds)
+        {
+            return Some(LimitViolation::PhaseTimeout {
+                phase: self.state_machine.current(),
+                duration,
+                max: std::time::Duration::from_secs(self.limits.phase_timeout_seconds),
+            });
         }
 
         // Token budget cap

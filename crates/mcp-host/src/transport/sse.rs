@@ -68,12 +68,11 @@ impl SseTransport {
                             let line = buffer[..line_end].trim().to_string();
                             buffer = buffer[line_end + 1..].to_string();
 
-                            if let Some(data) = line.strip_prefix("data: ") {
-                                if let Ok(msg) = serde_json::from_str::<JsonRpcMessage>(data) {
-                                    if tx.send(msg).await.is_err() {
-                                        return;
-                                    }
-                                }
+                            if let Some(data) = line.strip_prefix("data: ")
+                                && let Ok(msg) = serde_json::from_str::<JsonRpcMessage>(data)
+                                && tx.send(msg).await.is_err()
+                            {
+                                return;
                             }
                         }
                     }

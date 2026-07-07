@@ -45,7 +45,7 @@ impl ASICalculator {
 
             // Convert z-score to 0-100 scale
             // z=0 → 100 (healthy), z=1 → 80, z=2 → 60, z=3 → 40
-            let normalized = (100.0 - score.value * 20.0).max(0.0).min(100.0);
+            let normalized = (100.0 - score.value * 20.0).clamp(0.0, 100.0);
 
             weighted_sum += normalized * weight;
             total_weight += weight;

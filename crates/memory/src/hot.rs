@@ -99,6 +99,10 @@ impl SlidingWindow {
         self.window.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.window.is_empty()
+    }
+
     /// Current total tokens.
     pub fn tokens(&self) -> u32 {
         self.total_tokens

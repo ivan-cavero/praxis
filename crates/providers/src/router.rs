@@ -61,18 +61,17 @@ impl ProviderRouter {
         }
 
         // 2. Model prefix matching
-        let provider_name = Self::detect_provider(model);
-        if let Some(name) = provider_name {
-            if let Some(reg) = self.providers.get(&name) {
-                return Ok(reg.provider.clone());
-            }
+        if let Some(name) = Self::detect_provider(model)
+            && let Some(reg) = self.providers.get(&name)
+        {
+            return Ok(reg.provider.clone());
         }
 
         // 3. Default
-        if let Some(ref default) = self.default_provider {
-            if let Some(reg) = self.providers.get(default) {
-                return Ok(reg.provider.clone());
-            }
+        if let Some(ref default) = self.default_provider
+            && let Some(reg) = self.providers.get(default)
+        {
+            return Ok(reg.provider.clone());
         }
 
         Err(format!("No provider found for model '{}'", model))
@@ -80,10 +79,10 @@ impl ProviderRouter {
 
     /// Get the tier for a model.
     pub fn tier_for(&self, model: &str) -> Option<praxis_agent_traits::provider::ModelTier> {
-        if let Some(name) = Self::detect_provider(model) {
-            if let Some(reg) = self.providers.get(&name) {
-                return Some(reg.tier.clone());
-            }
+        if let Some(name) = Self::detect_provider(model)
+            && let Some(reg) = self.providers.get(&name)
+        {
+            return Some(reg.tier.clone());
         }
         None
     }

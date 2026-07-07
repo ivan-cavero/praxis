@@ -214,26 +214,19 @@ impl LLMProvider for GeminiProvider {
                             if line.is_empty() || line == "data: [DONE]" {
                                 continue;
                             }
-                            if let Some(data) = line.strip_prefix("data: ") {
-                                if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
-                                    if let Some(content) =
-                                        value["choices"][0]["delta"]["content"].as_str()
-                                    {
-                                        if !content.is_empty() {
-                                            let _ = tx
-                                                .send(StreamChunk::Delta(content.to_string()))
-                                                .await;
-                                        }
-                                    }
-                                    if let Some(finish) =
-                                        value["choices"][0]["finish_reason"].as_str()
-                                    {
-                                        if finish == "stop" {
-                                            let _ = tx
-                                                .send(StreamChunk::Done(TokenUsage::new(0, 0)))
-                                                .await;
-                                        }
-                                    }
+                            if let Some(data) = line.strip_prefix("data: ")
+                                && let Ok(value) = serde_json::from_str::<serde_json::Value>(data)
+                            {
+                                if let Some(content) =
+                                    value["choices"][0]["delta"]["content"].as_str()
+                                    && !content.is_empty()
+                                {
+                                    let _ = tx.send(StreamChunk::Delta(content.to_string())).await;
+                                }
+                                if let Some(finish) = value["choices"][0]["finish_reason"].as_str()
+                                    && finish == "stop"
+                                {
+                                    let _ = tx.send(StreamChunk::Done(TokenUsage::new(0, 0))).await;
                                 }
                             }
                         }

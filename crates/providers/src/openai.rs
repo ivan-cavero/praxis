@@ -189,7 +189,7 @@ impl LLMProvider for OpenAIProvider {
         })?;
 
         self.parse_chat_response(value)
-            .map_err(|e| praxis_shared::error::ProjectXError::ProviderError(e))
+            .map_err(praxis_shared::error::ProjectXError::ProviderError)
     }
 
     /// Send a streaming chat completion request.
@@ -251,35 +251,30 @@ impl LLMProvider for OpenAIProvider {
                                 continue;
                             }
 
-                            if let Some(data) = line.strip_prefix("data: ") {
-                                if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
-                                    let delta = &value["choices"][0]["delta"];
+                            if let Some(data) = line.strip_prefix("data: ")
+                                && let Ok(value) = serde_json::from_str::<serde_json::Value>(data)
+                            {
+                                let delta = &value["choices"][0]["delta"];
 
-                                    if let Some(content) = delta["content"].as_str() {
-                                        if !content.is_empty() {
-                                            let _ = tx
-                                                .send(StreamChunk::Delta(content.to_string()))
-                                                .await;
-                                        }
-                                    }
+                                if let Some(content) = delta["content"].as_str()
+                                    && !content.is_empty()
+                                {
+                                    let _ = tx.send(StreamChunk::Delta(content.to_string())).await;
+                                }
 
-                                    if let Some(usage) = value.get("usage") {
-                                        let tokens = TokenUsage::new(
-                                            usage["prompt_tokens"].as_u64().unwrap_or(0) as u32,
-                                            usage["completion_tokens"].as_u64().unwrap_or(0) as u32,
-                                        );
-                                        let _ = tx.send(StreamChunk::Done(tokens)).await;
-                                    }
+                                if let Some(usage) = value.get("usage") {
+                                    let tokens = TokenUsage::new(
+                                        usage["prompt_tokens"].as_u64().unwrap_or(0) as u32,
+                                        usage["completion_tokens"].as_u64().unwrap_or(0) as u32,
+                                    );
+                                    let _ = tx.send(StreamChunk::Done(tokens)).await;
+                                }
 
-                                    if let Some(finish) =
-                                        value["choices"][0]["finish_reason"].as_str()
-                                    {
-                                        if finish == "stop" {
-                                            // Send empty delta to signal completion
-                                            let _ =
-                                                tx.send(StreamChunk::Delta(String::new())).await;
-                                        }
-                                    }
+                                if let Some(finish) = value["choices"][0]["finish_reason"].as_str()
+                                    && finish == "stop"
+                                {
+                                    // Send empty delta to signal completion
+                                    let _ = tx.send(StreamChunk::Delta(String::new())).await;
                                 }
                             }
                         }

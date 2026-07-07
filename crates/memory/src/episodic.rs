@@ -338,11 +338,11 @@ impl EpisodicMemory {
     /// Store a memory chunk, auto-embedding if missing and possible.
     pub async fn store(&mut self, mut chunk: MemoryChunk) {
         // Auto-embed if embedding is empty and we have an embedding service
-        if chunk.embedding.is_empty() {
-            if let Some(service) = &self.embedding_service {
-                let vec = service.embed(&chunk.content).await;
-                chunk.embedding = vec;
-            }
+        if chunk.embedding.is_empty()
+            && let Some(service) = &self.embedding_service
+        {
+            let vec = service.embed(&chunk.content).await;
+            chunk.embedding = vec;
         }
 
         let chunk_id = chunk.id.clone();
@@ -367,25 +367,24 @@ impl EpisodicMemory {
         }
 
         // Sync to Qdrant if configured (fire-and-forget)
-        if let Some(qdrant) = &self.qdrant {
-            if let Some(last) = self.chunks.last() {
-                let qdrant = qdrant.clone();
-                let chunk = last.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = Self::sync_to_qdrant(&qdrant, &chunk).await {
-                        tracing::warn!("Qdrant sync failed: {}", e);
-                    }
-                });
-            }
+        if let Some(qdrant) = &self.qdrant
+            && let Some(last) = self.chunks.last()
+        {
+            let qdrant = qdrant.clone();
+            let chunk = last.clone();
+            tokio::spawn(async move {
+                if let Err(e) = Self::sync_to_qdrant(&qdrant, &chunk).await {
+                    tracing::warn!("Qdrant sync failed: {}", e);
+                }
+            });
         }
 
         // Sync to SQLite if configured (sync call — fast, avoids races on shutdown)
-        if let Some(sqlite) = &self.sqlite {
-            if let Some(last) = self.chunks.last() {
-                if let Err(e) = sqlite.upsert_chunk(last) {
-                    tracing::warn!("SQLite episodic sync failed: {}", e);
-                }
-            }
+        if let Some(sqlite) = &self.sqlite
+            && let Some(last) = self.chunks.last()
+            && let Err(e) = sqlite.upsert_chunk(last)
+        {
+            tracing::warn!("SQLite episodic sync failed: {}", e);
         }
     }
 
@@ -754,13 +753,13 @@ impl EpisodicMemory {
         let removed = before_removal - self.chunks.len();
 
         // Delete TTL-expired chunks from SQLite too (in-memory LRU eviction does NOT touch SQLite)
-        if removed > 0 {
-            if let Some(sqlite) = &self.sqlite {
-                let cutoff = now - chrono::Duration::seconds(max_secs);
-                let cutoff_rfc = cutoff.to_rfc3339();
-                if let Err(e) = sqlite.delete_older_than(&cutoff_rfc) {
-                    tracing::warn!("SQLite TTL cleanup failed: {}", e);
-                }
+        if removed > 0
+            && let Some(sqlite) = &self.sqlite
+        {
+            let cutoff = now - chrono::Duration::seconds(max_secs);
+            let cutoff_rfc = cutoff.to_rfc3339();
+            if let Err(e) = sqlite.delete_older_than(&cutoff_rfc) {
+                tracing::warn!("SQLite TTL cleanup failed: {}", e);
             }
         }
 

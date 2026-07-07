@@ -72,13 +72,10 @@ impl EventBus {
             metadata,
         };
 
-        match self.tx.send(event) {
-            Ok(receiver_count) => receiver_count,
-            Err(broadcast::error::SendError(_event)) => {
-                // No active receivers — this is normal during shutdown
-                0
-            }
-        }
+        self.tx.send(event).unwrap_or({
+            // No active receivers — this is normal during shutdown
+            0
+        })
     }
 
     /// Subscribe to all events.

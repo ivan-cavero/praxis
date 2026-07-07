@@ -32,6 +32,7 @@ fn build_registry() -> AgentRegistry {
 /// Serialize an agent definition to Markdown+YAML for disk.
 ///
 /// Uses `serde_yaml_neo::to_string` for the frontmatter to ensure proper escaping.
+#[allow(clippy::too_many_arguments)]
 fn serialize_agent_md(
     name: &str,
     description: &str,
@@ -141,8 +142,8 @@ fn list(scope_filter: &str) {
     println!("{} ({})", "Agents".bold(), scope_filter);
     println!("{}", "─".repeat(80));
     println!(
-        "{:<20} {:<10} {:<10} {:<6} {:<10} {}",
-        "NAME", "SCOPE", "MODEL", "DEPTH", "TOOLS", "CAN_SPAWN"
+        "{:<20} {:<10} {:<10} {:<6} {:<10} CAN_SPAWN",
+        "NAME", "SCOPE", "MODEL", "DEPTH", "TOOLS"
     );
     println!("{}", "─".repeat(80));
     for a in &agents {
@@ -215,6 +216,7 @@ fn show(name: &str) {
     println!("{}", agent.definition.system_prompt());
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add(
     name: &str,
     description: &str,

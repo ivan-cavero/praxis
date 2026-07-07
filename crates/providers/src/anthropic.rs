@@ -272,27 +272,26 @@ impl LLMProvider for AnthropicProvider {
                                 continue;
                             }
 
-                            if let Some(data) = line.strip_prefix("data: ") {
-                                if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
-                                    let event_type = value["type"].as_str().unwrap_or("");
+                            if let Some(data) = line.strip_prefix("data: ")
+                                && let Ok(value) = serde_json::from_str::<serde_json::Value>(data)
+                            {
+                                let event_type = value["type"].as_str().unwrap_or("");
 
-                                    match event_type {
-                                        "content_block_delta" => {
-                                            if let Some(text) = value["delta"]["text"].as_str() {
-                                                if !text.is_empty() {
-                                                    let _ = tx
-                                                        .send(StreamChunk::Delta(text.to_string()))
-                                                        .await;
-                                                }
-                                            }
+                                match event_type {
+                                    "content_block_delta" => {
+                                        if let Some(text) = value["delta"]["text"].as_str()
+                                            && !text.is_empty()
+                                        {
+                                            let _ =
+                                                tx.send(StreamChunk::Delta(text.to_string())).await;
                                         }
-                                        "message_stop" => {
-                                            let tokens = TokenUsage::new(0, 0);
-                                            let _ = tx.send(StreamChunk::Done(tokens)).await;
-                                            break;
-                                        }
-                                        _ => {}
                                     }
+                                    "message_stop" => {
+                                        let tokens = TokenUsage::new(0, 0);
+                                        let _ = tx.send(StreamChunk::Done(tokens)).await;
+                                        break;
+                                    }
+                                    _ => {}
                                 }
                             }
                         }

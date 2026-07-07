@@ -224,7 +224,7 @@ impl McpHost {
 impl Drop for McpHost {
     fn drop(&mut self) {
         for (_, mut server) in self.servers.drain() {
-            let _ = server.transport.disconnect();
+            std::mem::drop(server.transport.disconnect());
         }
     }
 }

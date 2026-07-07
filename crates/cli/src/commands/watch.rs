@@ -146,15 +146,15 @@ pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
         render(session_id, &state, &session, &events, &mut last_event_count);
 
         // Stop if session is no longer running
-        if let Some(s) = &state {
-            if s.status != "running" {
-                println!(
-                    "\n{} Session ended with status: {}",
-                    "→".cyan(),
-                    s.status.yellow()
-                );
-                return;
-            }
+        if let Some(s) = &state
+            && s.status != "running"
+        {
+            println!(
+                "\n{} Session ended with status: {}",
+                "→".cyan(),
+                s.status.yellow()
+            );
+            return;
         }
 
         tokio::time::sleep(interval).await;
@@ -226,17 +226,17 @@ fn render(
             *last_event_count = events.len();
 
             // STATE.md preview
-            if let Some(state_file) = &state.state_file {
-                if !state_file.is_empty() {
-                    println!("{}", "─".repeat(80));
-                    println!("{}", "STATE.md".bold());
-                    println!("{}", "─".repeat(80));
-                    // Show last 20 lines of STATE.md
-                    let lines: Vec<&str> = state_file.lines().collect();
-                    let start = lines.len().saturating_sub(20);
-                    for line in &lines[start..] {
-                        println!("{}", line);
-                    }
+            if let Some(state_file) = &state.state_file
+                && !state_file.is_empty()
+            {
+                println!("{}", "─".repeat(80));
+                println!("{}", "STATE.md".bold());
+                println!("{}", "─".repeat(80));
+                // Show last 20 lines of STATE.md
+                let lines: Vec<&str> = state_file.lines().collect();
+                let start = lines.len().saturating_sub(20);
+                for line in &lines[start..] {
+                    println!("{}", line);
                 }
             }
         }

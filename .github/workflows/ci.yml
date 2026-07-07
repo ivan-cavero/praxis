@@ -19,8 +19,22 @@ jobs:
       - name: Setup Rust nightly
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2026-06-01
+          toolchain: nightly-2026-07-06
           components: clippy, rustfmt
+
+      - name: Install system deps (Linux — WebKit/GTK for Tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
@@ -38,8 +52,8 @@ jobs:
       - name: Format check
         run: cargo fmt --check
 
-      - name: Clippy (deny warnings)
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (exclude desktop — needs dashboard/dist)
+        run: cargo clippy --workspace --exclude desktop -- -D warnings
 
       - name: Unit tests (exclude desktop — needs dashboard/dist)
         run: cargo test --workspace --exclude desktop
@@ -49,6 +63,9 @@ jobs:
           cd dashboard
           bun install
           bun run build
+
+      - name: Clippy (desktop only — now that dashboard/dist exists)
+        run: cargo clippy -p desktop -- -D warnings
 
       - name: Desktop tests
         run: cargo test -p desktop

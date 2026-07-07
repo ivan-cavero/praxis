@@ -200,7 +200,7 @@ impl EventStore for SqliteEventStore {
 
         let conn = self
             .conn()
-            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
+            .map_err(praxis_shared::error::ProjectXError::DatabaseError)?;
 
         // Check version conflict
         let max_version: i64 = conn
@@ -249,7 +249,7 @@ impl EventStore for SqliteEventStore {
     ) -> praxis_shared::error::Result<Vec<StoredEvent>> {
         let conn = self
             .conn()
-            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
+            .map_err(praxis_shared::error::ProjectXError::DatabaseError)?;
 
         let rows = if let Some(version) = after_version {
             let mut stmt = conn
@@ -325,7 +325,7 @@ impl EventStore for SqliteEventStore {
     ) -> praxis_shared::error::Result<Option<StoredSnapshot>> {
         let conn = self
             .conn()
-            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
+            .map_err(praxis_shared::error::ProjectXError::DatabaseError)?;
 
         let result = conn
             .query_row(
@@ -362,7 +362,7 @@ impl EventStore for SqliteEventStore {
 
         let conn = self
             .conn()
-            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
+            .map_err(praxis_shared::error::ProjectXError::DatabaseError)?;
 
         conn.execute(
             "INSERT OR REPLACE INTO snapshots (aggregate_id, aggregate_type, state, version, updated_at)
@@ -389,7 +389,7 @@ impl EventStore for SqliteEventStore {
     ) -> praxis_shared::error::Result<Vec<Uuid>> {
         let conn = self
             .conn()
-            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
+            .map_err(praxis_shared::error::ProjectXError::DatabaseError)?;
 
         let ids = conn
             .prepare("SELECT DISTINCT aggregate_id FROM events WHERE aggregate_type = ?1")

@@ -187,21 +187,21 @@ fn tool_search(root: &Path, args: &Value) -> Result<Value, String> {
                 if !name.starts_with('.') && name != "node_modules" && name != "target" {
                     search_recursive(&path, pattern, root, matches)?;
                 }
-            } else if path.is_file() {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    for (line_num, line) in content.lines().enumerate() {
-                        if line.contains(pattern) {
-                            let relative = path
-                                .strip_prefix(root)
-                                .unwrap_or(&path)
-                                .to_string_lossy()
-                                .to_string();
-                            matches.push(json!({
-                                "file": relative,
-                                "line": line_num + 1,
-                                "content": line.trim()
-                            }));
-                        }
+            } else if path.is_file()
+                && let Ok(content) = std::fs::read_to_string(&path)
+            {
+                for (line_num, line) in content.lines().enumerate() {
+                    if line.contains(pattern) {
+                        let relative = path
+                            .strip_prefix(root)
+                            .unwrap_or(&path)
+                            .to_string_lossy()
+                            .to_string();
+                        matches.push(json!({
+                            "file": relative,
+                            "line": line_num + 1,
+                            "content": line.trim()
+                        }));
                     }
                 }
             }

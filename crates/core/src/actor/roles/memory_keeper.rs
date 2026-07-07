@@ -204,7 +204,7 @@ impl MemoryKeeper {
 
         // Batch-embed all chunks at once when embedding service is available
         let embeddings: Vec<Vec<f32>> = if let Some(ref es) = *self.embedding_service.read().await {
-            let chunk_refs: Vec<String> = chunks.iter().map(|c| c.clone()).collect();
+            let chunk_refs: Vec<String> = chunks.to_vec();
             if !chunk_refs.is_empty() {
                 es.embed_batch(&chunk_refs).await
             } else {

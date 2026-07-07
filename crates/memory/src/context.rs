@@ -484,7 +484,15 @@ impl ContextWindow {
             messages: Vec::new(),
         }
     }
+}
 
+impl Default for ContextWindow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ContextWindow {
     pub fn push(&mut self, msg: Message) {
         self.messages.push(msg);
     }
@@ -547,9 +555,7 @@ impl ContextHealth {
     pub fn status(&self) -> HealthStatus {
         if self.pressure > 0.95 {
             HealthStatus::Critical
-        } else if self.pressure > 0.80 {
-            HealthStatus::Warning
-        } else if self.compression_frequency > 5 {
+        } else if self.pressure > 0.80 || self.compression_frequency > 5 {
             HealthStatus::Warning
         } else {
             HealthStatus::Healthy

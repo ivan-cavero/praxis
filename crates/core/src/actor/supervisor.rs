@@ -72,6 +72,7 @@ impl Actor for Supervisor {
     type State = SupervisorState;
     type Arguments = ();
 
+    #[allow(clippy::manual_async_fn)]
     fn pre_start(
         &self,
         _myself: ActorRef<Self::Msg>,
@@ -85,6 +86,7 @@ impl Actor for Supervisor {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn handle(
         &self,
         _myself: ActorRef<Self::Msg>,

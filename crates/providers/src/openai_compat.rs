@@ -7,3 +7,9 @@ impl OpenAICompatibleProvider {
         Self
     }
 }
+
+impl Default for OpenAICompatibleProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}

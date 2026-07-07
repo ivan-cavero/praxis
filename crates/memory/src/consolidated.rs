@@ -230,7 +230,15 @@ impl Summarizer {
     pub fn new() -> Self {
         Self
     }
+}
 
+impl Default for Summarizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Summarizer {
     /// Generate a summary from a list of interactions.
     pub fn summarize(
         &self,

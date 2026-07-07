@@ -1232,38 +1232,38 @@ pub mod sessions {
         };
 
         // Merge sessions from the event store (persisted sessions from other processes)
-        if let Some(store) = &state.event_store {
-            if let Ok(session_ids) = store.list_aggregates("session").await {
-                for sid in &session_ids {
-                    let sid_str = sid.to_string();
-                    // Skip if already in the in-memory registry
-                    if all.iter().any(|s| s.id == sid_str) {
-                        continue;
-                    }
-                    if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
-                        let phase = snap.state["phase"].as_str().unwrap_or("unknown");
-                        let status =
-                            if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
-                                phase.to_lowercase()
-                            } else {
-                                "running".to_string()
-                            };
-                        all.push(SessionEntry {
-                            id: sid_str,
-                            project: snap.state["project"]
-                                .as_str()
-                                .unwrap_or("default")
-                                .to_string(),
-                            goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
-                            phase: phase.to_string(),
-                            iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
-                            status,
-                            started_at: snap.updated_at.clone(),
-                            completed_at: None,
-                            tokens_used: snap.state["tokens_used"].as_u64().unwrap_or(0),
-                            cost_usd: snap.state["cost_usd"].as_f64().unwrap_or(0.0),
-                        });
-                    }
+        if let Some(store) = &state.event_store
+            && let Ok(session_ids) = store.list_aggregates("session").await
+        {
+            for sid in &session_ids {
+                let sid_str = sid.to_string();
+                // Skip if already in the in-memory registry
+                if all.iter().any(|s| s.id == sid_str) {
+                    continue;
+                }
+                if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
+                    let phase = snap.state["phase"].as_str().unwrap_or("unknown");
+                    let status =
+                        if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
+                            phase.to_lowercase()
+                        } else {
+                            "running".to_string()
+                        };
+                    all.push(SessionEntry {
+                        id: sid_str,
+                        project: snap.state["project"]
+                            .as_str()
+                            .unwrap_or("default")
+                            .to_string(),
+                        goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
+                        phase: phase.to_string(),
+                        iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
+                        status,
+                        started_at: snap.updated_at.clone(),
+                        completed_at: None,
+                        tokens_used: snap.state["tokens_used"].as_u64().unwrap_or(0),
+                        cost_usd: snap.state["cost_usd"].as_f64().unwrap_or(0.0),
+                    });
                 }
             }
         }
@@ -1284,33 +1284,31 @@ pub mod sessions {
         }
 
         // Fall back to the event store
-        if let Some(store) = &state.event_store {
-            if let Ok(sid) = id.parse::<uuid::Uuid>() {
-                if let Ok(Some(snap)) = store.get_snapshot(sid).await {
-                    let phase = snap.state["phase"].as_str().unwrap_or("unknown");
-                    let status =
-                        if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
-                            phase.to_lowercase()
-                        } else {
-                            "running".to_string()
-                        };
-                    return Ok(Json(SessionEntry {
-                        id,
-                        project: snap.state["project"]
-                            .as_str()
-                            .unwrap_or("default")
-                            .to_string(),
-                        goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
-                        phase: phase.to_string(),
-                        iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
-                        status,
-                        started_at: snap.updated_at.clone(),
-                        completed_at: None,
-                        tokens_used: snap.state["tokens_used"].as_u64().unwrap_or(0),
-                        cost_usd: snap.state["cost_usd"].as_f64().unwrap_or(0.0),
-                    }));
-                }
-            }
+        if let Some(store) = &state.event_store
+            && let Ok(sid) = id.parse::<uuid::Uuid>()
+            && let Ok(Some(snap)) = store.get_snapshot(sid).await
+        {
+            let phase = snap.state["phase"].as_str().unwrap_or("unknown");
+            let status = if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
+                phase.to_lowercase()
+            } else {
+                "running".to_string()
+            };
+            return Ok(Json(SessionEntry {
+                id,
+                project: snap.state["project"]
+                    .as_str()
+                    .unwrap_or("default")
+                    .to_string(),
+                goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
+                phase: phase.to_string(),
+                iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
+                status,
+                started_at: snap.updated_at.clone(),
+                completed_at: None,
+                tokens_used: snap.state["tokens_used"].as_u64().unwrap_or(0),
+                cost_usd: snap.state["cost_usd"].as_f64().unwrap_or(0.0),
+            }));
         }
 
         Err(StatusCode::NOT_FOUND)
@@ -1371,10 +1369,10 @@ pub mod sessions {
         if let Some(ref cmd) = req.until {
             runtime = runtime
                 .with_completion(crate::CompletionCriterion::from_until_command(cmd.clone()));
-        } else if let Some(ref comp) = req.completion {
-            if let Some(criterion) = crate::CompletionCriterion::from_string(comp) {
-                runtime = runtime.with_completion(criterion);
-            }
+        } else if let Some(ref comp) = req.completion
+            && let Some(criterion) = crate::CompletionCriterion::from_string(comp)
+        {
+            runtime = runtime.with_completion(criterion);
         }
 
         // Apply budget caps
@@ -1654,11 +1652,11 @@ pub mod sessions {
         let _ = std::fs::write(&path, &content);
 
         // Mark session as completed in registry
-        if let Ok(mut guard) = state.session_registry.write() {
-            if let Some(session) = guard.iter_mut().find(|s| s.id == id) {
-                session.status = "stopped".to_string();
-                session.completed_at = Some(chrono::Utc::now().to_rfc3339());
-            }
+        if let Ok(mut guard) = state.session_registry.write()
+            && let Some(session) = guard.iter_mut().find(|s| s.id == id)
+        {
+            session.status = "stopped".to_string();
+            session.completed_at = Some(chrono::Utc::now().to_rfc3339());
         }
 
         Ok(Json(serde_json::json!({
@@ -1845,6 +1843,7 @@ pub struct InjectRequest {
 
 // ─── Route Handlers ───────────────────────────────────────────
 
+#[allow(clippy::module_inception)]
 pub mod routes {
     use super::*;
 
@@ -1880,11 +1879,10 @@ pub mod routes {
             if let Ok(session_ids) = store.list_aggregates("session").await {
                 let mut pressures: Vec<f64> = Vec::new();
                 for sid in &session_ids {
-                    if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
-                        if let Some(p) = snap.state.get("context_pressure").and_then(|v| v.as_f64())
-                        {
-                            pressures.push(p);
-                        }
+                    if let Ok(Some(snap)) = store.get_snapshot(*sid).await
+                        && let Some(p) = snap.state.get("context_pressure").and_then(|v| v.as_f64())
+                    {
+                        pressures.push(p);
                     }
                 }
                 if pressures.is_empty() {
@@ -2037,10 +2035,10 @@ fn default_scope() -> String {
 /// Falls back to `data_dir/agents/` if no project has a path.
 fn resolve_project_agents_dir(data_dir: &std::path::Path) -> std::path::PathBuf {
     let projects = read_projects(data_dir);
-    if let Some(latest) = projects.last() {
-        if let Some(path) = &latest.path {
-            return std::path::PathBuf::from(path).join("agents");
-        }
+    if let Some(latest) = projects.last()
+        && let Some(path) = &latest.path
+    {
+        return std::path::PathBuf::from(path).join("agents");
     }
     data_dir.join("agents")
 }

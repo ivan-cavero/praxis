@@ -146,7 +146,7 @@ impl StdioTransport {
 impl Drop for StdioTransport {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
+            std::mem::drop(child.kill());
         }
     }
 }

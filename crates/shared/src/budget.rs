@@ -76,8 +76,8 @@ impl Budget {
 
     /// Is the budget exhausted (any limit reached)?
     pub fn exhausted(&self) -> bool {
-        self.max_tokens.map_or(false, |max| self.used_tokens >= max)
-            || self.max_cost_usd.map_or(false, |max| self.used_cost >= max)
+        self.max_tokens.is_some_and(|max| self.used_tokens >= max)
+            || self.max_cost_usd.is_some_and(|max| self.used_cost >= max)
             || self.remaining_turns() == 0
     }
 

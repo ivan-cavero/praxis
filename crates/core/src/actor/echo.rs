@@ -51,6 +51,7 @@ impl Actor for EchoAgent {
     type State = EchoState;
     type Arguments = String;
 
+    #[allow(clippy::manual_async_fn)]
     fn pre_start(
         &self,
         _myself: ActorRef<Self::Msg>,
@@ -65,6 +66,7 @@ impl Actor for EchoAgent {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn handle(
         &self,
         _myself: ActorRef<Self::Msg>,
