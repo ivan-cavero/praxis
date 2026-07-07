@@ -131,8 +131,10 @@ impl EnvVault {
 
                 // Only set if not already in env (don't override existing)
                 if std::env::var(key).is_err() {
-                    // SAFETY: This is called during startup/init, not in concurrent contexts
-                    // where data races could occur. The dotenv file is read once at startup.
+                    // SAFETY: std::env::set_var is inherently unsafe because it modifies
+                    // global process state. Safe here because load_dotenv is only called
+                    // during application startup before any async work begins, and the
+                    // loop is sequential (no concurrent access to env vars).
                     unsafe { std::env::set_var(key, value) };
                     loaded += 1;
                 }

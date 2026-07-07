@@ -43,9 +43,9 @@ Eliminate production-code unwraps, clippy warnings, dead code, missing error han
 - [ ] Add #[instrument] to all provider.chat() and provider.stream() methods
 
 ### 1D — unsafe audit
-- [ ] Find ALL unsafe blocks in crates/ (exclude #[cfg(test)])
-- [ ] Each must have a // SAFETY: comment explaining the invariant
-- [ ] If any is unnecessary, refactor to safe Rust
+- [x] Find ALL unsafe blocks in crates/ (exclude #[cfg(test)]) — one found: vault/src/env.rs:136 (std::env::set_var in load_dotenv)
+- [x] Each must have a // SAFETY: comment explaining the invariant — improved comment to explain why set_var is safe in this context
+- [x] If any is unnecessary, refactor to safe Rust — set_var requires unsafe; no safe alternative exists for env vars
 
 ---
 
