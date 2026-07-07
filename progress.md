@@ -58,9 +58,9 @@ Profile hot paths, reduce allocations, optimize bottlenecks.
 - [x] Add [profile.bench] config — added with lto = true, codegen-units = 1, strip = true
 
 ### 2B — Reduce allocations
-- [ ] Replace Vec::new() in hot paths with Vec::with_capacity(n) where size is predictable
-- [ ] Audit clone() calls in crates/core/src/lib.rs run_goal & resume_goal — use borrows
-- [ ] Audit crates/core/src/machine/gate.rs evaluators for redundant allocations
+- [x] Replace Vec::new() in hot paths with Vec::with_capacity(n) where size is predictable — run_goal/resume_goal results Vec pre-allocated to 8 (max phases)
+- [x] Audit clone() calls in crates/core/src/pipeline.rs run_goal & resume_goal — most clones are necessary for MessageKind ownership across async channels; no unnecessary clones found in hot paths
+- [x] Audit crates/core/src/machine/gate.rs evaluators for redundant allocations — self.name.clone() is necessary for GateVerdict ownership; no redundant allocations found
 
 ### 2C — Optimize hot paths
 - [ ] Audit crates/core/src/loop/controller.rs — minimize work per iteration
@@ -229,9 +229,9 @@ New dashboard views.
 - [x] LogsView — real-time log stream in browser
 
 ### 8B — Dashboard enhancements
-- [ ] Session comparison (side-by-side)
-- [ ] Goal library (reusable templates)
-- [ ] Theme customization (accent color, font size)
+- [x] Session comparison (side-by-side)
+- [x] Goal library (reusable templates)
+- [x] Theme customization (accent color, font size)
 
 ### 8C — PWA support
 - [ ] Service worker for offline access

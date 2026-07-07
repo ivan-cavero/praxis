@@ -15,6 +15,7 @@ import { storeToRefs } from 'pinia'
 import Icon from '../components/ui/Icon.vue'
 import AgentsConfig from '../components/dashboard/AgentsConfig.vue'
 import RemoteConnections from '../components/dashboard/RemoteConnections.vue'
+import { useTheme, type AccentColor, type FontSize } from '../composables/useTheme'
 
 const emit = defineEmits<{
   close: []
@@ -25,6 +26,7 @@ const store = useAppStore()
 const updater = useUpdater()
 const toast = useToast()
 const { version, uptime } = storeToRefs(store)
+const theme = useTheme()
 
 // ─── Tabs (computed — 'limits' only shows when a project is active) ──
 
@@ -379,6 +381,50 @@ async function handleCheckUpdate() {
                   @click="updater.installUpdate()"
                 >
                   Install {{ updater.updateVersion.value }}
+                </button>
+              </div>
+            </div>
+
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="settings" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">Appearance</h3>
+                  <p class="section-desc">Customize accent color and font size</p>
+                </div>
+              </div>
+              <div class="theme-settings">
+                <div class="theme-field">
+                  <label class="theme-label">Accent Color</label>
+                  <div class="color-swatches">
+                    <button
+                      v-for="color in (['green', 'blue', 'purple', 'orange', 'pink', 'cyan'] as AccentColor[])"
+                      :key="color"
+                      class="color-swatch"
+                      :class="{ active: theme.accent.value === color }"
+                      :style="{ background: `var(--${color === 'green' ? 'primary' : 'primary'})` }"
+                      :data-color="color"
+                      @click="theme.setAccent(color)"
+                      :aria-label="`Set accent color to ${color}`"
+                    />
+                  </div>
+                </div>
+                <div class="theme-field">
+                  <label class="theme-label">Font Size</label>
+                  <div class="font-size-options">
+                    <button
+                      v-for="size in (['small', 'medium', 'large'] as FontSize[])"
+                      :key="size"
+                      class="font-size-btn"
+                      :class="{ active: theme.fontSize.value === size }"
+                      @click="theme.setFontSize(size)"
+                    >
+                      {{ size.charAt(0).toUpperCase() + size.slice(1) }}
+                    </button>
+                  </div>
+                </div>
+                <button class="btn btn-ghost theme-reset" @click="theme.reset()">
+                  Reset to defaults
                 </button>
               </div>
             </div>
@@ -986,6 +1032,84 @@ async function handleCheckUpdate() {
 .update-actions {
   margin-top: var(--space-2);
 }
+
+/* ═══ Theme Settings ═══ */
+
+.theme-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.theme-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.theme-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.color-swatches {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+ border: 2px solid transparent;
+ cursor: pointer;
+ transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--primary);
+}
+.color-swatch[data-color="green"] { background: #22c55e; }
+.color-swatch[data-color="blue"] { background: #3b82f6; }
+.color-swatch[data-color="purple"] { background: #a855f7; }
+.color-swatch[data-color="orange"] { background: #f59e0b; }
+.color-swatch[data-color="pink"] { background: #ec4899; }
+.color-swatch[data-color="cyan"] { background: #14b8a6; }
+
+.font-size-options {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.font-size-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+ color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.font-size-btn:hover { border-color: var(--text-muted); }
+.font-size-btn.active {
+  border-color: var(--primary);
+  background: var(--primary-muted);
+  color: var(--primary);
+}
+
+.theme-reset {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-reset:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
 
 /* ═══ Toast ═══ */
 

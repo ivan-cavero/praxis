@@ -43,6 +43,16 @@ const router = createRouter({
       name: 'agent-debug',
       component: () => import('../views/AgentDebugView.vue'),
     },
+    {
+      path: '/sessions/compare',
+      name: 'session-compare',
+      component: () => import('../views/SessionCompareView.vue'),
+    },
+    {
+      path: '/goal-library',
+      name: 'goal-library',
+      component: () => import('../views/GoalLibraryView.vue'),
+    },
     // 404 catch-all
     {
       path: '/memory',

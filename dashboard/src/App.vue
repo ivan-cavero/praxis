@@ -102,8 +102,10 @@ async function handleCreateProject() {
 // ─── Navigation ───────────────────────────────────────────────────
 const navItems = [
   { name: 'dashboard', label: 'Dashboard', icon: 'dashboard', route: '/' },
+  { name: 'goal-library', label: 'Goals', icon: 'folder', route: '/goal-library' },
   { name: 'pipeline', label: 'Pipeline', icon: 'chart-line', route: '/pipeline' },
   { name: 'sessions', label: 'Sessions', icon: 'server', route: '/sessions' },
+  { name: 'session-compare', label: 'Compare', icon: 'chart', route: '/sessions/compare' },
   { name: 'agents', label: 'Agents', icon: 'robot', route: '/agents' },
   { name: 'agent-debug', label: 'Debug', icon: 'code', route: '/agent-debug' },
   { name: 'memory', label: 'Memory', icon: 'database', route: '/memory' },

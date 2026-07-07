@@ -189,186 +189,37 @@ impl MetricsCollector {
             return Vec::new();
         }
 
-        // Calculate current values
-        let latencies: Vec<f64> = recent.iter().map(|s| s.latency_ms as f64).collect();
-        let output_tokens: Vec<f64> = recent.iter().map(|s| s.output_tokens as f64).collect();
-        let output_lengths: Vec<f64> = recent
-            .iter()
-            .map(|s| s.output_length_chars as f64)
-            .collect();
-        let error_rates: Vec<f64> = recent
-            .iter()
-            .map(|s| {
-                if s.tool_calls > 0 {
-                    s.tool_errors as f64 / s.tool_calls as f64
-                } else {
-                    0.0
-                }
-            })
-            .collect();
-        let gate_rates: Vec<f64> = recent
-            .iter()
-            .map(|s| if s.gate_passed { 1.0 } else { 0.0 })
-            .collect();
-        let tool_usages: Vec<f64> = recent.iter().map(|s| s.tool_calls as f64).collect();
-        let context_pressures: Vec<f64> =
-            recent.iter().map(|s| s.context_pressure as f64).collect();
+        // Compute per-dimension means once
+        let mean_latency = mean(&recent.iter().map(|s| s.latency_ms as f64).collect::<Vec<_>>());
+        let mean_output_tokens = mean(&recent.iter().map(|s| s.output_tokens as f64).collect::<Vec<_>>());
+        let mean_output_length = mean(&recent.iter().map(|s| s.output_length_chars as f64).collect::<Vec<_>>());
+        let mean_error_rate = mean(&recent.iter().map(|s| {
+            if s.tool_calls > 0 { s.tool_errors as f64 / s.tool_calls as f64 } else { 0.0 }
+        }).collect::<Vec<_>>());
+        let mean_gate_rate = mean(&recent.iter().map(|s| if s.gate_passed { 1.0 } else { 0.0 }).collect::<Vec<_>>());
+        let mean_tool_usage = mean(&recent.iter().map(|s| s.tool_calls as f64).collect::<Vec<_>>());
+        let mean_pressure = mean(&recent.iter().map(|s| s.context_pressure as f64).collect::<Vec<_>>());
+
+        // Compute z-scores once per dimension
+        let z_latency = z_score(mean_latency, baseline.mean_latency, baseline.std_latency);
+        let z_output_tokens = z_score(mean_output_tokens, baseline.mean_output_tokens, baseline.std_output_tokens);
+        let z_output_length = z_score(mean_output_length, baseline.mean_output_length, baseline.std_output_length);
+        let z_error_rate = z_score(mean_error_rate, baseline.mean_error_rate, baseline.std_error_rate);
+        let z_tool_usage = z_score(mean_tool_usage, baseline.mean_tool_usage, baseline.std_tool_usage);
+
+        // Compute std_dev for repetition CV
+        let output_lengths: Vec<f64> = recent.iter().map(|s| s.output_length_chars as f64).collect();
+        let cv = if mean(&output_lengths) > 0.0 { std_dev(&output_lengths) / mean(&output_lengths) } else { 0.0 };
 
         vec![
-            // Latency drift
-            DimensionScore {
-                name: "latency".to_string(),
-                value: z_score(
-                    mean(&latencies),
-                    baseline.mean_latency,
-                    baseline.std_latency,
-                )
-                .abs() as f32,
-                weight: 0.10,
-                z_score: z_score(
-                    mean(&latencies),
-                    baseline.mean_latency,
-                    baseline.std_latency,
-                ) as f32,
-                status: classify_z_score(z_score(
-                    mean(&latencies),
-                    baseline.mean_latency,
-                    baseline.std_latency,
-                )),
-            },
-            // Output token drift
-            DimensionScore {
-                name: "output_tokens".to_string(),
-                value: z_score(
-                    mean(&output_tokens),
-                    baseline.mean_output_tokens,
-                    baseline.std_output_tokens,
-                )
-                .abs() as f32,
-                weight: 0.10,
-                z_score: z_score(
-                    mean(&output_tokens),
-                    baseline.mean_output_tokens,
-                    baseline.std_output_tokens,
-                ) as f32,
-                status: classify_z_score(z_score(
-                    mean(&output_tokens),
-                    baseline.mean_output_tokens,
-                    baseline.std_output_tokens,
-                )),
-            },
-            // Output length drift
-            DimensionScore {
-                name: "output_length".to_string(),
-                value: z_score(
-                    mean(&output_lengths),
-                    baseline.mean_output_length,
-                    baseline.std_output_length,
-                )
-                .abs() as f32,
-                weight: 0.10,
-                z_score: z_score(
-                    mean(&output_lengths),
-                    baseline.mean_output_length,
-                    baseline.std_output_length,
-                ) as f32,
-                status: classify_z_score(z_score(
-                    mean(&output_lengths),
-                    baseline.mean_output_length,
-                    baseline.std_output_length,
-                )),
-            },
-            // Error rate drift
-            DimensionScore {
-                name: "error_rate".to_string(),
-                value: z_score(
-                    mean(&error_rates),
-                    baseline.mean_error_rate,
-                    baseline.std_error_rate,
-                )
-                .abs() as f32,
-                weight: 0.15,
-                z_score: z_score(
-                    mean(&error_rates),
-                    baseline.mean_error_rate,
-                    baseline.std_error_rate,
-                ) as f32,
-                status: classify_z_score(z_score(
-                    mean(&error_rates),
-                    baseline.mean_error_rate,
-                    baseline.std_error_rate,
-                )),
-            },
-            // Gate pass rate drift
-            DimensionScore {
-                name: "gate_pass_rate".to_string(),
-                value: (1.0 - mean(&gate_rates)) as f32, // Invert: lower pass rate = higher drift
-                weight: 0.15,
-                z_score: -z_score(mean(&gate_rates), baseline.mean_gate_pass_rate, 0.5) as f32,
-                status: classify_z_score(-z_score(
-                    mean(&gate_rates),
-                    baseline.mean_gate_pass_rate,
-                    0.5,
-                )),
-            },
-            // Tool usage consistency
-            DimensionScore {
-                name: "tool_usage".to_string(),
-                value: z_score(
-                    mean(&tool_usages),
-                    baseline.mean_tool_usage,
-                    baseline.std_tool_usage,
-                )
-                .abs() as f32,
-                weight: 0.10,
-                z_score: z_score(
-                    mean(&tool_usages),
-                    baseline.mean_tool_usage,
-                    baseline.std_tool_usage,
-                ) as f32,
-                status: classify_z_score(z_score(
-                    mean(&tool_usages),
-                    baseline.mean_tool_usage,
-                    baseline.std_tool_usage,
-                )),
-            },
-            // Context pressure
-            DimensionScore {
-                name: "context_pressure".to_string(),
-                value: mean(&context_pressures) as f32,
-                weight: 0.15,
-                z_score: 0.0, // No z-score for pressure (0-1 scale)
-                status: if mean(&context_pressures) > 0.9 {
-                    DimensionStatus::Critical
-                } else if mean(&context_pressures) > 0.7 {
-                    DimensionStatus::Warning
-                } else {
-                    DimensionStatus::Healthy
-                },
-            },
-            // Output repetition (coefficient of variation of output length)
-            DimensionScore {
-                name: "repetition".to_string(),
-                value: if mean(&output_lengths) > 0.0 {
-                    (std_dev(&output_lengths) / mean(&output_lengths)).min(1.0) as f32
-                } else {
-                    0.0
-                },
-                weight: 0.15,
-                z_score: 0.0,
-                status: {
-                    let cv = if mean(&output_lengths) > 0.0 {
-                        std_dev(&output_lengths) / mean(&output_lengths)
-                    } else {
-                        0.0
-                    };
-                    if cv < 0.1 {
-                        DimensionStatus::Warning // Very low variation = repetition
-                    } else {
-                        DimensionStatus::Healthy
-                    }
-                },
-            },
+            DimensionScore { name: "latency".to_string(), value: z_latency.abs() as f32, weight: 0.10, z_score: z_latency as f32, status: classify_z_score(z_latency) },
+            DimensionScore { name: "output_tokens".to_string(), value: z_output_tokens.abs() as f32, weight: 0.10, z_score: z_output_tokens as f32, status: classify_z_score(z_output_tokens) },
+            DimensionScore { name: "output_length".to_string(), value: z_output_length.abs() as f32, weight: 0.10, z_score: z_output_length as f32, status: classify_z_score(z_output_length) },
+            DimensionScore { name: "error_rate".to_string(), value: z_error_rate.abs() as f32, weight: 0.15, z_score: z_error_rate as f32, status: classify_z_score(z_error_rate) },
+            DimensionScore { name: "gate_pass_rate".to_string(), value: (1.0 - mean_gate_rate) as f32, weight: 0.15, z_score: -z_score(mean_gate_rate, baseline.mean_gate_pass_rate, 0.5) as f32, status: classify_z_score(-z_score(mean_gate_rate, baseline.mean_gate_pass_rate, 0.5)) },
+            DimensionScore { name: "tool_usage".to_string(), value: z_tool_usage.abs() as f32, weight: 0.10, z_score: z_tool_usage as f32, status: classify_z_score(z_tool_usage) },
+            DimensionScore { name: "context_pressure".to_string(), value: mean_pressure as f32, weight: 0.15, z_score: 0.0, status: if mean_pressure > 0.9 { DimensionStatus::Critical } else if mean_pressure > 0.7 { DimensionStatus::Warning } else { DimensionStatus::Healthy } },
+            DimensionScore { name: "repetition".to_string(), value: cv.min(1.0) as f32, weight: 0.15, z_score: 0.0, status: if cv < 0.1 { DimensionStatus::Warning } else { DimensionStatus::Healthy } },
         ]
     }
 
