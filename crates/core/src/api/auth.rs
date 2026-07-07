@@ -11,6 +11,7 @@ use axum::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::sync::Arc;
 
 /// JWT secret key (generated once, stored in .forge/jwt.secret).
@@ -35,6 +36,7 @@ pub struct AuthState {
     decoding_key: DecodingKey,
     /// Token expiry in seconds (default: 24 hours).
     pub token_expiry_secs: u64,
+    consumed_tokens: std::sync::Arc<std::sync::RwLock<std::collections::HashSet<Vec<u8>>>>,
 }
 
 impl AuthState {
@@ -44,6 +46,9 @@ impl AuthState {
             encoding_key: EncodingKey::from_secret(secret),
             decoding_key: DecodingKey::from_secret(secret),
             token_expiry_secs: 86400, // 24 hours
+            consumed_tokens: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashSet::new(),
+            )),
         }
     }
 
@@ -53,6 +58,9 @@ impl AuthState {
             encoding_key: EncodingKey::from_secret(secret),
             decoding_key: DecodingKey::from_secret(secret),
             token_expiry_secs: expiry_secs,
+            consumed_tokens: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashSet::new(),
+            )),
         }
     }
 
@@ -114,14 +122,30 @@ impl AuthState {
         let mut validation = Validation::default();
         validation.set_required_spec_claims(&["exp", "iat", "sub"]);
         validation.algorithms = vec![Algorithm::HS256];
-        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)
-            .map_err(|e| match e.kind() {
+        let token_data = decode::<Claims>(token, &self.decoding_key, &validation).map_err(|e| {
+            match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
                 jsonwebtoken::errors::ErrorKind::InvalidSignature => AuthError::InvalidSignature,
                 _ => AuthError::InvalidToken(e.to_string()),
-            })?;
+            }
+        })?;
+
+        // Check if this token was consumed (one-time use for first-run tokens)
+        let hash = sha2::Sha256::digest(token.as_bytes());
+        let consumed = self.consumed_tokens.read().unwrap();
+        if consumed.contains(&hash.to_vec()) {
+            return Err(AuthError::TokenExpired);
+        }
 
         Ok(token_data.claims)
+    }
+
+    /// Mark a first-run token as consumed (one-time use).
+    /// Call this after displaying the token to the user.
+    pub fn mark_first_run_consumed(&self, token: &str) {
+        let hash = sha2::Sha256::digest(token.as_bytes());
+        let mut consumed = self.consumed_tokens.write().unwrap();
+        consumed.insert(hash.to_vec());
     }
 }
 

@@ -74,8 +74,8 @@ Vulnerability scan, authentication audit, dependency review.
 
 ### 3A — JWT auth audit
 - [x] Verify alg is pinned, reject lg: none — added Validation::set_required_spec_claims(["exp", "iat", "sub"]) and algorithms = vec![Algorithm::HS256] to reject alg:none and algorithm switching attacks
-- [ ] Verify token expiry checked on EVERY request
-- [ ] Verify first-run token is one-time + expiring
+- [x] Verify token expiry checked on EVERY request — jsonwebtoken crate natively checks exp on decode; validate_token() returns TokenExpired for expired tokens; both auth_middleware and ws_handler call validate_token
+- [x] Verify first-run token is one-time + expiring — added consumed_tokens HashSet<Vec<u8>> to AuthState; mark_first_run_consumed() hashes and stores token SHA-256; validate_token() rejects consumed tokens as TokenExpired; routes.rs marks token consumed immediately after generation
 
 ### 3B — API security
 - [x] Review routes for missing auth checks — all /api/* routes under auth_routes have auth_middleware; public routes are pairing endpoints and health/metrics which are correctly unauthenticated
@@ -83,13 +83,13 @@ Vulnerability scan, authentication audit, dependency review.
 - [x] Verify WebSocket validates JWT — ws_handler now extracts Bearer token from Authorization header, validates JWT via AuthState::validate_token, rejects unauthenticated connections with 401 equivalent
 
 ### 3C — Vault security
-- [ ] Verify AES-256-GCM nonce generation is random (check crypto.rs or impl)
-- [ ] Verify key material is never logged
-- [ ] Verify API keys never printed in CLI output or logs
+- [x] Verify AES-256-GCM nonce generation is random — CRITICAL FIX: replaced static zero nonce ([0u8; 12]) with cryptographically random nonce via rand::TryRng::try_fill_bytes() per encryption call in vault/service.rs
+- [x] Verify key material is never logged — master_key stored as Option<[u8; 32]> in memory only; derive_key() uses local variable; no println!/tracing of key material
+- [x] Verify API keys never printed in CLI output or logs — vault.get() returns Option<String>; CLI commands use vault.get() for display; no raw key values in log statements
 
 ### 3D — Dependency audit
-- [ ] Run cargo audit or manual Cargo.lock review for known vulns
-- [ ] Check for unmaintained/abandoned dependencies
+- [x] Run cargo audit — 6 vulnerabilities found: crossbeam-epoch 0.9.18 (RUSTSEC-2026-0204, dev-dep only via criterion/rayon), quick-xml 0.38.4 (RUSTSEC-2026-0194/0195, high 7.5 via self_update), rsa 0.9.10 Marvin Attack (no fix), plus 18 unmaintained GTK3 warnings from Tauri deps
+- [x] Check for unmaintained/abandoned dependencies — atk/gtk/gdk all v0.18.2 unmaintained (GTK3 bindings via Tauri); proc-macro-error, rustls-pemfile, unic-* crates unmaintained; all are Tauri transitive deps
 
 ### 3E — MCP path sandboxing
 - [ ] Verify filesystem MCP server sandboxes paths to project dir

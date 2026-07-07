@@ -1,10 +1,9 @@
-# ============================
-# PROJECT-X — .gitignore
+﻿# ============================
+# PROJECT-X â€” .gitignore
 # ============================
 
 # --- Rust ---
 target/
-Cargo.lock
 
 # --- Node.js / Dashboard ---
 node_modules/
@@ -36,7 +35,7 @@ desktop/src-tauri/gen/
 *.cert
 
 # --- User project config (never commit API keys) ---
-# User's forge.toml may contain api_key — keep it local
+# User's forge.toml may contain api_key â€” keep it local
 # forge.toml in project root is safe (uses env: prefix)
 
 # --- Configuration (local) ---
