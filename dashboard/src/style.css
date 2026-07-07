@@ -70,6 +70,22 @@ body { font-family: var(--font-sans); background: var(--bg-base); color: var(--t
 #app { height: 100vh; overflow: hidden; }
 button { font-family: inherit; }
 
+/* ═══ FOCUS VISIBLE — keyboard navigation ═══ */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--primary);
+  border-radius: var(--radius-md);
+}
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--primary);
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: var(--radius-full); }

@@ -5,4 +5,4 @@
 
 pub mod sqlite;
 
-pub use sqlite::{SessionBaseline, SqliteEventStore};
+pub use sqlite::{ChangeRecord, SessionBaseline, SqliteEventStore};

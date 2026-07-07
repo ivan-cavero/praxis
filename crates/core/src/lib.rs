@@ -21,6 +21,7 @@ pub mod machine;
 pub mod orchestrator;
 pub mod pipeline;
 pub mod rollback;
+pub mod undo;
 pub mod runtime;
 pub mod skills;
 pub mod workflow;

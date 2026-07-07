@@ -182,6 +182,24 @@ impl SqliteEventStore {
                 project_path    TEXT NOT NULL,
                 captured_at     TEXT NOT NULL
             );
+
+            -- Change history table (for undo/redo support)
+            -- Stores a stack of file-change snapshots per session, ordered by seq.
+            -- Each record captures the git state (commit hash + diff) after a phase
+            -- iteration, enabling step-by-step undo and redo.
+            CREATE TABLE IF NOT EXISTS change_history (
+                id           TEXT PRIMARY KEY,
+                session_id   TEXT NOT NULL,
+                seq          INTEGER NOT NULL,
+                commit_hash  TEXT NOT NULL,
+                diff         TEXT NOT NULL DEFAULT '',
+                description  TEXT NOT NULL,
+                undone       INTEGER NOT NULL DEFAULT 0,
+                created_at   TEXT NOT NULL,
+                UNIQUE(session_id, seq)
+            );
+            CREATE INDEX IF NOT EXISTS idx_change_history_session
+                ON change_history(session_id, seq);
             ",
         )
         .map_err(|e| format!("Migration error: {}", e))?;
@@ -250,6 +268,147 @@ impl SqliteEventStore {
             .map_err(|e| format!("Baseline query error: {}", e))?;
         Ok(result)
     }
+
+    /// Save a change record to the history stack for a session.
+    ///
+    /// The `seq` field determines ordering. If a record with the same
+    /// `(session_id, seq)` already exists, it is replaced.
+    pub fn save_change_record(&self, record: &ChangeRecord) -> Result<(), String> {
+        let _lock = self
+            .write_lock
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO change_history
+                (id, session_id, seq, commit_hash, diff, description, undone, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                record.id,
+                record.session_id,
+                record.seq,
+                record.commit_hash,
+                record.diff,
+                record.description,
+                record.undone as i64,
+                record.created_at,
+            ],
+        )
+        .map_err(|e| format!("Change record save error: {}", e))?;
+        Ok(())
+    }
+
+    /// List all change records for a session, ordered by sequence (ascending).
+    pub fn list_change_records(&self, session_id: &str) -> Result<Vec<ChangeRecord>, String> {
+        let conn = self.conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, session_id, seq, commit_hash, diff, description, undone, created_at
+                 FROM change_history WHERE session_id = ?1 ORDER BY seq ASC",
+            )
+            .map_err(|e| format!("Prepare error: {}", e))?;
+        let records = stmt
+            .query_map(params![session_id], |row| {
+                Ok(ChangeRecord {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    seq: row.get(2)?,
+                    commit_hash: row.get(3)?,
+                    diff: row.get(4)?,
+                    description: row.get(5)?,
+                    undone: row.get::<_, i64>(6)? != 0,
+                    created_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Query error: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Row error: {}", e))?;
+        Ok(records)
+    }
+
+    /// Get the latest (highest-seq) active (not undone) change record for a session.
+    pub fn get_latest_active_change(&self, session_id: &str) -> Result<Option<ChangeRecord>, String> {
+        let conn = self.conn()?;
+        let result = conn
+            .query_row(
+                "SELECT id, session_id, seq, commit_hash, diff, description, undone, created_at
+                 FROM change_history
+                 WHERE session_id = ?1 AND undone = 0
+                 ORDER BY seq DESC LIMIT 1",
+                params![session_id],
+                |row| {
+                    Ok(ChangeRecord {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        seq: row.get(2)?,
+                        commit_hash: row.get(3)?,
+                        diff: row.get(4)?,
+                        description: row.get(5)?,
+                        undone: row.get::<_, i64>(6)? != 0,
+                        created_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Query error: {}", e))?;
+        Ok(result)
+    }
+
+    /// Get the latest (highest-seq) undone change record for a session (for redo).
+    pub fn get_latest_undone_change(&self, session_id: &str) -> Result<Option<ChangeRecord>, String> {
+        let conn = self.conn()?;
+        let result = conn
+            .query_row(
+                "SELECT id, session_id, seq, commit_hash, diff, description, undone, created_at
+                 FROM change_history
+                 WHERE session_id = ?1 AND undone = 1
+                 ORDER BY seq DESC LIMIT 1",
+                params![session_id],
+                |row| {
+                    Ok(ChangeRecord {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        seq: row.get(2)?,
+                        commit_hash: row.get(3)?,
+                        diff: row.get(4)?,
+                        description: row.get(5)?,
+                        undone: row.get::<_, i64>(6)? != 0,
+                        created_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Query error: {}", e))?;
+        Ok(result)
+    }
+
+    /// Mark a change record as undone (for undo) or active (for redo).
+    pub fn set_change_undone(&self, record_id: &str, undone: bool) -> Result<(), String> {
+        let _lock = self
+            .write_lock
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE change_history SET undone = ?1 WHERE id = ?2",
+            params![undone as i64, record_id],
+        )
+        .map_err(|e| format!("Update error: {}", e))?;
+        Ok(())
+    }
+
+    /// Get the next sequence number for a session (max seq + 1, or 0 if empty).
+    pub fn next_change_seq(&self, session_id: &str) -> Result<i64, String> {
+        let conn = self.conn()?;
+        let max_seq: Option<i64> = conn
+            .query_row(
+                "SELECT MAX(seq) FROM change_history WHERE session_id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+        Ok(max_seq.map(|s| s + 1).unwrap_or(0))
+    }
 }
 
 /// A git baseline captured at the start of a session, used for rollback.
@@ -270,6 +429,31 @@ pub struct SessionBaseline {
     pub captured_at: String,
 }
 
+/// A single file-change snapshot in a session's undo/redo history.
+///
+/// Each record captures the git state (commit hash + uncommitted diff) after
+/// a phase iteration. The undo/redo stack navigates these records: undo marks
+/// a record as `undone` and resets the working tree to the previous record;
+/// redo un-marks it and restores the working tree to this record's state.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChangeRecord {
+    /// Unique record ID (UUID string).
+    pub id: String,
+    /// Session UUID this change belongs to (string form).
+    pub session_id: String,
+    /// Sequence number within the session (0-based, monotonically increasing).
+    pub seq: i64,
+    /// Git commit hash captured after this change (empty if not a git repo).
+    pub commit_hash: String,
+    /// Uncommitted working-tree diff at capture time (empty if clean).
+    pub diff: String,
+    /// Human-readable description of the change (e.g. "Phase: Implementing, Iteration 2").
+    pub description: String,
+    /// Whether this change has been undone (1 = undone, 0 = active).
+    pub undone: bool,
+    /// RFC3339 timestamp of capture.
+    pub created_at: String,
+}
 #[async_trait]
 impl EventStore for SqliteEventStore {
     /// Append a new event (with version conflict detection).
