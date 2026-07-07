@@ -263,30 +263,47 @@ impl LoopPathologyDetector {
         None
     }
 
-    /// Check for oscillation: A→B→A→B pattern in output hashes.
+    /// Check for oscillation: repeating cycle of any period in output hashes.
+    ///
+    /// Detects A→B→A→B (period 2), A→B→C→A→B→C (period 3), and longer cycles
+    /// up to MAX_PERIOD. Checks smaller periods first (more pathological).
+    /// Skips period 1 (that's repetition, handled by `check_repetition`).
     fn check_oscillation(&self, iteration: u32) -> Option<PathologyAlert> {
-        if self.output_hashes.len() < 4 {
-            return None;
-        }
-
         let hashes: Vec<u64> = self.output_hashes.iter().copied().collect();
         let len = hashes.len();
 
-        // Check last 4: h[n-4]=h[n-2] AND h[n-3]=h[n-1] AND h[n-4]!=h[n-3]
-        if hashes[len - 4] == hashes[len - 2]
-            && hashes[len - 3] == hashes[len - 1]
-            && hashes[len - 4] != hashes[len - 3]
-        {
-            return Some(PathologyAlert {
-                kind: PathologyKind::Oscillation,
-                severity: PathologySeverity::Critical,
-                details: format!(
-                    "Oscillation detected: output alternates between two states. Agent is cycling without progress."
-                ),
-                recommended_action: PathologyAction::EscalateModel,
-                iteration,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            });
+        // Need at least 4 hashes for the shortest cycle (period 2 × 2 cycles)
+        if len < 4 {
+            return None;
+        }
+
+        const MAX_PERIOD: usize = 5;
+        let max_period = (len / 2).min(MAX_PERIOD);
+
+        for period in 2..=max_period {
+            let start = len - 2 * period;
+            let first_half = &hashes[start..start + period];
+            let second_half = &hashes[start + period..len];
+
+            // Two identical halves = repeating cycle of length `period`
+            if first_half == second_half {
+                // Exclude all-same (that's repetition, not oscillation)
+                let all_same = first_half.iter().all(|&h| h == first_half[0]);
+                if !all_same {
+                    return Some(PathologyAlert {
+                        kind: PathologyKind::Oscillation,
+                        severity: PathologySeverity::Critical,
+                        details: format!(
+                            "Oscillation detected: output cycles through {} distinct states. \
+                             Agent is cycling without progress.",
+                            period
+                        ),
+                        recommended_action: PathologyAction::EscalateModel,
+                        iteration,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    });
+                }
+            }
         }
 
         None
@@ -519,6 +536,68 @@ mod tests {
         let alert = alert.unwrap();
         assert_eq!(alert.kind, PathologyKind::Oscillation);
         assert_eq!(alert.recommended_action, PathologyAction::EscalateModel);
+    }
+
+    #[test]
+    fn test_oscillation_period_3() {
+        let mut detector = LoopPathologyDetector::new();
+        detector.max_repetitions = 100; // Disable repetition to isolate oscillation
+
+        let output_a = "Output state A with unique content";
+        let output_b = "Output state B with different content";
+        let output_c = "Output state C with other content";
+
+        // A→B→C→A→B→C (period 3, needs 6 hashes for 2 full cycles)
+        detector.record_iteration(0, output_a, "Implementing", None);
+        detector.record_iteration(1, output_b, "Reviewing", None);
+        detector.record_iteration(2, output_c, "Testing", None);
+        detector.record_iteration(3, output_a, "Implementing", None);
+        detector.record_iteration(4, output_b, "Reviewing", None);
+        let alert = detector.record_iteration(5, output_c, "Testing", None);
+
+        assert!(alert.is_some());
+        let alert = alert.unwrap();
+        assert_eq!(alert.kind, PathologyKind::Oscillation);
+        assert!(alert.details.contains("3 distinct states"));
+    }
+
+    #[test]
+    fn test_oscillation_period_4() {
+        let mut detector = LoopPathologyDetector::new();
+        detector.max_repetitions = 100;
+
+        let a = "State A unique";
+        let b = "State B unique";
+        let c = "State C unique";
+        let d = "State D unique";
+
+        // A→B→C→D→A→B→C→D (period 4, needs 8 hashes)
+        detector.record_iteration(0, a, "P1", None);
+        detector.record_iteration(1, b, "P2", None);
+        detector.record_iteration(2, c, "P3", None);
+        detector.record_iteration(3, d, "P4", None);
+        detector.record_iteration(4, a, "P1", None);
+        detector.record_iteration(5, b, "P2", None);
+        detector.record_iteration(6, c, "P3", None);
+        let alert = detector.record_iteration(7, d, "P4", None);
+
+        assert!(alert.is_some());
+        let alert = alert.unwrap();
+        assert_eq!(alert.kind, PathologyKind::Oscillation);
+        assert!(alert.details.contains("4 distinct states"));
+    }
+
+    #[test]
+    fn test_no_oscillation_unique_outputs() {
+        let mut detector = LoopPathologyDetector::new();
+        detector.max_repetitions = 100;
+
+        // All unique — no oscillation
+        for i in 0..10 {
+            let output = format!("Unique output number {}", i);
+            let alert = detector.record_iteration(i, &output, "Implementing", None);
+            assert!(alert.is_none(), "should not alert on unique outputs: {:?}", alert);
+        }
     }
 
     #[test]
