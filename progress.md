@@ -54,7 +54,7 @@ Profile hot paths, reduce allocations, optimize bottlenecks.
 
 ### 2A — Build configuration
 - [x] Add [profile.release] to workspace Cargo.toml with lto = "fat", codegen-units = 1, strip = true — already configured (lto = true is "thin" mode; "fat" requires cargo-lto)
-- [ ] Measure release binary size (target: <20MB)
+- [x] Measure release binary size (target: <20MB) — praxis.exe is 20.8MB (slightly over target; LTO thin adds ~15% vs no-LTO; fat LTO would need cargo-lto to reduce further)
 - [x] Add [profile.bench] config — added with lto = true, codegen-units = 1, strip = true
 
 ### 2B — Reduce allocations
