@@ -145,6 +145,10 @@ pub struct CoreRuntime {
     /// compress history, reduce RAG, prune project context, EMC) when context
     /// exceeds the budget. Connected to the loop via `prepare_context_with_history`.
     pub context_manager: Option<praxis_memory::context::ContextManager>,
+    /// Model override set by drift recovery (ModelUpgrade action).
+    /// When set, all agents use this model instead of their configured one.
+    /// Cleared at session start.
+    pub model_override: Option<String>,
 }
 
 /// Result of executing tool calls from agent output.
@@ -199,6 +203,7 @@ impl CoreRuntime {
             agent_registry: crate::agents::AgentRegistry::builtin_only(),
             hot_memory: None,
             context_manager: None,
+            model_override: None,
         })
     }
 
@@ -553,6 +558,11 @@ impl CoreRuntime {
         }
     }
 
+    /// Return the effective model for an agent, applying any drift-recovery override.
+    fn effective_model<'a>(&'a self, configured: &'a str) -> &'a str {
+        self.model_override.as_deref().unwrap_or(configured)
+    }
+
     /// Push an agent interaction (input + output) to the sliding window.
     ///
     /// Called after each agent execution. The sliding window auto-evicts the
@@ -703,12 +713,28 @@ impl CoreRuntime {
             }
 
             RecoveryKind::ModelUpgrade => {
-                // The RecoveryOrchestrator already tracked the tier upgrade.
-                // Log it; the next iteration may use a different model tier.
-                tracing::info!(
-                    "Model upgrade recommended. Current tier: {:?}",
-                    self.drift_guard.recovery.current_tier()
-                );
+                // Upgrade to a more capable model. The override applies to all
+                // agents in subsequent iterations until the session ends.
+                let current = self.model_override.clone().unwrap_or_else(|| "gpt-4o".to_string());
+                let upgraded = match current.as_str() {
+                    "gpt-4o-mini" | "gpt-4o" => "gpt-5",
+                    "claude-3-haiku" | "claude-3-5-haiku" => "claude-3-5-sonnet",
+                    "claude-3-5-sonnet" => "claude-3-5-opus",
+                    "gemini-1.5-flash" | "gemini-1.5-pro" => "gemini-2.0-pro",
+                    _ => current.as_str(), // Already at max or unknown — no upgrade
+                };
+                if upgraded != current.as_str() {
+                    self.model_override = Some(upgraded.to_string());
+                    tracing::info!(
+                        "Model upgrade: {} → {} (drift recovery)",
+                        current, upgraded
+                    );
+                } else {
+                    tracing::warn!(
+                        "Model upgrade requested but already at max tier: {}",
+                        current
+                    );
+                }
             }
 
             RecoveryKind::SessionHandoff => {
@@ -1556,6 +1582,7 @@ impl CoreRuntime {
             self.completion_criterion = Some(default_coding_criterion());
         }
         self.pathology_detector.reset();
+        self.model_override = None;
 
         // Assign a session ID
         self.session_id = Some(uuid::Uuid::new_v4());
@@ -1647,7 +1674,8 @@ impl CoreRuntime {
                         .unwrap_or_else(|| {
                             orchestrator::roles::ResolvedRole::resolve(role_config, None)
                         });
-                    let (agent, provider_name) = match provider_router.resolve(&role_config.model) {
+                    let effective_model = self.effective_model(&role_config.model);
+                    let (agent, provider_name) = match provider_router.resolve(effective_model) {
                         Ok(provider) => {
                             let name = provider.provider_name().to_string();
                             (crate::actor::roles::AgentFactory::create_with_provider_and_bus(
@@ -1659,7 +1687,7 @@ impl CoreRuntime {
                         Err(_) => {
                             tracing::warn!(
                                 "No provider for model '{}'. Using mock agent for '{}'.",
-                                role_config.model,
+                                effective_model,
                                 role_config.name
                             );
                             (crate::actor::roles::AgentFactory::create(&resolved_role), "mock".to_string())
@@ -1899,7 +1927,8 @@ impl CoreRuntime {
                         .unwrap_or_else(|| {
                             orchestrator::roles::ResolvedRole::resolve(role_config, None)
                         });
-                    let (agent, provider_name) = match provider_router.resolve(&role_config.model) {
+                    let effective_model = self.effective_model(&role_config.model);
+                    let (agent, provider_name) = match provider_router.resolve(effective_model) {
                         Ok(provider) => {
                             let name = provider.provider_name().to_string();
                             (crate::actor::roles::AgentFactory::create_with_provider_and_bus(
@@ -1911,7 +1940,7 @@ impl CoreRuntime {
                         Err(_) => {
                             tracing::warn!(
                                 "No provider for model '{}'. Using mock agent for '{}'.",
-                                role_config.model,
+                                effective_model,
                                 role_config.name
                             );
                             (crate::actor::roles::AgentFactory::create(&resolved_role), "mock".to_string())
@@ -1981,7 +2010,7 @@ impl CoreRuntime {
                             round
                         );
 
-                        let follow_up_agent = match provider_router.resolve(&role_config.model) {
+                        let follow_up_agent = match provider_router.resolve(self.effective_model(&role_config.model)) {
                             Ok(provider) => {
                                 crate::actor::roles::AgentFactory::create_with_provider_and_bus(
                                     &resolved_role,
@@ -2436,6 +2465,7 @@ impl CoreRuntime {
             self.completion_criterion = Some(default_coding_criterion());
         }
         self.pathology_detector.reset();
+        self.model_override = None;
 
         self.loop_controller.start();
 
@@ -2510,7 +2540,7 @@ impl CoreRuntime {
                     .unwrap_or_else(|| {
                         orchestrator::roles::ResolvedRole::resolve(role_config, None)
                     });
-                let agent = match provider_router.resolve(&role_config.model) {
+                let agent = match provider_router.resolve(self.effective_model(&role_config.model)) {
                     Ok(provider) => {
                         crate::actor::roles::AgentFactory::create_with_provider_and_bus(
                             &resolved_role,
