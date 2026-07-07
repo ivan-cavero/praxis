@@ -66,8 +66,7 @@ impl ConsolidatedMemory {
 
     /// Attach a Qdrant backend for persistent storage.
     ///
-    /// Summaries are synced to Qdrant on every `store()` call
-    /// and can be reloaded with `load_from_qdrant()`.
+    /// Summaries are synced to Qdrant on every `store()` call.
     pub fn with_qdrant(mut self, qdrant: crate::episodic::QdrantBackend) -> Self {
         self.qdrant = Some(qdrant);
         self

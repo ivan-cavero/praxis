@@ -158,6 +158,22 @@ impl SqliteEventStore {
                 pressure_after  REAL,
                 created_at      TEXT NOT NULL
             );
+
+            -- Episodic chunks table (persistent storage, synced from in-memory store)
+            CREATE TABLE IF NOT EXISTS episodic_chunks (
+                id          TEXT PRIMARY KEY,
+                content     TEXT NOT NULL,
+                embedding   BLOB NOT NULL,
+                session_id  TEXT NOT NULL,
+                project_id  TEXT NOT NULL,
+                agent_id    TEXT NOT NULL,
+                chunk_type  TEXT NOT NULL,
+                timestamp   TEXT NOT NULL,
+                token_count INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_episodic_session ON episodic_chunks(session_id);
+            CREATE INDEX IF NOT EXISTS idx_episodic_project ON episodic_chunks(project_id);
+            CREATE INDEX IF NOT EXISTS idx_episodic_timestamp ON episodic_chunks(timestamp);
             ",
         )
         .map_err(|e| format!("Migration error: {}", e))?;
@@ -166,8 +182,13 @@ impl SqliteEventStore {
     }
 
     /// Get a connection from the pool.
-    fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
+    pub fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
         self.pool.get().map_err(|e| format!("Pool error: {}", e))
+    }
+
+    /// Get a reference to the connection pool (for sharing with other components).
+    pub fn pool(&self) -> &r2d2::Pool<SqliteConnectionManager> {
+        &self.pool
     }
 }
 

@@ -134,6 +134,133 @@ impl QdrantBackend {
     }
 }
 
+// ─── Optional SQLite Backend ──────────────────────────────────
+
+/// SQLite backend for persistent episodic memory storage.
+///
+/// Stores chunks in the `episodic_chunks` table with serde_json-serialized
+/// embeddings as BLOB. Synced from the in-memory store on every `store()` call.
+#[derive(Clone)]
+pub struct SqliteBackend {
+    pool: r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>,
+}
+
+impl SqliteBackend {
+    /// Create a new SQLite backend from a connection pool.
+    pub fn from_pool(pool: r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>) -> Self {
+        Self { pool }
+    }
+
+    /// Ensure the episodic_chunks table exists.
+    pub fn ensure_schema(&self) -> Result<(), String> {
+        let conn = self.pool.get().map_err(|e| format!("Pool error: {}", e))?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS episodic_chunks (
+                id          TEXT PRIMARY KEY,
+                content     TEXT NOT NULL,
+                embedding   BLOB NOT NULL,
+                session_id  TEXT NOT NULL,
+                project_id  TEXT NOT NULL,
+                agent_id    TEXT NOT NULL,
+                chunk_type  TEXT NOT NULL,
+                timestamp   TEXT NOT NULL,
+                token_count INTEGER NOT NULL
+            );",
+        )
+        .map_err(|e| format!("SQLite schema error: {}", e))?;
+        Ok(())
+    }
+
+    /// Upsert a single memory chunk.
+    pub fn upsert_chunk(&self, chunk: &MemoryChunk) -> Result<(), String> {
+        let conn = self.pool.get().map_err(|e| format!("Pool error: {}", e))?;
+        let embedding_bytes =
+            serde_json::to_vec(&chunk.embedding).map_err(|e| format!("Serialize embedding: {}", e))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO episodic_chunks \
+             (id, content, embedding, session_id, project_id, agent_id, chunk_type, timestamp, token_count) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                chunk.id,
+                chunk.content,
+                embedding_bytes,
+                chunk.metadata.session_id,
+                chunk.metadata.project_id,
+                chunk.metadata.agent_id,
+                format!("{:?}", chunk.metadata.chunk_type),
+                chunk.metadata.timestamp,
+                chunk.metadata.token_count,
+            ],
+        )
+        .map_err(|e| format!("SQLite upsert error: {}", e))?;
+        Ok(())
+    }
+
+    /// Load all chunks from SQLite into memory.
+    pub fn load_all(&self) -> Result<Vec<MemoryChunk>, String> {
+        let conn = self.pool.get().map_err(|e| format!("Pool error: {}", e))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, content, embedding, session_id, project_id, agent_id, chunk_type, timestamp, token_count \
+                 FROM episodic_chunks ORDER BY timestamp",
+            )
+            .map_err(|e| format!("SQLite prepare error: {}", e))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![], |row| {
+                let embedding: Vec<f32> = serde_json::from_slice(
+                    row.get::<_, String>("embedding")?.as_bytes(),
+                ).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
+
+                let chunk_type_str: String = row.get("chunk_type")?;
+                let chunk_type = match chunk_type_str.as_str() {
+                    "Conversation" => ChunkType::Conversation,
+                    "Code" => ChunkType::Code,
+                    "Decision" => ChunkType::Decision,
+                    "Research" => ChunkType::Research,
+                    "Error" => ChunkType::Error,
+                    "Summary" => ChunkType::Summary,
+                    _ => ChunkType::Conversation,
+                };
+
+                Ok(MemoryChunk {
+                    id: row.get("id")?,
+                    content: row.get("content")?,
+                    embedding,
+                    metadata: ChunkMetadata {
+                        session_id: row.get("session_id")?,
+                        project_id: row.get("project_id")?,
+                        agent_id: row.get("agent_id")?,
+                        chunk_type,
+                        timestamp: row.get("timestamp")?,
+                        token_count: row.get("token_count")?,
+                    },
+                    score: None,
+                })
+            })
+            .map_err(|e| format!("SQLite query error: {}", e))?;
+
+        let chunks: Vec<MemoryChunk> = rows
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(chunks)
+    }
+
+    /// Delete chunks older than the given RFC 3339 cutoff timestamp.
+    /// Returns the number of rows deleted.
+    pub fn delete_older_than(&self, cutoff_rfc3339: &str) -> Result<usize, String> {
+        let conn = self.pool.get().map_err(|e| format!("Pool error: {}", e))?;
+        let deleted = conn
+            .execute(
+                "DELETE FROM episodic_chunks WHERE timestamp < ?1",
+                rusqlite::params![cutoff_rfc3339],
+            )
+            .map_err(|e| format!("SQLite delete error: {}", e))?;
+        Ok(deleted)
+    }
+}
+
 // ─── Episodic Memory ──────────────────────────────────────────
 
 /// Episodic memory with in-memory vector store and optional Qdrant sync.
@@ -148,6 +275,8 @@ pub struct EpisodicMemory {
     embedding_service: Option<Arc<EmbeddingService>>,
     /// Optional Qdrant backend for persistent sync.
     qdrant: Option<QdrantBackend>,
+    /// Optional SQLite backend for persistent storage.
+    sqlite: Option<SqliteBackend>,
 }
 
 impl EpisodicMemory {
@@ -159,6 +288,7 @@ impl EpisodicMemory {
             recency: VecDeque::with_capacity(max_chunks),
             embedding_service: None,
             qdrant: None,
+            sqlite: None,
         }
     }
 
@@ -177,6 +307,25 @@ impl EpisodicMemory {
     pub fn with_qdrant(mut self, backend: QdrantBackend) -> Self {
         self.qdrant = Some(backend);
         self
+    }
+
+    /// Attach an optional SQLite backend for persistent storage.
+    pub fn with_sqlite(mut self, backend: SqliteBackend) -> Self {
+        self.sqlite = Some(backend);
+        self
+    }
+
+    /// Load all chunks from SQLite into the in-memory store.
+    pub fn load_from_sqlite(&mut self) -> Result<usize, String> {
+        let sqlite = self.sqlite.as_ref().ok_or("No SQLite backend configured")?;
+        let chunks = sqlite.load_all()?;
+        let count = chunks.len();
+        for chunk in chunks {
+            let id = chunk.id.clone();
+            self.chunks.push(chunk);
+            self.recency.push_back(id);
+        }
+        Ok(count)
     }
 
     /// Store a memory chunk, auto-embedding if missing and possible.
@@ -222,6 +371,15 @@ impl EpisodicMemory {
                 });
             }
         }
+
+        // Sync to SQLite if configured (sync call — fast, avoids races on shutdown)
+        if let Some(sqlite) = &self.sqlite {
+            if let Some(last) = self.chunks.last() {
+                if let Err(e) = sqlite.upsert_chunk(last) {
+                    tracing::warn!("SQLite episodic sync failed: {}", e);
+                }
+            }
+        }
     }
 
     /// Sync a single chunk to Qdrant.
@@ -261,6 +419,84 @@ impl EpisodicMemory {
         let mut results: Vec<SearchResult> = self
             .chunks
             .iter()
+            .map(|chunk| {
+                let score = cosine_similarity(query_embedding, &chunk.embedding);
+                SearchResult {
+                    chunk: chunk.clone(),
+                    score,
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(limit);
+        results
+    }
+
+    /// Search with text query and optional project filter.
+    pub fn search_text_with_filter(
+        &self,
+        query: &str,
+        limit: usize,
+        project_id: Option<&str>,
+    ) -> Vec<SearchResult> {
+        let query_lower = query.to_lowercase();
+        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+
+        let mut results: Vec<SearchResult> = self
+            .chunks
+            .iter()
+            .filter(|chunk| {
+                project_id
+                    .map(|pid| chunk.metadata.project_id == pid)
+                    .unwrap_or(true)
+            })
+            .filter_map(|chunk| {
+                let content_lower = chunk.content.to_lowercase();
+                let match_count = query_words
+                    .iter()
+                    .filter(|word| content_lower.contains(**word))
+                    .count();
+
+                if match_count > 0 {
+                    let score = match_count as f32 / query_words.len() as f32;
+                    Some(SearchResult {
+                        chunk: chunk.clone(),
+                        score,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(limit);
+        results
+    }
+
+    /// Search in-memory with an optional project filter.
+    ///
+    /// When `project_id` is `Some`, only chunks from that project are returned.
+    /// When `None`, all chunks are searched (cross-project).
+    pub fn search_with_filter(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        project_id: Option<&str>,
+    ) -> Vec<SearchResult> {
+        if self.chunks.is_empty() || query_embedding.is_empty() {
+            return Vec::new();
+        }
+
+        let mut results: Vec<SearchResult> = self
+            .chunks
+            .iter()
+            .filter(|chunk| {
+                project_id
+                    .map(|pid| chunk.metadata.project_id == pid)
+                    .unwrap_or(true)
+            })
             .map(|chunk| {
                 let score = cosine_similarity(query_embedding, &chunk.embedding);
                 SearchResult {
@@ -430,6 +666,7 @@ impl EpisodicMemory {
             total_chunks: self.chunks.len(),
             max_chunks: self.max_chunks,
             has_qdrant: self.qdrant.is_some(),
+            has_sqlite: self.sqlite.is_some(),
             has_embedding_service: self.embedding_service.is_some(),
             by_type: self.chunks.iter().fold(
                 std::collections::HashMap::new(),
@@ -464,7 +701,20 @@ impl EpisodicMemory {
             self.chunks.iter().map(|c| c.id.clone()).collect();
         self.recency.retain(|id| valid_ids.contains(id));
 
-        before_removal - self.chunks.len()
+        let removed = before_removal - self.chunks.len();
+
+        // Delete TTL-expired chunks from SQLite too (in-memory LRU eviction does NOT touch SQLite)
+        if removed > 0 {
+            if let Some(sqlite) = &self.sqlite {
+                let cutoff = now - chrono::Duration::seconds(max_secs);
+                let cutoff_rfc = cutoff.to_rfc3339();
+                if let Err(e) = sqlite.delete_older_than(&cutoff_rfc) {
+                    tracing::warn!("SQLite TTL cleanup failed: {}", e);
+                }
+            }
+        }
+
+        removed
     }
 }
 
@@ -491,6 +741,7 @@ pub struct EpisodicStats {
     pub total_chunks: usize,
     pub max_chunks: usize,
     pub has_qdrant: bool,
+    pub has_sqlite: bool,
     pub has_embedding_service: bool,
     pub by_type: std::collections::HashMap<String, usize>,
 }
