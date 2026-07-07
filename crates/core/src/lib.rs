@@ -430,6 +430,20 @@ impl CoreRuntime {
         );
     }
 
+    /// Evict episodic memory chunks older than 30 days (TTL cleanup).
+    ///
+    /// Summaries in consolidated memory are kept forever; only raw episodic
+    /// chunks are TTL-evicted. Called at session end so the next session
+    /// starts with a clean episodic store.
+    async fn cleanup_episodic_memory(&self) {
+        let Some(ref episodic) = self.episodic_memory else { return };
+        const EPISODIC_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 60 * 60);
+        let removed = episodic.write().await.cleanup(EPISODIC_TTL);
+        if removed > 0 {
+            tracing::info!("Episodic memory TTL cleanup: removed {} chunks older than 30 days", removed);
+        }
+    }
+
     /// Late-binding: attach an embedding service to the existing MemoryKeeper.
     ///
     /// Called from `run_goal()` after the LLM provider is initialized, so the
@@ -2339,6 +2353,9 @@ impl CoreRuntime {
         // Summarize entire session into consolidated memory
         self.summarize_current_session().await;
 
+        // Evict episodic chunks older than 30 days (TTL cleanup)
+        self.cleanup_episodic_memory().await;
+
         let total_duration: u64 = results.iter().map(|r| r.duration_ms).sum();
         let passed = current_phase == machine::phase::Phase::Completed;
 
@@ -2671,6 +2688,9 @@ impl CoreRuntime {
         self.save_checkpoint(&goal).await;
 
         self.summarize_current_session().await;
+
+        // Evict episodic chunks older than 30 days (TTL cleanup)
+        self.cleanup_episodic_memory().await;
 
         let total_duration: u64 = results.iter().map(|r| r.duration_ms).sum();
         let passed = current_phase == machine::phase::Phase::Completed;
