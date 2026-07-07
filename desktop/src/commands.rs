@@ -74,7 +74,15 @@ impl AppState {
             api_port: RwLock::new(None),
         }
     }
+}
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AppState {
     /// Initialize the CoreRuntime with an optional event store database path.
     pub async fn init_runtime(&self, db_path: Option<PathBuf>) -> Result<(), String> {
         let mut rt = CoreRuntime::new()

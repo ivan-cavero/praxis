@@ -217,7 +217,7 @@ async fn init_backend(handle: &tauri::AppHandle) {
 
     // 2. Start API server on a random port
     // Bind to get the actual port
-    let addr = format!("127.0.0.1:0");
+    let addr = "127.0.0.1:0".to_string();
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
