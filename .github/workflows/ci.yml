@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust nightly
+        uses: dtolnay/rust-toolchain@nightly-2026-06-01
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/*"
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: dashboard/node_modules
+          key: bun-${{ hashFiles('dashboard/bun.lock') }}
+          restore-keys: |
+            bun-
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests (exclude desktop — needs dashboard/dist)
+        run: cargo test --workspace --exclude desktop
+
+      - name: Build dashboard
+        run: |
+          cd dashboard
+          bun install
+          bun run build
+
+      - name: Desktop tests
+        run: cargo test -p desktop
+
+      - name: Full workspace build
+        run: cargo build --workspace
