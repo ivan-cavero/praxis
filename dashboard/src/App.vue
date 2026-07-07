@@ -22,6 +22,35 @@ const updater = useUpdater()
 const apiStatus = useApiStatus()
 const ws = useWebSocket()
 
+// ─── Connection health ──────────────────────────────────────────
+const apiConnected = computed(() => apiStatus.status.value === 'connected')
+const wsConnected = computed(() => ws.connected.value)
+
+const apiDotClass = computed(() => {
+  if (apiStatus.status.value === 'connected') return 'api-connected'
+  if (apiStatus.status.value === 'checking') return 'api-checking'
+  return 'api-disconnected'
+})
+
+const wsDotClass = computed(() => {
+  if (ws.connected.value) return 'ws-connected'
+  return 'ws-disconnected'
+})
+
+const wsLabel = computed(() => {
+  return ws.connected.value ? 'WebSocket connected' : 'WebSocket disconnected'
+})
+
+const connectionLabel = computed(() => {
+  if (!apiConnected.value || !wsConnected.value) return 'Disconnected'
+  return 'Connected'
+})
+
+const connectionHealthClass = computed(() => {
+  if (!apiConnected.value || !wsConnected.value) return 'disconnected'
+  return 'connected'
+})
+
 // ─── Store refs ───────────────────────────────────────────────────
 const { projects } = storeToRefs(store)
 
@@ -288,10 +317,12 @@ function handleLogin(token: string) {
 
         <!-- Sidebar -->
         <aside class="sidebar" :class="{ open: sidebarOpen }">
-          <!-- Connection indicator -->
-          <div class="sidebar-connection" :class="apiStatus.status.value">
-            <span class="connection-dot" />
-            <span class="connection-label">{{ apiStatus.statusLabel.value }}</span>
+          <div class="sidebar-connection" :class="connectionHealthClass">
+            <span class="connection-dots">
+              <span class="connection-dot" :class="apiDotClass" :title="apiStatus.statusLabel.value" />
+              <span class="connection-dot ws-dot" :class="wsDotClass" :title="wsLabel" />
+            </span>
+            <span class="connection-label">{{ connectionLabel }}</span>
           </div>
 
           <!-- Navigation -->
@@ -478,6 +509,35 @@ function handleLogin(token: string) {
 @keyframes connPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+/* ─── Dual-dot connection health ───────────────────────────────── */
+.connection-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-dot {
+  width: 5px;
+  height: 5px;
+  opacity: 0.7;
+}
+
+.api-connected,
+.ws-connected {
+  background: #4ade80 !important;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+}
+
+.api-disconnected,
+.ws-disconnected {
+  background: #f87171 !important;
+  opacity: 0.5;
+}
+
+.api-checking {
+  background: #fbbf24 !important;
+  animation: connPulse 1.5s infinite;
 }
 
 /* ─── Mobile sidebar toggle ────────────────────────────────────── */

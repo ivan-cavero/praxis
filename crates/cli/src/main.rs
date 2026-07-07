@@ -683,6 +683,32 @@ enum Commands {
     ///   praxis doctor
     Doctor,
 
+    /// Generate shell completion scripts
+    ///
+    /// EXAMPLES:
+    ///   praxis completion bash > /etc/bash_completion.d/praxis
+    ///   praxis completion zsh > ~/.zsh/completions/_praxis
+    ///   praxis completion fish > ~/.config/fish/completions/praxis.fish
+    ///   praxis completion powershell > praxis.ps1
+    Completion {
+        /// Target shell
+        shell: String,
+    },
+
+    /// Follow session logs in real-time (polls the API server)
+    ///
+    /// EXAMPLES:
+    ///   praxis logs <session-id>
+    ///   praxis logs <session-id> --interval 2
+    Logs {
+        /// Session ID to follow
+        session_id: String,
+
+        /// Polling interval in seconds (default: 2)
+        #[arg(long, default_value = "2")]
+        interval: u64,
+    },
+
     /// Interactive quickstart guide — sets up your first project and provider
     ///
     /// EXAMPLES:
@@ -820,6 +846,13 @@ enum SessionCommands {
     /// List all change records for a session (undo/redo history).
     Changes {
         id: String,
+    },
+    /// Export a session's full state (events, checkpoint, changes) as JSON or YAML.
+    Export {
+        id: String,
+        /// Output format: json or yaml (default: json)
+        #[arg(long, default_value = "json")]
+        format: String,
     },
 }
 
@@ -2272,6 +2305,65 @@ async fn main() -> anyhow::Result<()> {
                     }
                     Err(e) => {
                         println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
+            SessionCommands::Export { id, format } => {
+                let sid = match uuid::Uuid::parse_str(&id) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("{} Invalid session ID: {}", "✗".red(), e);
+                        return Ok(());
+                    }
+                };
+
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
+                if !db_path.exists() {
+                    println!("{} No database found. Run a session first.", "✗".red());
+                    return Ok(());
+                }
+
+                let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("{} Failed to open database: {}", "✗".red(), e);
+                        return Ok(());
+                    }
+                };
+
+                // Gather session data: events, snapshot, changes
+                let events = store
+                    .read_events(sid, None)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                let snapshot = store.get_snapshot(sid).await.map_err(|e| anyhow::anyhow!(e))?;
+
+                let changes = praxis_core::undo::list_changes(&store, sid)
+                    .unwrap_or_default();
+
+                let export = serde_json::json!({
+                    "session_id": id,
+                    "exported_at": chrono::Utc::now().to_rfc3339(),
+                    "events": events,
+                    "snapshot": snapshot,
+                    "changes": changes,
+                });
+
+                match format.to_lowercase().as_str() {
+                    "json" => {
+                        println!("{}", serde_json::to_string_pretty(&export)?);
+                    }
+                    "yaml" => {
+                        let yaml = serde_yaml_neo::to_string(&export)
+                            .map_err(|e| anyhow::anyhow!("YAML serialization error: {}", e))?;
+                        println!("{}", yaml);
+                    }
+                    other => {
+                        println!("{} Unknown format: {}", "✗".red(), other);
+                        println!("  Supported: json, yaml");
+                        std::process::exit(1);
                     }
                 }
             }
@@ -3975,6 +4067,99 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", "═".repeat(50).dimmed());
             println!("  Docs: https://github.com/praxis-ai/praxis");
             println!("  Help: {}", "praxis help".yellow());
+        }
+
+        // ─── Completion ────────────────────────────────────
+        Commands::Completion { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::Shell;
+            let target = match shell.to_lowercase().as_str() {
+                "bash" => Shell::Bash,
+                "zsh" => Shell::Zsh,
+                "fish" => Shell::Fish,
+                "powershell" | "pwsh" => Shell::PowerShell,
+                "elvish" => Shell::Elvish,
+                other => {
+                    println!("{} Unknown shell: {}", "✗".red(), other);
+                    println!("  Supported: bash, zsh, fish, powershell, elvish");
+                    std::process::exit(1);
+                }
+            };
+            let mut cmd = Cli::command();
+            clap_complete::generate(target, &mut cmd, "praxis", &mut std::io::stdout());
+        }
+
+        // ─── Logs (follow mode) ────────────────────────────
+        Commands::Logs {
+            session_id,
+            interval,
+        } => {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let api_url = "http://localhost:8080";
+            let events_url = format!("{}/api/sessions/{}/events", api_url, session_id);
+
+            println!(
+                "{} Following session {} (interval: {}s, API: {})",
+                "→".cyan(),
+                session_id.yellow(),
+                interval,
+                api_url.dimmed()
+            );
+            println!("  Press Ctrl+C to stop.");
+            println!("{}", "─".repeat(80).dimmed());
+
+            let mut last_count = 0usize;
+            loop {
+                match client.get(&events_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let events: Vec<serde_json::Value> =
+                            resp.json().await.unwrap_or_default();
+                        if events.len() > last_count {
+                            for event in &events[last_count..] {
+                                let time: String = event
+                                    .get("created_at")
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("")
+                                    .chars()
+                                    .skip(11)
+                                    .take(8)
+                                    .collect();
+                                let event_type = event
+                                    .get("type")
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("?");
+                                println!("  {} {}", time.dimmed(), event_type.cyan());
+                                if let Some(payload) = event.get("payload")
+                                    && let Ok(pretty) = serde_json::to_string_pretty(payload)
+                                {
+                                    for line in pretty.lines().take(3) {
+                                        println!("    {}", line.dimmed());
+                                    }
+                                }
+                            }
+                            last_count = events.len();
+                        }
+                    }
+                    Ok(_) => {
+                        // Non-success status — keep trying.
+                    }
+                    Err(e) if e.is_connect() => {
+                        println!(
+                            "{} API server not reachable. Start with: {}",
+                            "✗".red(),
+                            "praxis server".cyan()
+                        );
+                        std::process::exit(1);
+                    }
+                    Err(_) => {
+                        // Transient error — keep trying.
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+            }
         }
     }
 

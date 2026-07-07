@@ -133,7 +133,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 - [ ] Wire existing OnboardingOverlay component into new user flow
 
 ### 4F — Real-time features
-- [ ] Improve useWebSocket — connection health indicator
+- [x] Improve useWebSocket — connection health indicator
 - [ ] Add live agent status updates (pulsing dots)
 - [ ] Add real-time token counter animation
 - [ ] Add session event timeline (scrollable feed)
