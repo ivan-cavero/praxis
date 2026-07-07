@@ -255,9 +255,9 @@ Automation and release improvements.
 - [x] Release-please or auto-PR workflow — release-please.yml opens release PR on push to main; merged PR tags v* which triggers release.yml + docker.yml
 
 ### 9C — Monitoring
-- [ ] GET /api/health — DB, LLM provider status
-- [ ] GET /api/metrics — Prometheus/JSON metrics
-- [ ] Graceful degradation when providers are unavailable
+- [x] GET /api/health — DB, LLM provider status — HealthResponse now includes checks.database (ok/degraded/unavailable) and checks.providers (configured/missing per vault key)
+- [x] GET /api/metrics — Prometheus/JSON metrics — unified endpoint aggregates tokens, sessions, context pressure; returns Prometheus exposition format when Accept: text/plain
+- [x] Graceful degradation when providers are unavailable — health returns "degraded" (not error) when DB is down; runtime already falls back stream→chat→mock on provider failures
 
 ---
 

@@ -119,10 +119,23 @@ impl ApiServer {
 
     pub fn router(state: AppState) -> Router {
         let cors = tower_http::cors::CorsLayer::new()
-            .allow_origin(axum::http::HeaderValue::from_static("http://localhost:3000"))
-            .allow_origin(axum::http::HeaderValue::from_static("http://localhost:5173"))
-            .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
-            .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE]);
+            .allow_origin(axum::http::HeaderValue::from_static(
+                "http://localhost:3000",
+            ))
+            .allow_origin(axum::http::HeaderValue::from_static(
+                "http://localhost:5173",
+            ))
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+                axum::http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::CONTENT_TYPE,
+            ]);
         let auth_state = state.auth.clone();
 
         // Authenticated routes
@@ -191,6 +204,7 @@ impl ApiServer {
             .route("/api/metrics/tokens", get(routes::token_metrics))
             .route("/api/metrics/summary", get(routes::metrics_summary))
             .route("/api/metrics/context", get(routes::context_metrics))
+            .route("/api/metrics", get(routes::metrics))
             .route("/api/vault/keys", get(vault::list_keys))
             .route("/api/vault/keys", post(vault::set_key))
             .route("/api/vault/keys/{provider}", delete(vault::delete_key))
@@ -313,6 +327,9 @@ impl ApiServer {
         // Generate and display first-run admin token
         let first_run_token = super::auth::generate_first_run_token(&auth).ok();
         if let Some(ref token) = first_run_token {
+            // Mark as consumed immediately — first-run tokens are one-time use
+            auth.mark_first_run_consumed(token);
+
             println!();
             println!("╔══════════════════════════════════════════════════════════╗");
             println!("║     🔑 FIRST-RUN ADMIN TOKEN                           ║");
@@ -1200,6 +1217,25 @@ pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub uptime_seconds: u64,
+    /// Component-level health checks (DB, providers).
+    pub checks: HealthChecks,
+}
+
+/// Per-component health status reported by `GET /api/health`.
+#[derive(Serialize)]
+pub struct HealthChecks {
+    /// SQLite event store: "ok" if reachable, "unavailable" otherwise.
+    pub database: String,
+    /// LLM providers with an API key configured in the vault.
+    pub providers: Vec<ProviderHealth>,
+}
+
+/// Health status of a single LLM provider.
+#[derive(Serialize)]
+pub struct ProviderHealth {
+    pub name: String,
+    /// "configured" if an API key is stored, "missing" otherwise.
+    pub status: String,
 }
 
 #[derive(Serialize)]
@@ -1226,6 +1262,26 @@ pub struct MetricsSummaryResponse {
     pub active_sessions: u32,
     pub total_tokens: u64,
     pub avg_asi_score: f32,
+}
+
+/// Unified metrics response — aggregates all metric sub-types in one call.
+///
+/// `GET /api/metrics` returns this as JSON by default. When the `Accept`
+/// header is `text/plain` (Prometheus scrape), the handler returns
+/// Prometheus exposition format instead.
+#[derive(Serialize)]
+pub struct UnifiedMetricsResponse {
+    pub version: String,
+    pub uptime_seconds: u64,
+    pub active_sessions: u32,
+    pub total_tokens: u64,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub avg_asi_score: f32,
+    pub avg_context_pressure: f32,
+    pub max_context_pressure: f32,
+    pub tokens_by_provider: std::collections::HashMap<String, u64>,
+    pub tokens_by_model: std::collections::HashMap<String, u64>,
 }
 
 #[derive(Serialize)]
@@ -2006,10 +2062,51 @@ pub mod routes {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
+
+        // Database check: can we list aggregates from the event store?
+        let database = if let Some(store) = &state.event_store {
+            match store.list_aggregates("session").await {
+                Ok(_) => "ok".to_string(),
+                Err(e) => {
+                    tracing::warn!("Health check: DB query failed: {}", e);
+                    "degraded".to_string()
+                }
+            }
+        } else {
+            "unavailable".to_string()
+        };
+
+        // Provider check: which providers have API keys in the vault?
+        let vault_keys = state.vault.list_keys().unwrap_or_default();
+        let providers = vault_keys
+            .into_iter()
+            .map(|name| {
+                let has_key = state.vault.get(&name).unwrap_or_default().is_some();
+                ProviderHealth {
+                    name,
+                    status: if has_key { "configured" } else { "missing" }.to_string(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // Overall status: "ok" if DB is reachable (or absent but that's expected
+        // on a fresh install), "degraded" if DB is degraded, "error" if DB is
+        // unavailable. Providers being missing is NOT an error — the operator
+        // may not have configured them yet.
+        let status = match database.as_str() {
+            "ok" | "unavailable" => "ok",
+            "degraded" => "degraded",
+            _ => "error",
+        };
+
         Json(HealthResponse {
-            status: "ok".to_string(),
+            status: status.to_string(),
             version: state.version.clone(),
             uptime_seconds: uptime,
+            checks: HealthChecks {
+                database,
+                providers,
+            },
         })
     }
 
@@ -2151,6 +2248,143 @@ pub mod routes {
             total_tokens,
             avg_asi_score: 100.0,
         })
+    }
+
+    /// Unified metrics endpoint.
+    ///
+    /// Returns JSON by default. If the `Accept` header is `text/plain`,
+    /// returns Prometheus exposition format for scraping by Prometheus.
+    pub async fn metrics(
+        State(state): State<Arc<AppState>>,
+        headers: axum::http::HeaderMap,
+    ) -> axum::response::Response {
+        let uptime = chrono::Utc::now()
+            .signed_duration_since(state.started_at)
+            .num_seconds() as u64;
+        let session_count = state
+            .session_registry
+            .read()
+            .expect("RwLock not poisoned")
+            .len() as u32;
+
+        let (total_input, total_output, by_provider, by_model) = {
+            let counters = state.token_counters.read().expect("RwLock not poisoned");
+            (
+                counters.total_input,
+                counters.total_output,
+                counters.by_provider.clone(),
+                counters.by_model.clone(),
+            )
+        };
+
+        // Context pressure from the most recent checkpoint of each session.
+        let (avg_pressure, max_pressure) = if let Some(store) = &state.event_store {
+            if let Ok(session_ids) = store.list_aggregates("session").await {
+                let mut pressures: Vec<f64> = Vec::new();
+                for sid in &session_ids {
+                    if let Ok(Some(snap)) = store.get_snapshot(*sid).await
+                        && let Some(p) = snap.state.get("context_pressure").and_then(|v| v.as_f64())
+                    {
+                        pressures.push(p);
+                    }
+                }
+                if pressures.is_empty() {
+                    (0.0, 0.0)
+                } else {
+                    let avg = pressures.iter().sum::<f64>() / pressures.len() as f64;
+                    let max = pressures.iter().cloned().fold(0.0_f64, f64::max);
+                    (avg as f32, max as f32)
+                }
+            } else {
+                (0.0, 0.0)
+            }
+        } else {
+            (0.0, 0.0)
+        };
+
+        let unified = UnifiedMetricsResponse {
+            version: state.version.clone(),
+            uptime_seconds: uptime,
+            active_sessions: session_count,
+            total_tokens: total_input + total_output,
+            total_input_tokens: total_input,
+            total_output_tokens: total_output,
+            avg_asi_score: 100.0,
+            avg_context_pressure: avg_pressure,
+            max_context_pressure: max_pressure,
+            tokens_by_provider: by_provider.clone(),
+            tokens_by_model: by_model.clone(),
+        };
+
+        // Prometheus exposition format when the client asks for text/plain.
+        let wants_prometheus = headers
+            .get(axum::http::header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.contains("text/plain"))
+            .unwrap_or(false);
+
+        if wants_prometheus {
+            let mut lines = String::with_capacity(1024);
+            lines.push_str("# HELP praxis_uptime_seconds Server uptime in seconds\n");
+            lines.push_str("# TYPE praxis_uptime_seconds counter\n");
+            lines.push_str(&format!("praxis_uptime_seconds {uptime}\n\n"));
+            lines.push_str("# HELP praxis_active_sessions Number of active sessions\n");
+            lines.push_str("# TYPE praxis_active_sessions gauge\n");
+            lines.push_str(&format!("praxis_active_sessions {session_count}\n\n"));
+            lines.push_str("# HELP praxis_tokens_total Total tokens used\n");
+            lines.push_str("# TYPE praxis_tokens_total counter\n");
+            lines.push_str(&format!("praxis_tokens_total {}\n", unified.total_tokens));
+            lines.push_str(&format!("praxis_input_tokens_total {}\n", total_input));
+            lines.push_str(&format!("praxis_output_tokens_total {}\n", total_output));
+            lines.push('\n');
+            lines.push_str("# HELP praxis_context_pressure Context window pressure\n");
+            lines.push_str("# TYPE praxis_context_pressure gauge\n");
+            lines.push_str(&format!(
+                "praxis_context_pressure{{quantile=\"avg\"}} {}\n",
+                avg_pressure
+            ));
+            lines.push_str(&format!(
+                "praxis_context_pressure{{quantile=\"max\"}} {}\n",
+                max_pressure
+            ));
+            lines.push('\n');
+            for (provider, tokens) in &by_provider {
+                lines.push_str(&format!(
+                    "praxis_tokens_by_provider{{provider=\"{}\"}} {tokens}\n",
+                    provider
+                ));
+            }
+            for (model, tokens) in &by_model {
+                lines.push_str(&format!(
+                    "praxis_tokens_by_model{{model=\"{}\"}} {tokens}\n",
+                    model
+                ));
+            }
+            return axum::response::Response::builder()
+                .header(
+                    axum::http::header::CONTENT_TYPE,
+                    "text/plain; version=0.0.4",
+                )
+                .body(axum::body::Body::from(lines))
+                .unwrap_or_else(|_| {
+                    axum::response::Response::builder()
+                        .status(500)
+                        .body(axum::body::Body::empty())
+                        .expect("empty body is infallible")
+                });
+        }
+
+        axum::response::Response::builder()
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(
+                serde_json::to_vec(&unified).unwrap_or_default(),
+            ))
+            .unwrap_or_else(|_| {
+                axum::response::Response::builder()
+                    .status(500)
+                    .body(axum::body::Body::empty())
+                    .expect("empty body is infallible")
+            })
     }
 }
 
@@ -2550,6 +2784,10 @@ mod tests {
             status: "ok".to_string(),
             version: "0.1.0".to_string(),
             uptime_seconds: 100,
+            checks: HealthChecks {
+                database: "ok".to_string(),
+                providers: vec![],
+            },
         };
         assert_eq!(response.status, "ok");
     }
