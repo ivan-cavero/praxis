@@ -37,7 +37,7 @@ pub use completion::{
 use praxis_mcp_host::McpHost;
 use praxis_vault::VaultService;
 use praxis_agent_traits::persistence::EventStore;
-use praxis_memory::episodic::EpisodicMemory;
+use praxis_memory::episodic::{EpisodicMemory, SqliteBackend};
 use praxis_memory::embedding::EmbeddingService;
 use tokio::sync::RwLock;
 use std::sync::Arc;
@@ -377,6 +377,19 @@ impl CoreRuntime {
     pub fn with_default_memory(self) -> Self {
         self.with_memory(EpisodicMemory::default_store(), None)
             .with_consolidated_memory(100)
+    }
+
+    /// Attach episodic memory with SQLite persistence for durable episodic chunks.
+    pub fn with_sqlite_memory(
+        self,
+        pool: r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>,
+    ) -> Self {
+        let sqlite = SqliteBackend::from_pool(pool);
+        let memory = EpisodicMemory::default_store().with_sqlite(sqlite);
+        let mut memory = memory;
+        // Hydrate in-memory store from SQLite
+        let _ = memory.load_from_sqlite();
+        self.with_memory(memory, None).with_consolidated_memory(100)
     }
 
     /// Attach consolidated memory and SummarizerAgent for long-term summarization.
@@ -1888,7 +1901,7 @@ impl CoreRuntime {
                     // an EmbeddingService is attached, keyword fallback otherwise).
                     if let Some(ref keeper) = self.memory_keeper {
                         let rag_k = self.calculate_rag_k();
-                        let results = keeper.search_rag(goal, rag_k).await;
+                        let results = keeper.search_rag(goal, rag_k, None).await;
                         if !results.is_empty() {
                             let mut rag_parts: Vec<String> = Vec::new();
                             rag_parts.push("─── RELEVANT MEMORY ───".to_string());
@@ -2283,6 +2296,54 @@ impl CoreRuntime {
                         alert.details
                     );
 
+                    // Cross-model verification: ask another LLM for a second opinion
+                    if alert.severity >= r#loop::PathologySeverity::Warning {
+                        if let Some(second_provider) = provider_router.first_provider() {
+                            let verification = self
+                                .pathology_detector
+                                .verify_with_model(
+                                    second_provider.as_ref(),
+                                    goal,
+                                    &result.content,
+                                    &alert,
+                                )
+                                .await;
+
+                            let is_no = verification.to_lowercase().starts_with("no");
+                            if is_no {
+                                // Escalate severity
+                                tracing::warn!(
+                                    "Cross-model verification says NO — escalating {:?} to Critical",
+                                    alert.kind
+                                );
+                                // Re-publish with escalated severity
+                                let escalated_kind = format!("{:?}", alert.kind);
+                                self.bus.publish(
+                                    praxis_shared::protocol::MessageKind::PathologyDetected(
+                                        praxis_shared::protocol::PathologyAlert {
+                                            kind: escalated_kind.clone(),
+                                            severity: "Critical".to_string(),
+                                            details: format!(
+                                                "{} — Cross-model verification: {}",
+                                                alert.details, verification
+                                            ),
+                                            action: format!("{:?}", alert.recommended_action),
+                                            iteration: alert.iteration,
+                                        },
+                                    ),
+                                    "core",
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Cross-model verification: {}",
+                                    verification
+                                );
+                            }
+                        } else {
+                            tracing::debug!("No provider available for cross-model verification");
+                        }
+                    }
+
                     // Fatal pathology → kill the loop immediately
                     if alert.severity == r#loop::PathologySeverity::Fatal {
                         tracing::error!(
@@ -2659,6 +2720,33 @@ impl CoreRuntime {
                         alert.kind,
                         alert.details
                     );
+
+                    // Cross-model verification
+                    if alert.severity >= r#loop::PathologySeverity::Warning {
+                        if let Some(second_provider) = provider_router.first_provider() {
+                            let verification = self
+                                .pathology_detector
+                                .verify_with_model(
+                                    second_provider.as_ref(),
+                                    &goal,
+                                    &result.content,
+                                    &alert,
+                                )
+                                .await;
+
+                            if verification.to_lowercase().starts_with("no") {
+                                tracing::warn!(
+                                    "Cross-model verification says NO — escalating {:?} to Critical",
+                                    alert.kind
+                                );
+                            } else {
+                                tracing::info!("Cross-model verification: {}", verification);
+                            }
+                        } else {
+                            tracing::debug!("No provider available for cross-model verification");
+                        }
+                    }
+
                     if alert.severity == r#loop::PathologySeverity::Fatal {
                         fatal_pathology = true;
                         break;

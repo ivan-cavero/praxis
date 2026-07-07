@@ -43,7 +43,7 @@ pub enum PathologyKind {
 }
 
 /// How severe the pathology is.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub enum PathologySeverity {
     /// Minor concern, log and continue.
     Warning,
