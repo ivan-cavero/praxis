@@ -1194,12 +1194,10 @@ impl CoreRuntime {
         // Best-effort: skipped silently if no event store or not in a git repo.
         if let Some(store) = &self.event_store
             && let Some(cwd) = std::env::current_dir().ok()
-        {
-            if let Err(e) =
+            && let Err(e) =
                 crate::rollback::capture_baseline(store, self.session_id.unwrap(), &cwd)
-            {
-                tracing::warn!("Failed to capture rollback baseline: {}", e);
-            }
+        {
+            tracing::warn!("Failed to capture rollback baseline: {}", e);
         }
 
         self.loop_controller.start();

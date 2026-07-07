@@ -176,10 +176,10 @@ egistry.rs
 - [x] cargo build && cargo test passes after each extraction
 
 ### 6B — Session rollback
-- [ ] Add praxis session rollback <id> CLI command
-- [ ] Add praxis session diff <id> CLI command
-- [ ] Add rollback API endpoint
-- [ ] Store file change snapshots in event store
+- [x] Add praxis session rollback <id> CLI command
+- [x] Add praxis session diff <id> CLI command
+- [x] Add rollback API endpoint
+- [x] Store file change snapshots in event store
 
 ### 6C — Workflow engine
 - [ ] Implement GoalEngine with DAG-based goal resolution
