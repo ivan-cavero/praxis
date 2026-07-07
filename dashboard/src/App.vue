@@ -505,7 +505,7 @@ function handleLogin(token: string) {
 
 /* ─── Responsive ──────────────────────────────────────────────── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .sidebar-toggle {
     display: flex;
   }

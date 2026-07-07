@@ -4,14 +4,19 @@
  *
  * One goal → orchestrator dispatches to agents → unified message stream.
  * Options dialog (budget, skills, worktree) configurable before sending.
+ *
+ * Streaming: AgentOutput deltas are accumulated into a single message per
+ * agent turn (append, not create-new). AgentStarted shows a ThinkingIndicator
+ * that is replaced when the first delta arrives or removed on AgentCompleted.
  */
-import { ref, computed, inject, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useApi, type Project, type SkillInfo } from '../composables/useApi'
-import { useWebSocket, getEventPayload, type AgentOutputEvent } from '../composables/useWebSocket'
+import { useWebSocket, getEventPayload, type AgentOutputEvent, type AgentStartedEvent, type AgentCompletedEvent, type PhaseChangedEvent, type ToolCalledEvent } from '../composables/useWebSocket'
 import { useToast } from '../composables/useToast'
 import Icon from '../components/ui/Icon.vue'
+import ThinkingIndicator from '../components/ui/ThinkingIndicator.vue'
 
 const openSettings = inject<() => void>('openSettings')
 
@@ -29,10 +34,7 @@ const isLoading = ref(true)
 
 const projectId = computed(() => route.params.id as string)
 
-// ─── Tabs (removed — single unified view) ──────────────────────
-// The chat is now a single view. No agent tabs. One goal → orchestrator → agents.
-
-// ─── Chat messages (unified, no per-agent split) ────────────────
+// ─── Chat messages (unified stream) ───────────────────────────────
 
 interface ChatMessage {
   id: string
@@ -40,6 +42,10 @@ interface ChatMessage {
   content: string
   timestamp: string
   agent?: string
+  /** True while the agent is still streaming this message. */
+  streaming?: boolean
+  /** True if this is a "thinking" placeholder (no content yet). */
+  isThinking?: boolean
 }
 
 const messages = ref<ChatMessage[]>([])
@@ -51,8 +57,15 @@ const currentMessages = computed(() =>
 
 const inputText = ref('')
 const isSending = ref(false)
-const inputTextarea = ref<HTMLTextAreaElement | null>(null)
+const inputTextarea = useTemplateRef('inputTextarea')
 const showOptions = ref(false)
+
+/** Messages per agent for delta accumulation: agentName → message id. */
+const agentMessageMap = new Map<string, string>()
+/** Thinking placeholders per agent: agentName → message id. */
+const thinkingMap = new Map<string, string>()
+/** Track the last processed event index to avoid reprocessing. */
+let lastProcessedEvent = 0
 
 /** Auto-resize the textarea to fit content (up to a max height). */
 function autoResize(): void {
@@ -64,16 +77,83 @@ function autoResize(): void {
 
 /** Insert a newline at the cursor (for Shift+Enter). */
 function handleNewline(): void {
-  // Default behavior inserts a newline — just trigger auto-resize
   nextTick(() => autoResize())
 }
 
 /** Push a message to the unified message list. */
-function pushMessage(_agent: string, msg: ChatMessage) {
+function pushMessage(msg: ChatMessage) {
   messages.value = [...messages.value, msg]
+  scrollToBottom()
 }
 
-// ─── Git branch (removed — not needed in chat) ──────────────────
+// ─── Auto-scroll ──────────────────────────────────────────────────
+
+const messagesContainer = useTemplateRef('messagesContainer')
+const isAutoScroll = ref(true)
+
+function scrollToBottom(): void {
+  if (!isAutoScroll.value) return
+  nextTick(() => {
+    const el = messagesContainer.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+function handleScroll(): void {
+  const el = messagesContainer.value
+  if (!el) return
+  // If user scrolled up more than 80px from bottom, disable auto-scroll
+  isAutoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+
+// ─── Agent color coding ────────────────────────────────────────────
+
+const AGENT_COLORS = [
+  'var(--agent-1)', 'var(--agent-2)', 'var(--agent-3)', 'var(--agent-4)',
+  'var(--agent-5)', 'var(--agent-6)', 'var(--agent-7)', 'var(--agent-8)',
+]
+
+const agentColorCache = new Map<string, string>()
+
+function agentColor(name: string): string {
+  if (!agentColorCache.has(name)) {
+    let hash = 0
+    for (let i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
+    }
+    agentColorCache.set(name, AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length])
+  }
+  return agentColorCache.get(name) || AGENT_COLORS[0]
+}
+
+// ─── Basic markdown rendering ──────────────────────────────────────
+
+function renderMarkdown(text: string): string {
+  // Escape HTML first
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  // Code blocks (```)
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, _lang, code) =>
+    `<pre class="md-code-block"><code>${code.trim()}</code></pre>`
+  )
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="md-code-inline">$1</code>')
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  // Italic
+  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
+  html = html.replace(/^## (.+)$/gm, '<h3 class="md-h3">$1</h3>')
+  html = html.replace(/^# (.+)$/gm, '<h2 class="md-h2">$1</h2>')
+  // Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="md-link">$1</a>')
+
+  return html
+}
 
 onMounted(async () => {
   isLoading.value = true
@@ -89,33 +169,25 @@ onMounted(async () => {
 })
 
 // ─── Send a goal to the orchestrator ────────────────────────────────
-//
-// The orchestrator receives the goal and distributes work across agents
-// through phases (plan → implement → review → test → consolidate).
-// You never send to individual agents — one goal, full pipeline.
 
 async function sendMessage() {
   if (!inputText.value.trim() || !projectId.value) return
   const text = inputText.value.trim()
   inputText.value = ''
+  nextTick(() => autoResize())
 
-  // Support multi-goal dispatch: split by newlines that start with "- " or "1. "
-  // or just separate goals with "---" on its own line
   const goals = parseMultiGoals(text)
 
   for (const goal of goals) {
-    // Push the user's goal to the "all" tab
-    pushMessage('all', {
+    pushMessage({
       id: crypto.randomUUID(),
       role: 'user',
       content: goal,
       timestamp: new Date().toISOString(),
-      agent: 'all',
     })
 
     isSending.value = true
     try {
-      // Start a real goal run via the API
       const result = await api.runGoal(projectId.value, {
         goal,
         until: untilCommand.value || undefined,
@@ -127,7 +199,7 @@ async function sendMessage() {
 
       activeSessionId.value = result.session_id
 
-      pushMessage('all', {
+      pushMessage({
         id: crypto.randomUUID(),
         role: 'system',
         content: `Goal dispatched — session ${result.session_id.slice(0, 8)}... orchestrator distributing across agents`,
@@ -135,11 +207,10 @@ async function sendMessage() {
       })
       toast.success(`Goal dispatched to orchestrator`)
 
-      // Start polling for live state (tokens, cost, phase)
       startStatePolling(result.session_id)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown error'
-      pushMessage('all', {
+      pushMessage({
         id: crypto.randomUUID(),
         role: 'system',
         content: `Failed to dispatch goal: ${message}`,
@@ -151,21 +222,13 @@ async function sendMessage() {
   }
 }
 
-/** Parse multi-goal input. Supports:
- * - Single goal (one line or paragraph)
- * - Multiple goals separated by "---" on its own line
- * - Numbered list (1. goal1 \n 2. goal2)
- * - Bullet list (- goal1 \n - goal2)
- */
 function parseMultiGoals(text: string): string[] {
   const trimmed = text.trim()
 
-  // Check for separator
   if (trimmed.includes('\n---\n')) {
     return trimmed.split('\n---\n').map(g => g.trim()).filter(g => g.length > 0)
   }
 
-  // Check for numbered list (1. ... 2. ...)
   const numberedMatch = trimmed.match(/^(\d+\.\s+.+(\n|$))+/)
   if (numberedMatch) {
     return trimmed
@@ -174,7 +237,6 @@ function parseMultiGoals(text: string): string[] {
       .filter(g => g.length > 0)
   }
 
-  // Check for bullet list (- ... - ...)
   if (trimmed.match(/^(-\s+.+(\n|$))+/)) {
     return trimmed
       .split(/\n(?=-\s)/)
@@ -182,7 +244,6 @@ function parseMultiGoals(text: string): string[] {
       .filter(g => g.length > 0)
   }
 
-  // Single goal
   return [trimmed]
 }
 
@@ -206,7 +267,7 @@ async function planGoal() {
     toast.success('Plan generated — review and execute when ready')
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'unknown error'
-    pushMessage('all', {
+    pushMessage({
       id: crypto.randomUUID(),
       role: 'system',
       content: `Failed to plan: ${message}`,
@@ -221,7 +282,6 @@ async function executePlan() {
   if (!projectId.value || !planContent.value) return
   showPlanModal.value = false
 
-  // Extract the goal from the plan content (first "# Plan: ..." line)
   const goalLine = planContent.value.split('\n').find(l => l.startsWith('# Plan:'))
   const goal = goalLine ? goalLine.replace('# Plan:', '').trim() : inputText.value
 
@@ -244,7 +304,6 @@ const useWorktree = ref(false)
 const availableSkills = ref<SkillInfo[]>([])
 const enabledSkills = ref<string[]>([])
 
-// Load available skills on mount
 onMounted(async () => {
   try {
     availableSkills.value = await api.getSkills()
@@ -272,13 +331,12 @@ function startStatePolling(sessionId: string) {
       liveIteration.value = state.iteration
       liveStatus.value = state.status
 
-      // Stop polling when the session is no longer running
       if (state.status !== 'running') {
         if (statePollInterval) {
           clearInterval(statePollInterval)
           statePollInterval = null
         }
-        pushMessage('all', {
+        pushMessage({
           id: crypto.randomUUID(),
           role: 'system',
           content: `Session ${state.status} — ${state.tokens_used} tokens, $${state.cost_usd.toFixed(4)}`,
@@ -291,22 +349,119 @@ function startStatePolling(sessionId: string) {
   }, 2000)
 }
 
-// ─── Listen for agent output via WebSocket ─────────────────────────
+onUnmounted(() => {
+  if (statePollInterval) clearInterval(statePollInterval)
+})
 
-watch(() => ws.events.value, (allEvents) => {
-  for (const event of allEvents) {
+// ─── WebSocket event processing (streaming) ────────────────────────
+//
+// Only process NEW events since last check. For each event kind:
+//   AgentStarted  → insert a "thinking" placeholder for that agent
+//   AgentOutput   → remove thinking placeholder, append delta to the
+//                  agent's streaming message (create if first delta)
+//   AgentCompleted→ mark the agent's message as done (streaming=false)
+//   PhaseChanged  → system message noting the phase transition
+//   ToolCalled    → system message noting tool invocation
+
+watch(() => ws.events.value.length, () => {
+  const allEvents = ws.events.value
+  if (allEvents.length <= lastProcessedEvent) return
+
+  const newEvents = allEvents.slice(lastProcessedEvent)
+  lastProcessedEvent = allEvents.length
+
+  for (const event of newEvents) {
+    // AgentStarted → show thinking indicator
+    const started = getEventPayload<AgentStartedEvent>(event, 'AgentStarted')
+    if (started && started.agent) {
+      const thinkingId = crypto.randomUUID()
+      thinkingMap.set(started.agent, thinkingId)
+      pushMessage({
+        id: thinkingId,
+        role: 'assistant',
+        content: '',
+        timestamp: event.timestamp,
+        agent: started.agent,
+        isThinking: true,
+      })
+      continue
+    }
+
+    // AgentOutput → append delta to existing message (or create + remove thinking)
     const agentOut = getEventPayload<AgentOutputEvent>(event, 'AgentOutput')
     if (agentOut && agentOut.delta && agentOut.agent) {
-      messages.value = [...messages.value, {
+      const agent = agentOut.agent
+
+      // Remove thinking placeholder if present
+      const thinkingId = thinkingMap.get(agent)
+      if (thinkingId) {
+        messages.value = messages.value.filter(m => m.id !== thinkingId)
+        thinkingMap.delete(agent)
+      }
+
+      // Find or create the streaming message for this agent
+      let msgId = agentMessageMap.get(agent)
+      if (!msgId) {
+        msgId = crypto.randomUUID()
+        agentMessageMap.set(agent, msgId)
+        pushMessage({
+          id: msgId,
+          role: 'assistant',
+          content: agentOut.delta,
+          timestamp: event.timestamp,
+          agent,
+          streaming: true,
+        })
+      } else {
+        // Append delta to existing message
+        messages.value = messages.value.map(m =>
+          m.id === msgId ? { ...m, content: m.content + agentOut.delta } : m
+        )
+        scrollToBottom()
+      }
+      continue
+    }
+
+    // AgentCompleted → mark streaming done, clean up maps
+    const completed = getEventPayload<AgentCompletedEvent>(event, 'AgentCompleted')
+    if (completed && completed.agent) {
+      const agent = completed.agent
+      thinkingMap.delete(agent)
+      const msgId = agentMessageMap.get(agent)
+      if (msgId) {
+        messages.value = messages.value.map(m =>
+          m.id === msgId ? { ...m, streaming: false } : m
+        )
+        agentMessageMap.delete(agent)
+      }
+      continue
+    }
+
+    // PhaseChanged → system message
+    const phaseChange = getEventPayload<PhaseChangedEvent>(event, 'PhaseChanged')
+    if (phaseChange && phaseChange.from && phaseChange.to) {
+      pushMessage({
         id: crypto.randomUUID(),
-        role: 'assistant',
-        content: agentOut.delta,
+        role: 'system',
+        content: `Phase: ${phaseChange.from} → ${phaseChange.to}`,
         timestamp: event.timestamp,
-        agent: agentOut.agent,
-      }]
+      })
+      continue
+    }
+
+    // ToolCalled → system message (compact)
+    const toolCall = getEventPayload<ToolCalledEvent>(event, 'ToolCalled')
+    if (toolCall && toolCall.agent && toolCall.tool) {
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: 'system',
+        content: `${toolCall.agent} called ${toolCall.tool} (${toolCall.duration_ms}ms)${toolCall.success ? '' : ' — failed'}`,
+        timestamp: event.timestamp,
+      })
+      continue
     }
   }
-}, { deep: true })
+})
 </script>
 
 <template>
@@ -350,26 +505,51 @@ watch(() => ws.events.value, (allEvents) => {
     </div>
 
     <!-- Messages -->
-    <div class="chat-messages">
+    <div ref="messagesContainer" class="chat-messages" @scroll="handleScroll">
       <div v-if="currentMessages.length === 0" class="chat-empty">
         <Icon name="message" :size="48" class="empty-icon" />
         <p>No messages yet</p>
         <p class="empty-hint">Send a goal and the orchestrator will distribute it across agents</p>
       </div>
-      <div v-else v-for="msg in currentMessages" :key="msg.id" class="chat-msg" :class="msg.role">
-        <div class="msg-avatar">
-          <template v-if="msg.role === 'user'">U</template>
-          <template v-else-if="msg.role === 'assistant'">{{ (msg.agent || 'A')[0].toUpperCase() }}</template>
-          <template v-else>●</template>
+      <template v-else>
+        <div
+          v-for="msg in currentMessages"
+          :key="msg.id"
+          class="chat-msg"
+          :class="msg.role"
+        >
+          <!-- Thinking placeholder -->
+          <template v-if="msg.isThinking">
+            <ThinkingIndicator :agent="msg.agent || 'Agent'" />
+          </template>
+
+          <!-- Normal message -->
+          <template v-else>
+            <div
+              class="msg-avatar"
+              :style="msg.agent ? { background: agentColor(msg.agent), color: 'var(--bg-base)' } : {}"
+            >
+              <template v-if="msg.role === 'user'">U</template>
+              <template v-else-if="msg.role === 'assistant'">{{ (msg.agent || 'A')[0].toUpperCase() }}</template>
+              <template v-else>●</template>
+            </div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-role" :style="msg.agent ? { color: agentColor(msg.agent) } : {}">
+                  {{ msg.role === 'user' ? 'You' : msg.role === 'assistant' ? (msg.agent || 'Agent') : 'System' }}
+                </span>
+                <span v-if="msg.streaming" class="msg-streaming-badge">streaming</span>
+                <span class="msg-time">{{ msg.timestamp.slice(11, 19) }}</span>
+              </div>
+              <div
+                class="msg-content"
+                :class="{ 'typing-cursor': msg.streaming }"
+                v-html="renderMarkdown(msg.content)"
+              />
+            </div>
+          </template>
         </div>
-        <div class="msg-body">
-          <div class="msg-header">
-            <span class="msg-role">{{ msg.role === 'user' ? 'You' : msg.role === 'assistant' ? (msg.agent || 'Agent') : 'System' }}</span>
-            <span class="msg-time">{{ msg.timestamp.slice(11, 19) }}</span>
-          </div>
-          <div class="msg-content">{{ msg.content }}</div>
-        </div>
-      </div>
+      </template>
     </div>
 
     <!-- Live state bar (shown when a session is active) -->
@@ -680,17 +860,59 @@ watch(() => ws.events.value, (allEvents) => {
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-secondary);
-  white-space: pre-wrap;
   word-break: break-word;
 }
 .chat-msg.user .msg-content {
   color: var(--text-primary);
+  white-space: pre-wrap;
 }
 .chat-msg.system .msg-content {
   color: var(--text-muted);
   font-size: 13px;
   font-style: italic;
 }
+
+/* Streaming badge */
+.msg-streaming-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  background: var(--primary-muted);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+}
+
+/* Markdown rendering inside .msg-content */
+:deep(.md-code-block) {
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+  overflow-x: auto;
+}
+:deep(.md-code-block code) {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+:deep(.md-code-inline) {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  color: var(--primary);
+}
+:deep(.md-h2) { font-size: 16px; font-weight: 600; color: var(--text-primary); margin: var(--space-3) 0 var(--space-2); }
+:deep(.md-h3) { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: var(--space-2) 0 var(--space-1); }
+:deep(.md-h4) { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin: var(--space-2) 0 var(--space-1); }
+:deep(.md-link) { color: var(--info); text-decoration: underline; text-underline-offset: 2px; }
+:deep(.md-link:hover) { color: var(--primary); }
 
 /* ─── Input ──────────────────────────────────────────────────────── */
 

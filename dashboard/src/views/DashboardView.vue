@@ -87,6 +87,7 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="dashboard-header">
       <h1 class="dashboard-title">Dashboard</h1>
+      <p class="dashboard-subtitle">System overview — sessions, agents, and costs</p>
     </div>
 
     <!-- Loading state -->
@@ -98,12 +99,12 @@ onUnmounted(() => {
     <template v-else>
     <!-- Metric Cards -->
     <div class="metric-grid">
-      <MetricCard label="Active Sessions" :value="activeSessionsCount" sub="Currently running" color="green" />
-      <MetricCard label="Total Sessions" :value="sessions.length" sub="All time" color="emerald" />
-      <MetricCard label="Projects" :value="projects.length" sub="Created" color="blue" />
-      <MetricCard label="Tokens" :value="totalTokens" sub="Total consumed" color="amber" />
-      <MetricCard label="Est. Cost" :value="`$${totalCost.toFixed(2)}`" sub="All sessions" color="crimson" />
-      <MetricCard label="Agents" :value="agents.length" sub="Configured" color="purple" />
+      <MetricCard label="Active Sessions" :value="activeSessionsCount" sub="Currently running" color="green" icon="activity" />
+      <MetricCard label="Total Sessions" :value="sessions.length" sub="All time" color="emerald" icon="server" />
+      <MetricCard label="Projects" :value="projects.length" sub="Created" color="blue" icon="folder" />
+      <MetricCard label="Tokens" :value="totalTokens" sub="Total consumed" color="amber" icon="chart" />
+      <MetricCard label="Est. Cost" :value="`$${totalCost.toFixed(2)}`" sub="All sessions" color="crimson" icon="currency" />
+      <MetricCard label="Agents" :value="agents.length" sub="Configured" color="purple" icon="robot" />
     </div>
 
 
@@ -234,12 +235,16 @@ onUnmounted(() => {
 .dashboard-header {
   margin-bottom: var(--space-6);
 }
-
 .dashboard-title {
   font-size: 24px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+}
+.dashboard-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: var(--space-1);
 }
 
 .metric-grid {
