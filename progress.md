@@ -213,9 +213,9 @@ Complete CLI implementation and UX.
 - [x] praxis session export <id> — JSON/YAML export
 
 ### 7C — CLI UX
-- [ ] ratatui colored output for session list / session show
-- [ ] Progress bars for long operations
-- [ ] --json output mode for ALL commands
+- [x] ratatui colored output for session list / session show
+- [x] Progress bars for long operations
+- [x] --json output mode for ALL commands
 
 ---
 

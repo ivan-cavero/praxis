@@ -802,8 +802,6 @@ enum SessionCommands {
         id: String,
         #[arg(long)]
         tail: bool,
-        #[arg(long)]
-        json: bool,
     },
     /// Rollback a session's file changes to the pre-session git baseline.
     Rollback {
@@ -2101,7 +2099,7 @@ async fn async_main() -> anyhow::Result<()> {
                     }
                 }
             }
-            SessionCommands::Logs { id, tail, json } => {
+            SessionCommands::Logs { id, tail } => {
                 // Try the API server first.
                 let client = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(10))
@@ -2118,7 +2116,7 @@ async fn async_main() -> anyhow::Result<()> {
                             println!("{} No events found for session {}", "→".cyan(), id);
                             std::process::exit(0);
                         }
-                        if json {
+                        if json_output {
                             println!("{}", serde_json::to_string_pretty(&events)?);
                         } else {
                             let mut display_events: Vec<&serde_json::Value> = if tail {
@@ -2166,7 +2164,7 @@ async fn async_main() -> anyhow::Result<()> {
                     }
                     _ => {
                         // API server not running or error — fall back to local DB.
-                        logs_local(&id, tail, json).await;
+                        logs_local(&id, tail, json_output).await;
                     }
                 }
             }
@@ -2406,11 +2404,46 @@ async fn async_main() -> anyhow::Result<()> {
                 // Read providers from the most recent project's forge.toml
                 let config = load_project_config(None);
                 if config.providers.is_empty() {
-                    println!("{} No providers configured", "→".cyan());
+                    if json_output {
+                        println!("{{\"providers\": [], \"supported\": [\"openai\", \"anthropic\", \"google\", \"custom\"]}}");
+                    } else {
+                        println!("{} No providers configured", "→".cyan());
+                        println!(
+                            "  {} Use {} to add one",
+                            "→".dimmed(),
+                            "praxis provider add <name> <base_url> --api-key-stdin".yellow()
+                        );
+                    }
+                } else if json_output {
+                    let providers: Vec<_> = config
+                        .providers
+                        .iter()
+                        .map(|(name, p)| {
+                            let key_status = if p.api_key_ref.starts_with("env:") {
+                                format!("env:{}", p.api_key_ref.strip_prefix("env:").unwrap_or("?"))
+                            } else if p.api_key_ref.starts_with("keyring:")
+                                || p.api_key_ref.starts_with("vault:")
+                            {
+                                "vault".to_string()
+                            } else if p.api_key_ref.is_empty() {
+                                "none".to_string()
+                            } else {
+                                "literal".to_string()
+                            };
+                            serde_json::json!({
+                                "name": name,
+                                "base_url": p.base_url,
+                                "default_model": p.default_model,
+                                "key_status": key_status,
+                            })
+                        })
+                        .collect();
                     println!(
-                        "  {} Use {} to add one",
-                        "→".dimmed(),
-                        "praxis provider add <name> <base_url> --api-key-stdin".yellow()
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "providers": providers,
+                            "supported": ["openai", "anthropic", "google", "custom"]
+                        }))?
                     );
                 } else {
                     println!(
@@ -2442,19 +2475,19 @@ async fn async_main() -> anyhow::Result<()> {
                         );
                         println!("    Base URL: {}", provider.base_url.dimmed());
                     }
+                    println!();
+                    println!("  Supported APIs:");
+                    println!("    {} OpenAI (api.openai.com)", "•".dimmed());
+                    println!("    {} Anthropic (api.anthropic.com)", "•".dimmed());
+                    println!(
+                        "    {} Google AI (generativelanguage.googleapis.com)",
+                        "•".dimmed()
+                    );
+                    println!(
+                        "    {} Any OpenAI-compatible API (custom base_url)",
+                        "•".dimmed()
+                    );
                 }
-                println!();
-                println!("  Supported APIs:");
-                println!("    {} OpenAI (api.openai.com)", "•".dimmed());
-                println!("    {} Anthropic (api.anthropic.com)", "•".dimmed());
-                println!(
-                    "    {} Google AI (generativelanguage.googleapis.com)",
-                    "•".dimmed()
-                );
-                println!(
-                    "    {} Any OpenAI-compatible API (custom base_url)",
-                    "•".dimmed()
-                );
             }
             ProviderCommands::Test { name } => {
                 println!("{} Testing provider: {}...", "→".cyan(), name);
@@ -2970,49 +3003,42 @@ async fn async_main() -> anyhow::Result<()> {
                 let db_path = data_dir.join("state.db");
                 let projects_path = data_dir.join("projects.json");
 
-                println!("{} Memory & Persistence Stats", "→".cyan().bold());
-                println!("{}", "─".repeat(50).dimmed());
-
                 // Projects
                 let project_count = std::fs::read_to_string(&projects_path)
                     .ok()
                     .and_then(|c| serde_json::from_str::<Vec<serde_json::Value>>(&c).ok())
                     .map(|p| p.len())
                     .unwrap_or(0);
-                println!("  {} Projects: {}", "→".cyan(), project_count);
+
+                let mut stats = serde_json::json!({
+                    "projects": project_count,
+                    "data_dir": data_dir.display().to_string(),
+                });
 
                 // Sessions and checkpoints
-                if db_path.exists() {
+                let (session_count, checkpoint_count) = if db_path.exists() {
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
                     let session_ids = store
                         .list_aggregates("session")
                         .await
                         .map_err(|e| anyhow::anyhow!(e))?;
-                    println!("  {} Sessions: {}", "→".cyan(), session_ids.len());
-
                     let mut snapshots = 0;
                     for sid in &session_ids {
                         if let Ok(Some(_)) = store.get_snapshot(*sid).await {
                             snapshots += 1;
                         }
                     }
-                    println!("  {} Checkpoints: {}", "→".cyan(), snapshots);
-                    println!(
-                        "  {} Database: {}",
-                        "→".cyan(),
-                        db_path.display().to_string().dimmed()
-                    );
+                    (session_ids.len(), snapshots)
                 } else {
-                    println!("  {} No database found. Run a session first.", "→".cyan());
+                    (0, 0)
+                };
+                stats["sessions"] = serde_json::Value::Number(session_count.into());
+                stats["checkpoints"] = serde_json::Value::Number(checkpoint_count.into());
+                if db_path.exists() {
+                    stats["database_path"] =
+                        serde_json::Value::String(db_path.display().to_string());
                 }
-
-                // Data directory
-                println!(
-                    "  {} Data dir: {}",
-                    "→".cyan(),
-                    data_dir.display().to_string().dimmed()
-                );
 
                 // Injections
                 let injections_dir = data_dir.join("injections");
@@ -3020,7 +3046,34 @@ async fn async_main() -> anyhow::Result<()> {
                     let count = std::fs::read_dir(&injections_dir)
                         .map(|entries| entries.filter_map(|e| e.ok()).count())
                         .unwrap_or(0);
-                    println!("  {} Pending injections: {}", "→".cyan(), count);
+                    stats["pending_injections"] = serde_json::Value::Number(count.into());
+                }
+
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&stats)?);
+                } else {
+                    println!("{} Memory & Persistence Stats", "→".cyan().bold());
+                    println!("{}", "─".repeat(50).dimmed());
+                    println!("  {} Projects: {}", "→".cyan(), project_count);
+                    println!("  {} Sessions: {}", "→".cyan(), session_count);
+                    println!("  {} Checkpoints: {}", "→".cyan(), checkpoint_count);
+                    if db_path.exists() {
+                        println!(
+                            "  {} Database: {}",
+                            "→".cyan(),
+                            db_path.display().to_string().dimmed()
+                        );
+                    } else {
+                        println!("  {} No database found. Run a session first.", "→".cyan());
+                    }
+                    println!(
+                        "  {} Data dir: {}",
+                        "→".cyan(),
+                        data_dir.display().to_string().dimmed()
+                    );
+                    if let Some(inj) = stats.get("pending_injections").and_then(|v| v.as_u64()) {
+                        println!("  {} Pending injections: {}", "→".cyan(), inj);
+                    }
                 }
             }
             MemoryCommands::Sessions => {

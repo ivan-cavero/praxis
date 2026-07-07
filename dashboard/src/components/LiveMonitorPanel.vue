@@ -157,8 +157,8 @@ const streamingText = computed(() => {
 
 <style scoped>
 .live-monitor {
-  border: 1px solid var(--border-color, #333);
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
   overflow: hidden;
   font-size: 13px;
 }
@@ -167,27 +167,27 @@ const streamingText = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: var(--bg-secondary, #1a1a2e);
-  border-bottom: 1px solid var(--border-color, #333);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .live-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #555;
+  background: var(--text-disabled);
 }
 
 .live-indicator.active {
-  background: #00ff88;
-  box-shadow: 0 0 6px #00ff88;
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
   animation: pulse 1.5s infinite;
 }
 
@@ -199,20 +199,20 @@ const streamingText = computed(() => {
 .label {
   font-weight: 600;
   letter-spacing: 0.5px;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
 }
 
 .header-right {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .phase-bar {
   display: flex;
-  gap: 16px;
-  padding: 8px 12px;
-  background: var(--bg-tertiary, #12121f);
-  border-bottom: 1px solid var(--border-color, #333);
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .phase-item {
@@ -224,12 +224,12 @@ const streamingText = computed(() => {
 .phase-label {
   font-size: 10px;
   text-transform: uppercase;
-  color: var(--text-muted, #666);
+  color: var(--text-muted);
 }
 
 .phase-value {
   font-weight: 600;
-  color: var(--text-primary, #eee);
+  color: var(--text-primary);
 }
 
 .agent-list {
@@ -238,24 +238,24 @@ const streamingText = computed(() => {
 }
 
 .empty-state {
-  padding: 24px;
+  padding: var(--space-6);
   text-align: center;
-  color: var(--text-muted, #666);
+  color: var(--text-muted);
 }
 
 .agent-row {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color, #2a2a3e);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .agent-row.running {
-  background: rgba(0, 100, 255, 0.05);
+  background: var(--bg-hover);
 }
 
 .agent-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -266,74 +266,74 @@ const streamingText = computed(() => {
 }
 
 .agent-status-dot.running { background: #00aaff; animation: pulse 1s infinite; }
-.agent-status-dot.completed { background: #00ff88; }
-.agent-status-dot.failed { background: #ff4444; }
-.agent-status-dot.queued { background: #666; }
+.agent-status-dot.completed { background: var(--success); }
+.agent-status-dot.failed { background: var(--error); }
+.agent-status-dot.queued { background: var(--text-disabled); }
 
 .agent-name {
   font-weight: 600;
-  color: var(--text-primary, #eee);
+  color: var(--text-primary);
 }
 
 .agent-role {
-  color: var(--text-muted, #888);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
 .agent-duration, .agent-tokens {
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
 .agent-delegation {
-  color: var(--text-accent, #6a9fd6);
+  color: var(--text-accent);
   font-size: 11px;
 }
 
 .tool-calls {
-  margin-top: 4px;
-  padding-left: 20px;
+  margin-top: var(--space-1);
+  padding-left: var(--space-5);
 }
 
 .tool-call {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: 11px;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
 }
 
 .tool-icon { font-size: 10px; }
-.tool-call .tool-icon { color: #00ff88; }
-.tool-call:last-child .tool-icon { color: #ff4444; }
+.tool-call .tool-icon { color: var(--success); }
+.tool-call:last-child .tool-icon { color: var(--error); }
 
 .delegations {
-  padding-left: 20px;
+  padding-left: var(--space-5);
   margin-top: 2px;
 }
 
 .delegation-arrow {
   font-size: 11px;
-  color: var(--text-accent, #6a9fd6);
+  color: var(--text-accent);
 }
 
 .streaming-output {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-color, #333);
-  background: var(--bg-tertiary, #12121f);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
 }
 
 .streaming-label {
   font-size: 10px;
   text-transform: uppercase;
-  color: var(--text-muted, #666);
-  margin-bottom: 4px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
 }
 
 .streaming-text {
-  font-family: 'Fira Code', monospace;
+  font-family: var(--font-mono, 'Fira Code', monospace);
   font-size: 12px;
-  color: var(--text-primary, #ddd);
+  color: var(--text-primary);
   max-height: 150px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -341,30 +341,30 @@ const streamingText = computed(() => {
 }
 
 .delegation-tree {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-color, #333);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-color);
 }
 
 .tree-label {
   font-size: 10px;
   text-transform: uppercase;
-  color: var(--text-muted, #666);
-  margin-bottom: 4px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
 }
 
 .tree-entry {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: 12px;
   padding: 2px 0;
 }
 
 .tree-parent { font-weight: 600; }
-.tree-arrow { color: var(--text-accent, #6a9fd6); }
-.tree-child { color: var(--text-primary, #eee); }
+.tree-arrow { color: var(--text-accent); }
+.tree-child { color: var(--text-primary); }
 .tree-duration, .tree-tokens {
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
   font-size: 11px;
 }
 </style>
