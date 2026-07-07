@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useApi, type AgentDefinition } from '../../composables/useApi'
 import Badge from '../ui/Badge.vue'
-import Icon from '../ui/Icon.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 
 const api = useApi()
 
@@ -72,10 +72,12 @@ onUnmounted(() => {
         </span>
       </div>
 
-      <div v-if="agents.length === 0" class="health-empty">
-        <Icon name="robot" :size="20" class="empty-icon" />
-        <span>No agents loaded</span>
-      </div>
+        <EmptyState
+          v-if="agents.length === 0"
+          icon="robot"
+          title="No agents loaded"
+          description="Agents will appear here once the system loads."
+        />
     </div>
   </div>
 </template>

@@ -81,6 +81,10 @@ pub struct CoreRuntime {
     /// When set, all agents use this model instead of their configured one.
     /// Cleared at session start.
     pub model_override: Option<String>,
+    /// Provider router for LLM access. Set by `run_goal`/`resume_goal` via
+    /// `prepare_goal_run` so that delegation can resolve real providers for
+    /// child agents. `None` in tests or when no providers are configured.
+    pub provider_router: Option<std::sync::Arc<praxis_providers::ProviderRouter>>,
 }
 
 impl CoreRuntime {
@@ -120,6 +124,7 @@ impl CoreRuntime {
             hot_memory: None,
             context_manager: None,
             model_override: None,
+            provider_router: None,
         })
     }
     /// Attach a SQLite event store for checkpointing and event sourcing.

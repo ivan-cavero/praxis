@@ -12,6 +12,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useApi, type AgentDefinition, type CreateAgentRequest } from '../composables/useApi'
 import Badge from '../components/ui/Badge.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 
 const api = useApi()
@@ -214,14 +215,20 @@ onMounted(loadAgents)
     <div class="agents-layout">
       <!-- ─── Agent list ───────────────────────────────── -->
       <div class="agent-list-panel">
-        <div v-if="isLoading" class="agent-list-empty">
-          <div class="loading-spinner" />
-          <p>Loading agents...</p>
-        </div>
-        <div v-else-if="agents.length === 0" class="agent-list-empty">
-          <Icon name="robot" :size="36" class="empty-icon" />
-          <p>No agents found</p>
-        </div>
+        <template v-if="isLoading">
+          <div class="agent-list-empty">
+            <div class="loading-spinner" />
+            <p>Loading agents...</p>
+          </div>
+        </template>
+        <EmptyState
+          v-else-if="agents.length === 0"
+          icon="robot"
+          title="No agents found"
+          description="Create your first agent to get started."
+          action-label="New Agent"
+          :on-action="startNewAgent"
+        />
         <div v-else class="agent-list-content">
           <!-- Main agents section -->
           <div class="agent-section">
@@ -413,10 +420,14 @@ onMounted(loadAgents)
         </div>
 
         <!-- Empty state -->
-        <div v-else class="empty-detail">
-          <Icon name="robot" :size="48" class="empty-icon" />
-          <p>Select an agent from the list, or create a new one.</p>
-        </div>
+        <EmptyState
+          v-else
+          icon="robot"
+          title="Select an agent"
+          description="Choose an agent from the list, or create a new one to get started."
+          action-label="New Agent"
+          :on-action="startNewAgent"
+        />
       </div>
     </div>
   </div>

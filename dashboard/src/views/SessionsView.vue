@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useApi, type SessionEntry } from '../composables/useApi'
 import { useToast } from '../composables/useToast'
 import Badge from '../components/ui/Badge.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 
 const router = useRouter()
@@ -66,15 +67,21 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <div v-if="isLoading" class="loading-state">
-      <span class="loading-spinner" />
-      Loading sessions...
-    </div>
+    <template v-if="isLoading">
+      <div class="loading-state">
+        <span class="loading-spinner" />
+        Loading sessions...
+      </div>
+    </template>
 
-    <div v-else-if="sessions.length === 0" class="empty-state">
-      <Icon name="server" :size="32" class="empty-icon" />
-      <p>No sessions yet.</p>
-    </div>
+    <EmptyState
+      v-else-if="sessions.length === 0"
+      icon="server"
+      title="No sessions yet"
+      description="Run a goal to see session activity here."
+      action-label="Go to Dashboard"
+      :on-action="() => router.push('/')"
+    />
 
     <div v-else class="sessions-table-wrapper">
       <!-- Desktop table -->

@@ -11,6 +11,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi, type SessionEntry } from '../composables/useApi'
 import Icon from '../components/ui/Icon.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 
 const api = useApi()
 
@@ -181,9 +182,12 @@ function formatTokens(tokens: number): string {
     <!-- Per-project breakdown -->
     <div class="section">
       <h2 class="section-title">Cost by Project</h2>
-      <div v-if="projectCosts.length === 0" class="empty-state">
-        <p>No data yet. Run a goal to see cost analysis.</p>
-      </div>
+      <EmptyState
+        v-if="projectCosts.length === 0"
+        icon="chart"
+        title="No cost data yet"
+        description="Run a goal to see cost analysis and efficiency metrics."
+      />
       <div v-else class="project-table">
         <div class="table-header">
           <div>Project</div>
@@ -205,9 +209,12 @@ function formatTokens(tokens: number): string {
     <!-- Per-session breakdown -->
     <div class="section">
       <h2 class="section-title">Session Breakdown</h2>
-      <div v-if="sessionBreakdown.length === 0" class="empty-state">
-        <p>No sessions yet.</p>
-      </div>
+      <EmptyState
+        v-if="sessionBreakdown.length === 0"
+        icon="chart"
+        title="No sessions yet"
+        description="Completed sessions will appear here with their cost breakdown."
+      />
       <div v-else class="session-table">
         <div class="table-header">
           <div>Goal</div>

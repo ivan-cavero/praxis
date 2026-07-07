@@ -4,8 +4,8 @@ import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useApi, type SessionEntry, type AgentDefinition, type Project } from '../composables/useApi'
 import { useToast } from '../composables/useToast'
-import MetricCard from '../components/ui/MetricCard.vue'
 import Badge from '../components/ui/Badge.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 
 const router = useRouter()
@@ -149,10 +149,12 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="filteredSessions.length === 0" class="empty-state">
-        <Icon name="server" :size="32" class="empty-icon" />
-        <p>{{ sessions.length === 0 ? 'No sessions yet. Run a goal to see it here.' : 'No sessions for this project.' }}</p>
-      </div>
+      <EmptyState
+        v-if="filteredSessions.length === 0"
+        icon="server"
+        :title="sessions.length === 0 ? 'No sessions yet' : 'No sessions for this project'"
+        description="Run a goal to see session activity here."
+      />
 
       <div v-else class="session-list">
         <div
@@ -187,11 +189,14 @@ onUnmounted(() => {
       <div class="section-header">
         <h2 class="section-title">Agent Status</h2>
       </div>
-
-      <div v-if="agents.length === 0" class="empty-state">
-        <Icon name="robot" :size="32" class="empty-icon" />
-        <p>No agents configured.</p>
-      </div>
+      <EmptyState
+        v-if="agents.length === 0"
+        icon="robot"
+        title="No agents configured"
+        description="Create an agent to start running goals."
+        action-label="Go to Agents"
+        :on-action="() => router.push('/agents')"
+      />
 
       <div v-else class="agent-grid">
         <div
