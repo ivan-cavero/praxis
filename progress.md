@@ -265,11 +265,11 @@ Automation and release improvements.
 Competitive analysis and innovation.
 
 ### 10A — OpenCode competitor analysis
-- [ ] Study https://opencode.ai/docs — document features praxis should match
-- [ ] Analyze Plan mode → equivalent in praxis
-- [ ] Analyze custom commands with args → port if applicable
-- [ ] Analyze LSP integration → evaluate for praxis
-- [ ] Create docs/competitor-analysis-opencode.md
+- [x] Study https://opencode.ai/docs — document features praxis should match — analyzed docs for intro, commands, config, agents, tools, LSP; full comparison in docs/competitor-analysis-opencode.md
+- [x] Analyze Plan mode → equivalent in praxis — praxis has `praxis plan` + `--dry-run` + `--plan <file>`; at parity (persistence advantage offsets interactivity)
+- [x] Analyze custom commands with args → port if applicable — recommended medium priority; add commands/ dir with $ARGUMENTS templating
+- [x] Analyze LSP integration → evaluate for praxis — not recommended; shell-based verification (build/test/clippy) is simpler and more reliable for autonomous loops
+- [x] Create docs/competitor-analysis-opencode.md — created with 10-feature comparison, port/don't-port recommendations, key insights
 
 ### 10B — Other competitor research
 - [ ] Claude Code Ralph loop technique
