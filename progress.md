@@ -272,11 +272,11 @@ Competitive analysis and innovation.
 - [x] Create docs/competitor-analysis-opencode.md — created with 10-feature comparison, port/don't-port recommendations, key insights
 
 ### 10B — Other competitor research
-- [ ] Claude Code Ralph loop technique
-- [ ] Cursor AI agent features
-- [ ] GitHub Copilot agent mode
-- [ ] Aider, Sweep, and other autonomous tools
-- [ ] Create docs/competitor-analysis-market.md
+- [x] Claude Code Ralph loop technique — analyzed /loop, CronCreate, Routines, /goal; Ralph loop (Huntley) phases map to praxis pipeline; gap = scheduling
+- [x] Cursor AI agent features — analyzed Agent (Cmd+I) + Cloud Agents (multi-repo VMs, remote desktop, artifacts, hooks, MCP); gap = multi-repo + visual verification
+- [x] GitHub Copilot agent mode — analyzed cloud agent (GitHub Actions VM, 59-min cap, custom agents, Copilot Memory, automations, integrations); gap = event triggers
+- [x] Aider, Sweep, and other autonomous tools — analyzed Aider (pair programmer, repo map, git integration, edit formats); Sweep wound down (absorbed by Copilot); gap = repo map
+- [x] Create docs/competitor-analysis-market.md — created with 4-competitor comparison, Ralph loop analysis, port/don't-port recommendations, 8 key insights
 
 ### 10C — Innovation proposals
 - [ ] Research multi-repo goal support
