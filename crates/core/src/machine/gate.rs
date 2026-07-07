@@ -64,26 +64,39 @@ impl Gate {
                 GateVerdict {
                     gate_name: self.name.clone(),
                     passed: all_pass,
-                    details: results.iter().map(|r| format!("{}: {}", r.agent, if r.passed { "PASS" } else { "FAIL" })).collect(),
+                    details: results
+                        .iter()
+                        .map(|r| format!("{}: {}", r.agent, if r.passed { "PASS" } else { "FAIL" }))
+                        .collect(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 }
             }
 
             GateEvaluator::MajorityPass(threshold) => {
                 let pass_count = results.iter().filter(|r| r.passed).count();
-                let ratio = if results.is_empty() { 0.0 } else { pass_count as f32 / results.len() as f32 };
+                let ratio = if results.is_empty() {
+                    0.0
+                } else {
+                    pass_count as f32 / results.len() as f32
+                };
                 GateVerdict {
                     gate_name: self.name.clone(),
                     passed: ratio >= *threshold,
-                    details: vec![format!("{}/{} passed ({:.0}%), need {:.0}%", pass_count, results.len(), ratio * 100.0, threshold * 100.0)],
+                    details: vec![format!(
+                        "{}/{} passed ({:.0}%), need {:.0}%",
+                        pass_count,
+                        results.len(),
+                        ratio * 100.0,
+                        threshold * 100.0
+                    )],
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 }
             }
 
             GateEvaluator::NoCritical => {
-                let has_critical = results.iter().any(|r| {
-                    r.comments.iter().any(|c| c.severity == Severity::Critical)
-                });
+                let has_critical = results
+                    .iter()
+                    .any(|r| r.comments.iter().any(|c| c.severity == Severity::Critical));
                 GateVerdict {
                     gate_name: self.name.clone(),
                     passed: !has_critical,
@@ -112,13 +125,15 @@ impl Gate {
 
             GateEvaluator::CoverageThreshold(threshold) => {
                 // Look for coverage in results
-                let coverage = results.iter()
-                    .find_map(|r| r.coverage)
-                    .unwrap_or(0.0);
+                let coverage = results.iter().find_map(|r| r.coverage).unwrap_or(0.0);
                 GateVerdict {
                     gate_name: self.name.clone(),
                     passed: coverage >= *threshold,
-                    details: vec![format!("Coverage: {:.1}%, need {:.1}%", coverage * 100.0, threshold * 100.0)],
+                    details: vec![format!(
+                        "Coverage: {:.1}%, need {:.1}%",
+                        coverage * 100.0,
+                        threshold * 100.0
+                    )],
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 }
             }
@@ -127,7 +142,10 @@ impl Gate {
                 GateVerdict {
                     gate_name: self.name.clone(),
                     passed: true, // Default: pass
-                    details: vec![format!("Custom gate '{}' not implemented, defaulting to pass", name)],
+                    details: vec![format!(
+                        "Custom gate '{}' not implemented, defaulting to pass",
+                        name
+                    )],
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 }
             }
@@ -198,7 +216,10 @@ impl GateRegistry {
 
     /// Register a gate for a specific phase transition.
     pub fn register(&mut self, phase: Phase, gate: Gate) {
-        self.phase_gates.entry(phase).or_default().push(gate.name.clone());
+        self.phase_gates
+            .entry(phase)
+            .or_default()
+            .push(gate.name.clone());
         self.gates.push(gate);
     }
 
@@ -207,7 +228,8 @@ impl GateRegistry {
         self.phase_gates
             .get(phase)
             .map(|names| {
-                names.iter()
+                names
+                    .iter()
                     .filter_map(|name| self.gates.iter().find(|g| g.name == *name))
                     .collect()
             })
@@ -221,14 +243,17 @@ impl GateRegistry {
 
     /// Evaluate all gates for a phase.
     pub fn evaluate_phase(&mut self, phase: &Phase, results: &[ReviewResult]) -> Vec<GateVerdict> {
-        let gate_names: Vec<String> = self.phase_gates
-            .get(phase)
-            .cloned()
-            .unwrap_or_default();
+        let gate_names: Vec<String> = self.phase_gates.get(phase).cloned().unwrap_or_default();
 
-        gate_names.iter().filter_map(|name| {
-            self.gates.iter_mut().find(|g| g.name == *name).map(|g| g.evaluate(results))
-        }).collect()
+        gate_names
+            .iter()
+            .filter_map(|name| {
+                self.gates
+                    .iter_mut()
+                    .find(|g| g.name == *name)
+                    .map(|g| g.evaluate(results))
+            })
+            .collect()
     }
 }
 
@@ -301,7 +326,11 @@ mod tests {
     #[test]
     fn test_majority_pass() {
         let mut gate = Gate::new("test", GateEvaluator::MajorityPass(0.66), 3);
-        let results = vec![passing_result("a"), passing_result("b"), failing_result("c")];
+        let results = vec![
+            passing_result("a"),
+            passing_result("b"),
+            failing_result("c"),
+        ];
         let verdict = gate.evaluate(&results);
         assert!(verdict.passed); // 2/3 = 66.7% >= 66%
     }
@@ -309,7 +338,11 @@ mod tests {
     #[test]
     fn test_majority_fail() {
         let mut gate = Gate::new("test", GateEvaluator::MajorityPass(0.66), 3);
-        let results = vec![passing_result("a"), failing_result("b"), failing_result("c")];
+        let results = vec![
+            passing_result("a"),
+            failing_result("b"),
+            failing_result("c"),
+        ];
         let verdict = gate.evaluate(&results);
         assert!(!verdict.passed); // 1/3 = 33.3% < 66%
     }

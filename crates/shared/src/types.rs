@@ -89,13 +89,29 @@ impl Phase {
     pub fn default_transitions(&self) -> Vec<Phase> {
         match self {
             Phase::Idle => vec![Phase::Planning, Phase::Cancelled],
-            Phase::Planning => vec![Phase::Researching, Phase::Designing, Phase::Implementing, Phase::Cancelled],
+            Phase::Planning => vec![
+                Phase::Researching,
+                Phase::Designing,
+                Phase::Implementing,
+                Phase::Cancelled,
+            ],
             Phase::Researching => vec![Phase::Designing, Phase::Cancelled],
             Phase::Designing => vec![Phase::Implementing, Phase::Cancelled],
             Phase::Implementing => vec![Phase::Reviewing, Phase::Testing, Phase::Cancelled],
-            Phase::Reviewing => vec![Phase::Fixing, Phase::Testing, Phase::Implementing, Phase::Completed, Phase::Cancelled],
+            Phase::Reviewing => vec![
+                Phase::Fixing,
+                Phase::Testing,
+                Phase::Implementing,
+                Phase::Completed,
+                Phase::Cancelled,
+            ],
             Phase::Fixing => vec![Phase::Reviewing, Phase::Implementing, Phase::Cancelled],
-            Phase::Testing => vec![Phase::SecurityScan, Phase::Finalizing, Phase::Reviewing, Phase::Cancelled],
+            Phase::Testing => vec![
+                Phase::SecurityScan,
+                Phase::Finalizing,
+                Phase::Reviewing,
+                Phase::Cancelled,
+            ],
             Phase::SecurityScan => vec![Phase::Fixing, Phase::Finalizing, Phase::Cancelled],
             Phase::Finalizing => vec![Phase::Completed, Phase::Cancelled],
             Phase::Completed => vec![],

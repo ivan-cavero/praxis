@@ -66,7 +66,13 @@ pub struct TokenUsage {
 }
 
 impl TaskResult {
-    pub fn success(task_id: &str, agent_id: &str, role: &str, content: &str, duration_ms: u64) -> Self {
+    pub fn success(
+        task_id: &str,
+        agent_id: &str,
+        role: &str,
+        content: &str,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             task_id: task_id.to_string(),
             agent_id: agent_id.to_string(),
@@ -110,7 +116,9 @@ impl TaskResult {
             task_id: task_id.to_string(),
             agent_id: agent_id.to_string(),
             role: role.to_string(),
-            status: TaskStatus::Failed { reason: reason.to_string() },
+            status: TaskStatus::Failed {
+                reason: reason.to_string(),
+            },
             content: String::new(),
             tool_calls: Vec::new(),
             token_usage: TokenUsage::default(),

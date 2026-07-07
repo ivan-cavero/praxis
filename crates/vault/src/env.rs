@@ -90,11 +90,10 @@ impl EnvVault {
         providers
             .iter()
             .map(|(name, raw_key)| {
-                let resolved = self.resolve_api_key(raw_key)
-                    .unwrap_or_else(|e| {
-                        tracing::error!("Failed to resolve API key for {}: {}", name, e);
-                        None
-                    });
+                let resolved = self.resolve_api_key(raw_key).unwrap_or_else(|e| {
+                    tracing::error!("Failed to resolve API key for {}: {}", name, e);
+                    None
+                });
                 (name.clone(), resolved)
             })
             .collect()
@@ -107,11 +106,10 @@ impl EnvVault {
 
     /// Load a `.env` file (simple key=value parser, no external deps).
     pub fn load_dotenv(path: &std::path::Path) -> Result<u32, VaultError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| VaultError::FileReadError {
-                path: path.display().to_string(),
-                reason: e.to_string(),
-            })?;
+        let content = std::fs::read_to_string(path).map_err(|e| VaultError::FileReadError {
+            path: path.display().to_string(),
+            reason: e.to_string(),
+        })?;
 
         let mut loaded = 0u32;
         for line in content.lines() {
@@ -126,7 +124,8 @@ impl EnvVault {
                 let value = value.trim();
                 // Remove surrounding quotes
                 let value = value
-                    .strip_prefix('"').and_then(|v| v.strip_suffix('"'))
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
                     .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
                     .unwrap_or(value);
 
@@ -205,7 +204,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vault-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let env_path = dir.join(".env");
-        std::fs::write(&env_path, "# Comment\nTEST_DOTENV_KEY=hello123\nOTHER_KEY=\"quoted\"\n").unwrap();
+        std::fs::write(
+            &env_path,
+            "# Comment\nTEST_DOTENV_KEY=hello123\nOTHER_KEY=\"quoted\"\n",
+        )
+        .unwrap();
 
         let loaded = EnvVault::load_dotenv(&env_path).unwrap();
         assert!(loaded >= 1);
@@ -224,6 +227,9 @@ mod tests {
         let mut vault = EnvVault::new();
         let results = vault.resolve_all(&providers);
         assert_eq!(results.get("test").unwrap(), &Some("resolved".to_string()));
-        assert_eq!(results.get("other").unwrap(), &Some("literal-key".to_string()));
+        assert_eq!(
+            results.get("other").unwrap(),
+            &Some("literal-key".to_string())
+        );
     }
 }

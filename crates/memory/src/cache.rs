@@ -176,13 +176,16 @@ mod tests {
         let cache = LLMCache::new(10, 60);
         let key = LLMCache::key("gpt-5", &["hello".to_string()], 0.3);
 
-        cache.insert(key, CachedResponse {
-            content: "Hi".to_string(),
-            model: "gpt-5".to_string(),
-            input_tokens: 5,
-            output_tokens: 3,
-            cached_at: std::time::Instant::now(),
-        });
+        cache.insert(
+            key,
+            CachedResponse {
+                content: "Hi".to_string(),
+                model: "gpt-5".to_string(),
+                input_tokens: 5,
+                output_tokens: 3,
+                cached_at: std::time::Instant::now(),
+            },
+        );
 
         cache.clear();
         assert!(cache.get(&key).is_none());
@@ -199,13 +202,16 @@ mod tests {
         cache.get(&key);
 
         // 1 hit
-        cache.insert(key, CachedResponse {
-            content: "ok".to_string(),
-            model: "gpt-5".to_string(),
-            input_tokens: 1,
-            output_tokens: 1,
-            cached_at: std::time::Instant::now(),
-        });
+        cache.insert(
+            key,
+            CachedResponse {
+                content: "ok".to_string(),
+                model: "gpt-5".to_string(),
+                input_tokens: 1,
+                output_tokens: 1,
+                cached_at: std::time::Instant::now(),
+            },
+        );
         cache.get(&key);
 
         let stats = cache.stats();

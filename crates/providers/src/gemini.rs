@@ -28,7 +28,9 @@ impl GeminiProvider {
         let client = reqwest::Client::builder()
             .timeout(timeout.unwrap_or(std::time::Duration::from_secs(120)))
             .build()
-            .map_err(|error| crate::ProviderInitError(format!("Failed to build HTTP client: {error}")))?;
+            .map_err(|error| {
+                crate::ProviderInitError(format!("Failed to build HTTP client: {error}"))
+            })?;
 
         Ok(Self {
             client,
@@ -51,10 +53,11 @@ impl GeminiProvider {
     ) -> Result<reqwest::Response, praxis_shared::error::ProjectXError> {
         let mut attempts = 0;
         loop {
-            let req = request.try_clone()
-                .ok_or_else(|| praxis_shared::error::ProjectXError::Internal(
-                    "Request body exceeded maximum size for retry cloning".to_string()
-                ))?;
+            let req = request.try_clone().ok_or_else(|| {
+                praxis_shared::error::ProjectXError::Internal(
+                    "Request body exceeded maximum size for retry cloning".to_string(),
+                )
+            })?;
             match req.send().await {
                 Ok(resp) if resp.status().is_success() => return Ok(resp),
                 Ok(resp) if resp.status().as_u16() == 429 => {
@@ -72,23 +75,28 @@ impl GeminiProvider {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     tracing::error!("Gemini HTTP {}: {}", status, body);
-                    return Err(praxis_shared::error::ProjectXError::ProviderError(
-                        format!("Gemini HTTP {}: {}", status, body),
-                    ));
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                        "Gemini HTTP {}: {}",
+                        status, body
+                    )));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     attempts += 1;
                     if attempts > self.max_retries {
-                        return Err(praxis_shared::error::ProjectXError::ProviderError(
-                            format!("Gemini failed after {} retries: {}", self.max_retries, e),
-                        ));
+                        return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                            "Gemini failed after {} retries: {}",
+                            self.max_retries, e
+                        )));
                     }
                     let backoff = std::time::Duration::from_millis(100 * 2u64.pow(attempts - 1));
                     tokio::time::sleep(backoff).await;
                 }
-                Err(e) => return Err(praxis_shared::error::ProjectXError::ProviderError(
-                    format!("Gemini request error: {}", e),
-                )),
+                Err(e) => {
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                        "Gemini request error: {}",
+                        e
+                    )));
+                }
             }
         }
     }
@@ -183,7 +191,10 @@ impl LLMProvider for GeminiProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("Gemini stream error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "Gemini stream error: {}",
+                e
+            ))
         })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -200,17 +211,27 @@ impl LLMProvider for GeminiProvider {
                         while let Some(line_end) = buffer.find('\n') {
                             let line = buffer[..line_end].trim().to_string();
                             buffer = buffer[line_end + 1..].to_string();
-                            if line.is_empty() || line == "data: [DONE]" { continue; }
+                            if line.is_empty() || line == "data: [DONE]" {
+                                continue;
+                            }
                             if let Some(data) = line.strip_prefix("data: ") {
                                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
-                                    if let Some(content) = value["choices"][0]["delta"]["content"].as_str() {
+                                    if let Some(content) =
+                                        value["choices"][0]["delta"]["content"].as_str()
+                                    {
                                         if !content.is_empty() {
-                                            let _ = tx.send(StreamChunk::Delta(content.to_string())).await;
+                                            let _ = tx
+                                                .send(StreamChunk::Delta(content.to_string()))
+                                                .await;
                                         }
                                     }
-                                    if let Some(finish) = value["choices"][0]["finish_reason"].as_str() {
+                                    if let Some(finish) =
+                                        value["choices"][0]["finish_reason"].as_str()
+                                    {
                                         if finish == "stop" {
-                                            let _ = tx.send(StreamChunk::Done(TokenUsage::new(0, 0))).await;
+                                            let _ = tx
+                                                .send(StreamChunk::Done(TokenUsage::new(0, 0)))
+                                                .await;
                                         }
                                     }
                                 }
@@ -218,7 +239,9 @@ impl LLMProvider for GeminiProvider {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(StreamChunk::Error(format!("Gemini stream error: {}", e))).await;
+                        let _ = tx
+                            .send(StreamChunk::Error(format!("Gemini stream error: {}", e)))
+                            .await;
                         break;
                     }
                 }
@@ -257,7 +280,11 @@ impl LLMProvider for GeminiProvider {
             "gemini-1.5-pro" => (1.25 / 1_000_000.0, 5.00 / 1_000_000.0),
             _ => (0.50 / 1_000_000.0, 1.50 / 1_000_000.0),
         };
-        ModelCost { per_input_token: input, per_output_token: output, currency: "USD".to_string() }
+        ModelCost {
+            per_input_token: input,
+            per_output_token: output,
+            currency: "USD".to_string(),
+        }
     }
 
     fn provider_name(&self) -> &str {

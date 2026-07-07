@@ -3,8 +3,8 @@
 //! Orchestrates: StateMachine → Agent execution → Gate evaluation → Checkpoint → Next phase.
 //! Includes limits, divergence detection, and context management hooks.
 
-use crate::machine::phase::{Phase, PhaseTransition, StateMachine};
 use crate::machine::gate::{GateRegistry, GateVerdict, ReviewResult};
+use crate::machine::phase::{Phase, PhaseTransition, StateMachine};
 use std::collections::VecDeque;
 
 // ─── Loop Controller ──────────────────────────────────────────
@@ -89,7 +89,8 @@ impl LoopController {
         }
 
         // Phase iteration limit
-        let phase_count = self.phase_iterations
+        let phase_count = self
+            .phase_iterations
             .get(&self.state_machine.current())
             .copied()
             .unwrap_or(0);
@@ -102,7 +103,9 @@ impl LoopController {
         }
 
         // Session TTL
-        if self.started_at.elapsed() >= std::time::Duration::from_secs(self.limits.session_ttl_seconds) {
+        if self.started_at.elapsed()
+            >= std::time::Duration::from_secs(self.limits.session_ttl_seconds)
+        {
             return Some(LimitViolation::SessionTtl {
                 elapsed: self.started_at.elapsed(),
                 max: std::time::Duration::from_secs(self.limits.session_ttl_seconds),
@@ -200,7 +203,8 @@ impl LoopController {
 
     /// Check for cycle detection.
     pub fn detect_cycle(&self) -> bool {
-        self.state_machine.detect_cycle(self.limits.cycle_detection_window)
+        self.state_machine
+            .detect_cycle(self.limits.cycle_detection_window)
     }
 
     /// Get the current phase info.
@@ -208,7 +212,8 @@ impl LoopController {
         PhaseInfo {
             current: self.state_machine.current(),
             iteration: self.iteration,
-            phase_iteration: self.phase_iterations
+            phase_iteration: self
+                .phase_iterations
                 .get(&self.state_machine.current())
                 .copied()
                 .unwrap_or(0),
@@ -274,12 +279,32 @@ impl Default for Limits {
 /// What limit was exceeded.
 #[derive(Debug, Clone)]
 pub enum LimitViolation {
-    MaxIterationsPerGoal { current: u32, max: u32 },
-    MaxIterationsPerPhase { phase: Phase, current: u32, max: u32 },
-    SessionTtl { elapsed: std::time::Duration, max: std::time::Duration },
-    PhaseTimeout { phase: Phase, duration: std::time::Duration, max: std::time::Duration },
-    TokenBudget { used: u64, max: u64 },
-    CostBudget { used: f64, max: f64 },
+    MaxIterationsPerGoal {
+        current: u32,
+        max: u32,
+    },
+    MaxIterationsPerPhase {
+        phase: Phase,
+        current: u32,
+        max: u32,
+    },
+    SessionTtl {
+        elapsed: std::time::Duration,
+        max: std::time::Duration,
+    },
+    PhaseTimeout {
+        phase: Phase,
+        duration: std::time::Duration,
+        max: std::time::Duration,
+    },
+    TokenBudget {
+        used: u64,
+        max: u64,
+    },
+    CostBudget {
+        used: f64,
+        max: f64,
+    },
 }
 
 impl std::fmt::Display for LimitViolation {
@@ -288,13 +313,25 @@ impl std::fmt::Display for LimitViolation {
             Self::MaxIterationsPerGoal { current, max } => {
                 write!(f, "Max iterations per goal reached: {}/{}", current, max)
             }
-            Self::MaxIterationsPerPhase { phase, current, max } => {
-                write!(f, "Max iterations for {} phase reached: {}/{}", phase, current, max)
+            Self::MaxIterationsPerPhase {
+                phase,
+                current,
+                max,
+            } => {
+                write!(
+                    f,
+                    "Max iterations for {} phase reached: {}/{}",
+                    phase, current, max
+                )
             }
             Self::SessionTtl { elapsed, max } => {
                 write!(f, "Session TTL exceeded: {:?}/{:?}", elapsed, max)
             }
-            Self::PhaseTimeout { phase, duration, max } => {
+            Self::PhaseTimeout {
+                phase,
+                duration,
+                max,
+            } => {
                 write!(f, "Phase {} timeout: {:?}/{:?}", phase, duration, max)
             }
             Self::TokenBudget { used, max } => {
@@ -312,14 +349,40 @@ impl std::fmt::Display for LimitViolation {
 /// Events emitted by the loop controller.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum LoopEvent {
-    Started { timestamp: String },
-    Stopped { timestamp: String },
-    Iteration { iteration: u32, phase: Phase, timestamp: String },
-    PhaseChanged { from: Phase, to: Phase, iteration: u32, timestamp: String },
-    GateEvaluated { gate: String, passed: bool, timestamp: String },
-    LimitReached { violation: String, timestamp: String },
-    CycleDetected { window: usize, timestamp: String },
-    CheckpointSaved { session_id: String, timestamp: String },
+    Started {
+        timestamp: String,
+    },
+    Stopped {
+        timestamp: String,
+    },
+    Iteration {
+        iteration: u32,
+        phase: Phase,
+        timestamp: String,
+    },
+    PhaseChanged {
+        from: Phase,
+        to: Phase,
+        iteration: u32,
+        timestamp: String,
+    },
+    GateEvaluated {
+        gate: String,
+        passed: bool,
+        timestamp: String,
+    },
+    LimitReached {
+        violation: String,
+        timestamp: String,
+    },
+    CycleDetected {
+        window: usize,
+        timestamp: String,
+    },
+    CheckpointSaved {
+        session_id: String,
+        timestamp: String,
+    },
 }
 
 // ─── Phase Info ───────────────────────────────────────────────
@@ -396,7 +459,10 @@ mod tests {
 
         // Third iteration in Planning — exceeds limit (2 >= 2)
         ctrl.increment_iteration();
-        assert!(ctrl.check_limits().is_some(), "3rd iteration should exceed limit");
+        assert!(
+            ctrl.check_limits().is_some(),
+            "3rd iteration should exceed limit"
+        );
     }
 
     #[test]
@@ -444,12 +510,24 @@ mod tests {
 
         // Under budget — no violation
         ctrl.record_token_usage(500, 0.01);
-        assert!(ctrl.check_limits().is_none(), "500 tokens should be under 1000 cap");
+        assert!(
+            ctrl.check_limits().is_none(),
+            "500 tokens should be under 1000 cap"
+        );
 
         // At budget — violation (>=)
         ctrl.record_token_usage(500, 0.01);
-        assert!(ctrl.check_limits().is_some(), "1000 tokens should trigger cap");
-        assert!(matches!(ctrl.check_limits(), Some(LimitViolation::TokenBudget { used: 1000, max: 1000 })));
+        assert!(
+            ctrl.check_limits().is_some(),
+            "1000 tokens should trigger cap"
+        );
+        assert!(matches!(
+            ctrl.check_limits(),
+            Some(LimitViolation::TokenBudget {
+                used: 1000,
+                max: 1000
+            })
+        ));
     }
 
     #[test]
@@ -463,12 +541,18 @@ mod tests {
 
         // Under budget
         ctrl.record_token_usage(1000, 0.50);
-        assert!(ctrl.check_limits().is_none(), "$0.50 should be under $1.00 cap");
+        assert!(
+            ctrl.check_limits().is_none(),
+            "$0.50 should be under $1.00 cap"
+        );
 
         // Over budget
         ctrl.record_token_usage(1000, 0.60);
         assert!(ctrl.check_limits().is_some(), "$1.10 should trigger cap");
-        assert!(matches!(ctrl.check_limits(), Some(LimitViolation::CostBudget { .. })));
+        assert!(matches!(
+            ctrl.check_limits(),
+            Some(LimitViolation::CostBudget { .. })
+        ));
     }
 
     #[test]
@@ -478,6 +562,9 @@ mod tests {
 
         // No caps set — should never trigger token/cost violations
         ctrl.record_token_usage(999_999_999, 999_999.0);
-        assert!(ctrl.check_limits().is_none(), "No caps = no token/cost violation");
+        assert!(
+            ctrl.check_limits().is_none(),
+            "No caps = no token/cost violation"
+        );
     }
 }

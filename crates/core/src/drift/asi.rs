@@ -153,27 +153,123 @@ mod tests {
 
     fn healthy_scores() -> Vec<DimensionScore> {
         vec![
-            DimensionScore { name: "a".into(), value: 0.1, weight: 0.1, z_score: 0.1, status: DimensionStatus::Healthy },
-            DimensionScore { name: "b".into(), value: 0.2, weight: 0.1, z_score: 0.2, status: DimensionStatus::Healthy },
-            DimensionScore { name: "c".into(), value: 0.1, weight: 0.1, z_score: 0.1, status: DimensionStatus::Healthy },
-            DimensionScore { name: "d".into(), value: 0.15, weight: 0.15, z_score: 0.15, status: DimensionStatus::Healthy },
-            DimensionScore { name: "e".into(), value: 0.1, weight: 0.15, z_score: 0.1, status: DimensionStatus::Healthy },
-            DimensionScore { name: "f".into(), value: 0.2, weight: 0.1, z_score: 0.2, status: DimensionStatus::Healthy },
-            DimensionScore { name: "g".into(), value: 0.3, weight: 0.15, z_score: 0.0, status: DimensionStatus::Healthy },
-            DimensionScore { name: "h".into(), value: 0.5, weight: 0.15, z_score: 0.0, status: DimensionStatus::Healthy },
+            DimensionScore {
+                name: "a".into(),
+                value: 0.1,
+                weight: 0.1,
+                z_score: 0.1,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "b".into(),
+                value: 0.2,
+                weight: 0.1,
+                z_score: 0.2,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "c".into(),
+                value: 0.1,
+                weight: 0.1,
+                z_score: 0.1,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "d".into(),
+                value: 0.15,
+                weight: 0.15,
+                z_score: 0.15,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "e".into(),
+                value: 0.1,
+                weight: 0.15,
+                z_score: 0.1,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "f".into(),
+                value: 0.2,
+                weight: 0.1,
+                z_score: 0.2,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "g".into(),
+                value: 0.3,
+                weight: 0.15,
+                z_score: 0.0,
+                status: DimensionStatus::Healthy,
+            },
+            DimensionScore {
+                name: "h".into(),
+                value: 0.5,
+                weight: 0.15,
+                z_score: 0.0,
+                status: DimensionStatus::Healthy,
+            },
         ]
     }
 
     fn critical_scores() -> Vec<DimensionScore> {
         vec![
-            DimensionScore { name: "a".into(), value: 5.0, weight: 0.1, z_score: 5.0, status: DimensionStatus::Critical },
-            DimensionScore { name: "b".into(), value: 4.5, weight: 0.1, z_score: 4.5, status: DimensionStatus::Critical },
-            DimensionScore { name: "c".into(), value: 4.0, weight: 0.1, z_score: 4.0, status: DimensionStatus::Critical },
-            DimensionScore { name: "d".into(), value: 5.5, weight: 0.15, z_score: 5.5, status: DimensionStatus::Critical },
-            DimensionScore { name: "e".into(), value: 4.8, weight: 0.15, z_score: 4.8, status: DimensionStatus::Critical },
-            DimensionScore { name: "f".into(), value: 4.2, weight: 0.1, z_score: 4.2, status: DimensionStatus::Critical },
-            DimensionScore { name: "g".into(), value: 0.98, weight: 0.15, z_score: 0.0, status: DimensionStatus::Critical },
-            DimensionScore { name: "h".into(), value: 0.05, weight: 0.15, z_score: 0.0, status: DimensionStatus::Critical },
+            DimensionScore {
+                name: "a".into(),
+                value: 5.0,
+                weight: 0.1,
+                z_score: 5.0,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "b".into(),
+                value: 4.5,
+                weight: 0.1,
+                z_score: 4.5,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "c".into(),
+                value: 4.0,
+                weight: 0.1,
+                z_score: 4.0,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "d".into(),
+                value: 5.5,
+                weight: 0.15,
+                z_score: 5.5,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "e".into(),
+                value: 4.8,
+                weight: 0.15,
+                z_score: 4.8,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "f".into(),
+                value: 4.2,
+                weight: 0.1,
+                z_score: 4.2,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "g".into(),
+                value: 0.98,
+                weight: 0.15,
+                z_score: 0.0,
+                status: DimensionStatus::Critical,
+            },
+            DimensionScore {
+                name: "h".into(),
+                value: 0.05,
+                weight: 0.15,
+                z_score: 0.0,
+                status: DimensionStatus::Critical,
+            },
         ]
     }
 
@@ -211,6 +307,9 @@ mod tests {
     #[test]
     fn test_status_actions() {
         assert_eq!(ASIStatus::Healthy.recommended_action(), "No action needed");
-        assert_eq!(ASIStatus::Critical.recommended_action(), "Pause agent, notify user, upgrade model");
+        assert_eq!(
+            ASIStatus::Critical.recommended_action(),
+            "Pause agent, notify user, upgrade model"
+        );
     }
 }

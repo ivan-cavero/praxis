@@ -6,7 +6,7 @@
 //! - Switch to a more capable model
 //! - Transfer to a fresh session
 
-use crate::drift::asi::{ASIStatus, ASICalculator};
+use crate::drift::asi::{ASICalculator, ASIStatus};
 use crate::drift::metrics::MetricsCollector;
 
 /// Recovery action triggered by drift detection.
@@ -98,19 +98,21 @@ impl RecoveryOrchestrator {
     }
 
     /// Evaluate the current ASI status and decide on recovery action.
-    pub fn evaluate(&mut self, status: ASIStatus, agent_id: Option<&str>) -> Option<RecoveryAction> {
+    pub fn evaluate(
+        &mut self,
+        status: ASIStatus,
+        agent_id: Option<&str>,
+    ) -> Option<RecoveryAction> {
         let action = match status {
             ASIStatus::Healthy => None,
 
-            ASIStatus::Attention => {
-                Some(RecoveryAction {
-                    kind: RecoveryKind::LogOnly,
-                    reason: "ASI in attention zone, monitoring".to_string(),
-                    severity: status.clone(),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    agent_id: agent_id.map(|s| s.to_string()),
-                })
-            }
+            ASIStatus::Attention => Some(RecoveryAction {
+                kind: RecoveryKind::LogOnly,
+                reason: "ASI in attention zone, monitoring".to_string(),
+                severity: status.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                agent_id: agent_id.map(|s| s.to_string()),
+            }),
 
             ASIStatus::Drift => {
                 self.consecutive_resets += 1;
@@ -150,15 +152,13 @@ impl RecoveryOrchestrator {
                 }
             }
 
-            ASIStatus::Severe => {
-                Some(RecoveryAction {
-                    kind: RecoveryKind::KillSession,
-                    reason: "Severe drift detected, terminating session".to_string(),
-                    severity: status.clone(),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    agent_id: agent_id.map(|s| s.to_string()),
-                })
-            }
+            ASIStatus::Severe => Some(RecoveryAction {
+                kind: RecoveryKind::KillSession,
+                reason: "Severe drift detected, terminating session".to_string(),
+                severity: status.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                agent_id: agent_id.map(|s| s.to_string()),
+            }),
         };
 
         if let Some(ref action) = action {
@@ -253,14 +253,19 @@ impl DriftGuard {
     }
 
     /// Record a metric sample and evaluate for drift.
-    pub fn record_and_evaluate(&mut self, sample: crate::drift::metrics::MetricSample, agent_id: Option<&str>) -> Option<DriftReport> {
+    pub fn record_and_evaluate(
+        &mut self,
+        sample: crate::drift::metrics::MetricSample,
+        agent_id: Option<&str>,
+    ) -> Option<DriftReport> {
         // Clone for per-agent tracking before moving to global
         let agent_sample = sample.clone();
         self.metrics.record(sample);
 
         // Track per-agent metrics and compute per-agent ASI
         if let Some(agent_id) = agent_id {
-            let agent_collector = self.agent_metrics
+            let agent_collector = self
+                .agent_metrics
                 .entry(agent_id.to_string())
                 .or_insert_with(|| MetricsCollector::with_baseline_size(5));
             agent_collector.record(agent_sample);
@@ -452,7 +457,11 @@ mod tests {
             if i >= 9 {
                 // After baseline established
                 let report = report.unwrap();
-                assert!(report.asi_score > 60.0, "Expected healthy ASI, got {}", report.asi_score);
+                assert!(
+                    report.asi_score > 60.0,
+                    "Expected healthy ASI, got {}",
+                    report.asi_score
+                );
                 assert!(report.recovery_action.is_none());
             }
         }
@@ -465,35 +474,41 @@ mod tests {
 
         // Establish baseline with varied good metrics
         for i in 0..10 {
-            guard.record_and_evaluate(MetricSample {
-                iteration: i,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                latency_ms: 100 + i as u64 * 10,
-                output_tokens: 50 + i as u32 * 5,
-                input_tokens: 100,
-                tool_calls: 2,
-                tool_errors: 0,
-                output_length_chars: 200 + i as usize * 20,
-                gate_passed: true,
-                context_pressure: 0.3,
-            }, None);
+            guard.record_and_evaluate(
+                MetricSample {
+                    iteration: i,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    latency_ms: 100 + i as u64 * 10,
+                    output_tokens: 50 + i as u32 * 5,
+                    input_tokens: 100,
+                    tool_calls: 2,
+                    tool_errors: 0,
+                    output_length_chars: 200 + i as usize * 20,
+                    gate_passed: true,
+                    context_pressure: 0.3,
+                },
+                None,
+            );
         }
 
         // Now record severely degraded metrics
         let mut recovery_triggered = false;
         for i in 0..10 {
-            let report = guard.record_and_evaluate(MetricSample {
-                iteration: i + 10,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                latency_ms: 5000,
-                output_tokens: 500,
-                input_tokens: 100,
-                tool_calls: 2,
-                tool_errors: 2,
-                output_length_chars: 10000,
-                gate_passed: false,
-                context_pressure: 0.95,
-            }, Some("coder"));
+            let report = guard.record_and_evaluate(
+                MetricSample {
+                    iteration: i + 10,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    latency_ms: 5000,
+                    output_tokens: 500,
+                    input_tokens: 100,
+                    tool_calls: 2,
+                    tool_errors: 2,
+                    output_length_chars: 10000,
+                    gate_passed: false,
+                    context_pressure: 0.95,
+                },
+                Some("coder"),
+            );
 
             if let Some(report) = report {
                 if report.recovery_action.is_some() {
@@ -504,7 +519,9 @@ mod tests {
         }
 
         // Check if recovery was triggered at some point
-        assert!(recovery_triggered || guard.recovery.history().len() > 0,
-            "Expected drift detection with recovery threshold 80");
+        assert!(
+            recovery_triggered || guard.recovery.history().len() > 0,
+            "Expected drift detection with recovery threshold 80"
+        );
     }
 }

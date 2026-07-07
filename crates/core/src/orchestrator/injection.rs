@@ -28,7 +28,7 @@ pub enum InjectionPriority {
     Low = 0,
     Normal = 1,
     High = 2,
-    Critical = 3,  // Never compressed, always processed first
+    Critical = 3, // Never compressed, always processed first
 }
 
 /// A single injection message.
@@ -186,7 +186,10 @@ impl InjectionChannel {
 
     /// Get history for a specific session.
     pub fn history_for_session(&self, session_id: &str) -> Vec<&Injection> {
-        self.history.iter().filter(|i| i.session_id == session_id).collect()
+        self.history
+            .iter()
+            .filter(|i| i.session_id == session_id)
+            .collect()
     }
 
     /// Clear all pending injections.
@@ -197,20 +200,20 @@ impl InjectionChannel {
     /// Get statistics.
     pub fn stats(&self) -> InjectionStats {
         let total = self.history.len();
-        let by_type = self.history.iter().fold(
-            std::collections::HashMap::new(),
-            |mut acc, inj| {
+        let by_type = self
+            .history
+            .iter()
+            .fold(std::collections::HashMap::new(), |mut acc, inj| {
                 *acc.entry(inj.injection_type.clone()).or_insert(0) += 1;
                 acc
-            },
-        );
-        let by_priority = self.history.iter().fold(
-            std::collections::HashMap::new(),
-            |mut acc, inj| {
-                *acc.entry(inj.priority).or_insert(0) += 1;
-                acc
-            },
-        );
+            });
+        let by_priority =
+            self.history
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, inj| {
+                    *acc.entry(inj.priority).or_insert(0) += 1;
+                    acc
+                });
 
         InjectionStats {
             total,
@@ -240,7 +243,11 @@ impl std::fmt::Display for InjectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::QueueFull { pending, max } => {
-                write!(f, "Injection queue full: {}/{} (only Critical accepted)", pending, max)
+                write!(
+                    f,
+                    "Injection queue full: {}/{} (only Critical accepted)",
+                    pending, max
+                )
             }
             Self::InvalidTarget(target) => write!(f, "Invalid target: '{}'", target),
             Self::SessionNotFound(id) => write!(f, "Session not found: '{}'", id),
@@ -283,15 +290,23 @@ mod tests {
     #[test]
     fn test_injection_targets() {
         let inj = Injection::new(
-            "s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "test", InjectionSource::CLI,
+            "s1",
+            "coder",
+            InjectionType::Instruction,
+            InjectionPriority::Normal,
+            "test",
+            InjectionSource::CLI,
         );
         assert!(inj.targets("coder"));
         assert!(!inj.targets("reviewer"));
 
         let all = Injection::new(
-            "s1", "all", InjectionType::Instruction,
-            InjectionPriority::Normal, "test", InjectionSource::CLI,
+            "s1",
+            "all",
+            InjectionType::Instruction,
+            InjectionPriority::Normal,
+            "test",
+            InjectionSource::CLI,
         );
         assert!(all.targets("coder"));
         assert!(all.targets("anyone"));
@@ -302,8 +317,12 @@ mod tests {
         let mut channel = InjectionChannel::new(5);
 
         let inj = Injection::new(
-            "s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "test", InjectionSource::CLI,
+            "s1",
+            "coder",
+            InjectionType::Instruction,
+            InjectionPriority::Normal,
+            "test",
+            InjectionSource::CLI,
         );
         assert!(channel.submit(inj).is_ok());
         assert_eq!(channel.pending_count(), 1);
@@ -313,12 +332,36 @@ mod tests {
     fn test_injection_channel_priority() {
         let mut channel = InjectionChannel::new(10);
 
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Low, "low priority", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Critical, "critical", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "normal", InjectionSource::CLI)).unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Low,
+                "low priority",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Critical,
+                "critical",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "normal",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
 
         // Should get Critical first
         let inj = channel.next_for_agent("coder").unwrap();
@@ -330,12 +373,36 @@ mod tests {
     fn test_injection_channel_drain() {
         let mut channel = InjectionChannel::new(10);
 
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg1", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "reviewer", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg2", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg3", InjectionSource::CLI)).unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg1",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "reviewer",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg2",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg3",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
 
         let drained = channel.drain_for_agent("coder");
         assert_eq!(drained.len(), 2);
@@ -351,19 +418,47 @@ mod tests {
     fn test_injection_channel_queue_full() {
         let mut channel = InjectionChannel::new(2);
 
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg1", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg2", InjectionSource::CLI)).unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg1",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg2",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
 
         // Queue full, Normal priority should fail
-        let result = channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg3", InjectionSource::CLI));
+        let result = channel.submit(Injection::new(
+            "s1",
+            "coder",
+            InjectionType::Instruction,
+            InjectionPriority::Normal,
+            "msg3",
+            InjectionSource::CLI,
+        ));
         assert!(result.is_err());
 
         // But Critical should succeed
-        let result = channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Critical, "critical", InjectionSource::CLI));
+        let result = channel.submit(Injection::new(
+            "s1",
+            "coder",
+            InjectionType::Instruction,
+            InjectionPriority::Critical,
+            "critical",
+            InjectionSource::CLI,
+        ));
         assert!(result.is_ok());
     }
 
@@ -371,10 +466,26 @@ mod tests {
     fn test_injection_history() {
         let mut channel = InjectionChannel::new(10);
 
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg1", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg2", InjectionSource::CLI)).unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg1",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg2",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
 
         // Process one
         channel.next_for_agent("coder");
@@ -392,10 +503,26 @@ mod tests {
     fn test_injection_stats() {
         let mut channel = InjectionChannel::new(10);
 
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "msg1", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Correction,
-            InjectionPriority::Critical, "msg2", InjectionSource::CLI)).unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "msg1",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Correction,
+                InjectionPriority::Critical,
+                "msg2",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
 
         let stats = channel.stats();
         assert_eq!(stats.total, 0); // None processed yet

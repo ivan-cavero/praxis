@@ -1,6 +1,8 @@
 //! Stdio transport — spawns MCP server as child process.
 
-use crate::protocol::messages::{JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, JsonRpcNotification};
+use crate::protocol::messages::{
+    JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -62,7 +64,11 @@ impl StdioTransport {
     }
 
     /// Send a request and wait for the response.
-    pub async fn request(&mut self, method: &str, params: Option<serde_json::Value>) -> Result<JsonRpcResponse, String> {
+    pub async fn request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<JsonRpcResponse, String> {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -73,9 +79,10 @@ impl StdioTransport {
         let timeout = std::time::Duration::from_secs(30);
         match tokio::time::timeout(timeout, self.rx.recv()).await {
             Ok(Some(JsonRpcMessage::Response(resp))) if resp.id == id => Ok(resp),
-            Ok(Some(JsonRpcMessage::Response(resp))) => {
-                Err(format!("Response id mismatch: expected {}, got {}", id, resp.id))
-            }
+            Ok(Some(JsonRpcMessage::Response(resp))) => Err(format!(
+                "Response id mismatch: expected {}, got {}",
+                id, resp.id
+            )),
             Ok(Some(_)) => Err("Expected response, got request/notification".to_string()),
             Ok(None) => Err("Channel closed".to_string()),
             Err(_) => Err("Timeout waiting for response".to_string()),
@@ -83,21 +90,29 @@ impl StdioTransport {
     }
 
     /// Send a notification (no response expected).
-    pub async fn notify(&mut self, method: &str, params: Option<serde_json::Value>) -> Result<(), String> {
+    pub async fn notify(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<(), String> {
         let notification = JsonRpcNotification::new(method, params);
-        self.send_message(&JsonRpcMessage::Notification(notification)).await
+        self.send_message(&JsonRpcMessage::Notification(notification))
+            .await
     }
 
     /// Send a raw JSON-RPC message.
     async fn send_message(&mut self, msg: &JsonRpcMessage) -> Result<(), String> {
-        let json = serde_json::to_string(msg)
-            .map_err(|e| format!("Failed to serialize: {}", e))?;
+        let json = serde_json::to_string(msg).map_err(|e| format!("Failed to serialize: {}", e))?;
         let line = format!("{}\n", json);
 
         if let Some(ref mut stdin) = self.stdin {
-            stdin.write_all(line.as_bytes()).await
+            stdin
+                .write_all(line.as_bytes())
+                .await
                 .map_err(|e| format!("Failed to write to stdin: {}", e))?;
-            stdin.flush().await
+            stdin
+                .flush()
+                .await
                 .map_err(|e| format!("Failed to flush stdin: {}", e))?;
         } else {
             return Err("Stdin not available".to_string());
@@ -118,10 +133,7 @@ impl StdioTransport {
 
         if let Some(mut child) = self.child.take() {
             // Wait briefly for graceful exit
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                child.wait(),
-            ).await;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await;
 
             // Force kill if still running
             let _ = child.kill().await;

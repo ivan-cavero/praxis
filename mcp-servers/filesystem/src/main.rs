@@ -6,7 +6,7 @@
 //! All file operations are sandboxed to the allowed root directory
 //! (passed via `--root` argument or the first positional argument).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
@@ -67,9 +67,8 @@ fn tool_read(root: &Path, args: &Value) -> Result<Value, String> {
         .ok_or_else(|| "Missing required argument: path".to_string())?;
     let resolved = resolve_path(root, path_str)?;
 
-    let content = std::fs::read_to_string(&resolved).map_err(|e| {
-        format!("Failed to read '{}': {}", resolved.display(), e)
-    })?;
+    let content = std::fs::read_to_string(&resolved)
+        .map_err(|e| format!("Failed to read '{}': {}", resolved.display(), e))?;
 
     Ok(json!({
         "content": [{"type": "text", "text": content}]
@@ -145,7 +144,9 @@ fn tool_list(root: &Path, args: &Value) -> Result<Value, String> {
     let mut items: Vec<Value> = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let file_type = entry.file_type().map_err(|e| format!("Failed to get type: {}", e))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to get type: {}", e))?;
         let name = entry.file_name().to_string_lossy().to_string();
         items.push(json!({
             "name": name,
@@ -225,7 +226,12 @@ fn tool_glob(root: &Path, args: &Value) -> Result<Value, String> {
     // Simple recursive glob implementation
     let mut results: Vec<String> = Vec::new();
 
-    fn glob_recursive(dir: &Path, pattern: &str, root: &Path, results: &mut Vec<String>) -> Result<(), String> {
+    fn glob_recursive(
+        dir: &Path,
+        pattern: &str,
+        root: &Path,
+        results: &mut Vec<String>,
+    ) -> Result<(), String> {
         let entries = std::fs::read_dir(dir)
             .map_err(|e| format!("Failed to read dir '{}': {}", dir.display(), e))?;
 
@@ -242,11 +248,19 @@ fn tool_glob(root: &Path, args: &Value) -> Result<Value, String> {
                     glob_recursive(&path, pattern, root, results)?;
                 }
                 if matched {
-                    let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+                    let relative = path
+                        .strip_prefix(root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .to_string();
                     results.push(relative);
                 }
             } else if matched {
-                let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .to_string();
                 results.push(relative);
             }
         }
@@ -391,9 +405,7 @@ fn handle_request(root: &Path, id: &Value, method: &str, params: &Value) -> Valu
             }))
         }
         "tools/call" => {
-            let tool_name = params["name"]
-                .as_str()
-                .unwrap_or("");
+            let tool_name = params["name"].as_str().unwrap_or("");
             let arguments = &params["arguments"];
 
             let tool_result = match tool_name {
@@ -452,7 +464,10 @@ fn main() {
 
     // Canonicalize the root
     let root = root.canonicalize().unwrap_or_else(|_| {
-        eprintln!("Warning: root path does not exist, using as-is: {}", root.display());
+        eprintln!(
+            "Warning: root path does not exist, using as-is: {}",
+            root.display()
+        );
         root
     });
 
@@ -485,7 +500,11 @@ fn main() {
                     "id": null,
                     "error": {"code": -32700, "message": format!("Parse error: {}", e)}
                 });
-                let _ = writeln!(stdout_lock, "{}", serde_json::to_string(&error_resp).unwrap());
+                let _ = writeln!(
+                    stdout_lock,
+                    "{}",
+                    serde_json::to_string(&error_resp).unwrap()
+                );
                 let _ = stdout_lock.flush();
                 continue;
             }

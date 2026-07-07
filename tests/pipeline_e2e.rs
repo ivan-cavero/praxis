@@ -11,7 +11,9 @@ async fn e2e_pipeline_full_goal_execution() {
     // Create a temp directory with forge.toml
     let test_dir = std::env::temp_dir().join(format!("e2e-pipeline-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&test_dir).unwrap();
-    std::fs::write(test_dir.join("forge.toml"), r#"
+    std::fs::write(
+        test_dir.join("forge.toml"),
+        r#"
 [project]
 name = "test-project"
 version = "0.1.0"
@@ -50,18 +52,32 @@ temperature = 0.2
 max_tokens = 4096
 system_prompt = "You are a QA engineer."
 tools = ["filesystem", "execute_command"]
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     // Load config
     let config_path = test_dir.join("forge.toml");
     let config = praxis_core::load_forge_config(&config_path).expect("Failed to load config");
 
     assert!(!config.roles.is_empty(), "Config should have roles");
-    assert!(config.roles.contains_key("architect"), "Should have architect role");
+    assert!(
+        config.roles.contains_key("architect"),
+        "Should have architect role"
+    );
     assert!(config.roles.contains_key("coder"), "Should have coder role");
-    assert!(config.roles.contains_key("reviewer"), "Should have reviewer role");
-    assert!(config.roles.contains_key("security"), "Should have security role");
-    assert!(config.roles.contains_key("tester"), "Should have tester role");
+    assert!(
+        config.roles.contains_key("reviewer"),
+        "Should have reviewer role"
+    );
+    assert!(
+        config.roles.contains_key("security"),
+        "Should have security role"
+    );
+    assert!(
+        config.roles.contains_key("tester"),
+        "Should have tester role"
+    );
 
     // Verify role configs
     let architect = config.roles.get("architect").unwrap();
@@ -69,14 +85,25 @@ tools = ["filesystem", "execute_command"]
     assert_eq!(architect.temperature, 0.3);
 
     // Create runtime and run goal
-    let mut runtime = praxis_core::CoreRuntime::new().await.expect("Failed to create runtime");
+    let mut runtime = praxis_core::CoreRuntime::new()
+        .await
+        .expect("Failed to create runtime");
 
-    let result = runtime.run_goal("build a REST API for user management", Some(&config_path), None)
+    let result = runtime
+        .run_goal(
+            "build a REST API for user management",
+            Some(&config_path),
+            None,
+        )
         .await
         .expect("Failed to run goal");
 
     // Verify pipeline executed through all phases
-    assert!(!result.agent_results.is_empty(), "Should have agent results, got {}", result.agent_results.len());
+    assert!(
+        !result.agent_results.is_empty(),
+        "Should have agent results, got {}",
+        result.agent_results.len()
+    );
     // total_duration_ms may be 0 in mock mode if execution is instant
     // The important thing is that agents were executed
 
@@ -96,7 +123,11 @@ tools = ["filesystem", "execute_command"]
     for (i, transition) in history.iter().enumerate() {
         eprintln!("  Phase {}: {} → {}", i, transition.from, transition.to);
     }
-    assert!(history.len() >= 3, "Should have traversed at least 3 phases, got {}", history.len());
+    assert!(
+        history.len() >= 3,
+        "Should have traversed at least 3 phases, got {}",
+        history.len()
+    );
 
     // Cleanup
     runtime.shutdown().await.ok();
@@ -109,13 +140,17 @@ async fn e2e_pipeline_config_parsing() {
     std::fs::create_dir_all(&test_dir).unwrap();
 
     // Test minimal config
-    std::fs::write(test_dir.join("forge.toml"), r#"
+    std::fs::write(
+        test_dir.join("forge.toml"),
+        r#"
 [project]
 name = "minimal"
 
 [roles.coder]
 model = "gpt-4o"
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let config = praxis_core::load_forge_config(&test_dir.join("forge.toml")).unwrap();
     assert_eq!(config.roles.len(), 1);
@@ -123,7 +158,9 @@ model = "gpt-4o"
     assert_eq!(config.roles.get("coder").unwrap().model, "gpt-4o");
 
     // Test config with MCP servers
-    std::fs::write(test_dir.join("forge.toml"), r#"
+    std::fs::write(
+        test_dir.join("forge.toml"),
+        r#"
 [project]
 name = "with-mcp"
 
@@ -134,7 +171,9 @@ model = "gpt-4o"
 name = "filesystem"
 command = "praxis-mcp-filesystem"
 args = ["--root", "/tmp"]
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let config = praxis_core::load_forge_config(&test_dir.join("forge.toml")).unwrap();
     assert_eq!(config.mcp_servers.len(), 1);
@@ -166,11 +205,22 @@ async fn e2e_pipeline_phase_transitions() {
 
     for phase in &phases {
         let result = runtime.loop_controller.advance(*phase);
-        assert!(result.is_ok(), "Should be able to advance to {:?}: {}", phase, result.unwrap_err());
+        assert!(
+            result.is_ok(),
+            "Should be able to advance to {:?}: {}",
+            phase,
+            result.unwrap_err()
+        );
         runtime.loop_controller.increment_iteration();
     }
 
-    assert!(runtime.loop_controller.state_machine.current().is_terminal());
+    assert!(
+        runtime
+            .loop_controller
+            .state_machine
+            .current()
+            .is_terminal()
+    );
 
     runtime.loop_controller.stop();
     assert!(!runtime.loop_controller.running);
@@ -183,7 +233,14 @@ async fn e2e_pipeline_agent_factory_all_roles() {
     use praxis_core::actor::roles::base::AgentFactory;
     use praxis_core::orchestrator::task::Task;
 
-    let roles = vec!["architect", "coder", "reviewer", "security", "tester", "git"];
+    let roles = vec![
+        "architect",
+        "coder",
+        "reviewer",
+        "security",
+        "tester",
+        "git",
+    ];
 
     for role_name in roles {
         let role = praxis_core::orchestrator::roles::ResolvedRole {
@@ -206,7 +263,11 @@ async fn e2e_pipeline_agent_factory_all_roles() {
             "{} agent should complete",
             role_name
         );
-        assert!(!result.content.is_empty(), "{} agent should produce output", role_name);
+        assert!(
+            !result.content.is_empty(),
+            "{} agent should produce output",
+            role_name
+        );
     }
 }
 
@@ -223,13 +284,13 @@ async fn e2e_pipeline_event_bus_during_pipeline() {
     );
 
     // Advance a phase
-    runtime.loop_controller.advance(praxis_core::machine::phase::Phase::Planning).ok();
+    runtime
+        .loop_controller
+        .advance(praxis_core::machine::phase::Phase::Planning)
+        .ok();
 
     // Verify events were published
-    let event = tokio::time::timeout(
-        std::time::Duration::from_secs(1),
-        rx.recv(),
-    ).await;
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv()).await;
 
     assert!(event.is_ok(), "Should receive event within timeout");
     let event = event.unwrap().unwrap();
@@ -255,7 +316,10 @@ async fn e2e_pipeline_limits_enforcement() {
     runtime.loop_controller.start();
 
     // Advance to planning
-    runtime.loop_controller.advance(praxis_core::machine::phase::Phase::Planning).ok();
+    runtime
+        .loop_controller
+        .advance(praxis_core::machine::phase::Phase::Planning)
+        .ok();
 
     // Do 2 iterations (should be OK)
     runtime.loop_controller.increment_iteration();
@@ -265,7 +329,10 @@ async fn e2e_pipeline_limits_enforcement() {
 
     // 3rd iteration should violate phase limit
     runtime.loop_controller.increment_iteration();
-    assert!(runtime.loop_controller.check_limits().is_some(), "Should detect phase limit violation");
+    assert!(
+        runtime.loop_controller.check_limits().is_some(),
+        "Should detect phase limit violation"
+    );
 
     runtime.shutdown().await.ok();
 }
@@ -295,7 +362,10 @@ async fn e2e_pipeline_drift_guard_during_pipeline() {
 
     // Verify health summary
     let health = runtime.drift_guard.health_summary();
-    assert!(health.overall_asi > 80.0, "Healthy pipeline should have high ASI");
+    assert!(
+        health.overall_asi > 80.0,
+        "Healthy pipeline should have high ASI"
+    );
 
     runtime.shutdown().await.ok();
 }

@@ -1,8 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use praxis_core::r#loop::LoopPathologyDetector;
-use praxis_providers::MockProvider;
-use praxis_memory::episodic::{EpisodicMemory, MemoryChunk, ChunkMetadata, ChunkType};
 use praxis_memory::embedding::EmbeddingService;
+use praxis_memory::episodic::{ChunkMetadata, ChunkType, EpisodicMemory, MemoryChunk};
+use praxis_providers::MockProvider;
 use std::sync::Arc;
 
 fn bench_agent_execute_mock(c: &mut Criterion) {
@@ -12,7 +12,7 @@ fn bench_agent_execute_mock(c: &mut Criterion) {
         b.to_async(&rt).iter_custom(|_| async {
             let provider = MockProvider::simple("bench");
             let es = Arc::new(EmbeddingService::new_default(
-                Arc::new(provider) as Arc<dyn praxis_agent_traits::provider::LLMProvider>,
+                Arc::new(provider) as Arc<dyn praxis_agent_traits::provider::LLMProvider>
             ));
             let mut memory = EpisodicMemory::default_store().with_embedding_service(es);
 
@@ -66,26 +66,28 @@ fn bench_rag_injection(c: &mut Criterion) {
         b.to_async(&rt).iter_custom(|_| async {
             let provider = MockProvider::simple("bench");
             let es = Arc::new(EmbeddingService::new_default(
-                Arc::new(provider) as Arc<dyn praxis_agent_traits::provider::LLMProvider>,
+                Arc::new(provider) as Arc<dyn praxis_agent_traits::provider::LLMProvider>
             ));
             let mut memory = EpisodicMemory::default_store().with_embedding_service(es);
 
             // Pre-populate with chunks
             for i in 0..50 {
-                memory.store(MemoryChunk {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    content: format!("Benchmark chunk {} with relevant context", i),
-                    embedding: vec![0.1 + i as f32 * 0.01; 768],
-                    metadata: ChunkMetadata {
-                        session_id: "bench".to_string(),
-                        project_id: "bench".to_string(),
-                        agent_id: "coder".to_string(),
-                        chunk_type: ChunkType::Conversation,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        token_count: 100,
-                    },
-                    score: None,
-                }).await;
+                memory
+                    .store(MemoryChunk {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        content: format!("Benchmark chunk {} with relevant context", i),
+                        embedding: vec![0.1 + i as f32 * 0.01; 768],
+                        metadata: ChunkMetadata {
+                            session_id: "bench".to_string(),
+                            project_id: "bench".to_string(),
+                            agent_id: "coder".to_string(),
+                            chunk_type: ChunkType::Conversation,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            token_count: 100,
+                        },
+                        score: None,
+                    })
+                    .await;
             }
 
             let query = "benchmark context";
@@ -99,5 +101,10 @@ fn bench_rag_injection(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_agent_execute_mock, bench_phase_transition, bench_rag_injection);
+criterion_group!(
+    benches,
+    bench_agent_execute_mock,
+    bench_phase_transition,
+    bench_rag_injection
+);
 criterion_main!(benches);

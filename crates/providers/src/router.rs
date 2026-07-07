@@ -35,10 +35,8 @@ impl ProviderRouter {
         provider: Arc<dyn praxis_agent_traits::provider::LLMProvider>,
         tier: praxis_agent_traits::provider::ModelTier,
     ) {
-        self.providers.insert(
-            name.to_string(),
-            RegisteredProvider { provider, tier },
-        );
+        self.providers
+            .insert(name.to_string(), RegisteredProvider { provider, tier });
     }
 
     /// Set the default provider.
@@ -53,7 +51,10 @@ impl ProviderRouter {
     /// 2. Model name prefix match (e.g., "gpt-5" → openai)
     /// 3. Default provider
     /// 4. Error
-    pub fn resolve(&self, model: &str) -> Result<Arc<dyn praxis_agent_traits::provider::LLMProvider>, String> {
+    pub fn resolve(
+        &self,
+        model: &str,
+    ) -> Result<Arc<dyn praxis_agent_traits::provider::LLMProvider>, String> {
         // 1. Direct provider name
         if let Some(reg) = self.providers.get(model) {
             return Ok(reg.provider.clone());
@@ -115,7 +116,11 @@ impl ProviderRouter {
             Some("anthropic".to_string())
         } else if lower.starts_with("gemini-") {
             Some("gemini".to_string())
-        } else if lower.starts_with("llama-") || lower.starts_with("mistral-") || lower.starts_with("qwen-") || lower.starts_with("codellama-") {
+        } else if lower.starts_with("llama-")
+            || lower.starts_with("mistral-")
+            || lower.starts_with("qwen-")
+            || lower.starts_with("codellama-")
+        {
             Some("ollama".to_string())
         } else {
             None
@@ -137,12 +142,30 @@ mod tests {
 
     #[test]
     fn test_detect_provider() {
-        assert_eq!(ProviderRouter::detect_provider("gpt-5"), Some("openai".to_string()));
-        assert_eq!(ProviderRouter::detect_provider("gpt-4o"), Some("openai".to_string()));
-        assert_eq!(ProviderRouter::detect_provider("claude-4-opus"), Some("anthropic".to_string()));
-        assert_eq!(ProviderRouter::detect_provider("gemini-2.5-pro"), Some("gemini".to_string()));
-        assert_eq!(ProviderRouter::detect_provider("llama-4"), Some("ollama".to_string()));
-        assert_eq!(ProviderRouter::detect_provider("text-embedding-3-large"), Some("openai".to_string()));
+        assert_eq!(
+            ProviderRouter::detect_provider("gpt-5"),
+            Some("openai".to_string())
+        );
+        assert_eq!(
+            ProviderRouter::detect_provider("gpt-4o"),
+            Some("openai".to_string())
+        );
+        assert_eq!(
+            ProviderRouter::detect_provider("claude-4-opus"),
+            Some("anthropic".to_string())
+        );
+        assert_eq!(
+            ProviderRouter::detect_provider("gemini-2.5-pro"),
+            Some("gemini".to_string())
+        );
+        assert_eq!(
+            ProviderRouter::detect_provider("llama-4"),
+            Some("ollama".to_string())
+        );
+        assert_eq!(
+            ProviderRouter::detect_provider("text-embedding-3-large"),
+            Some("openai".to_string())
+        );
         assert_eq!(ProviderRouter::detect_provider("unknown-model"), None);
     }
 

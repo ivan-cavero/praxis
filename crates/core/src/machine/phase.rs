@@ -47,19 +47,31 @@ impl StateMachine {
     /// Create a new state machine starting at Idle.
     pub fn new() -> Self {
         let all_phases = [
-            Phase::Idle, Phase::Planning, Phase::Researching, Phase::Designing,
-            Phase::Implementing, Phase::Reviewing, Phase::Fixing, Phase::Testing,
-            Phase::SecurityScan, Phase::Finalizing,
+            Phase::Idle,
+            Phase::Planning,
+            Phase::Researching,
+            Phase::Designing,
+            Phase::Implementing,
+            Phase::Reviewing,
+            Phase::Fixing,
+            Phase::Testing,
+            Phase::SecurityScan,
+            Phase::Finalizing,
         ];
 
-        let transitions = all_phases.iter().flat_map(|&from| {
-            from.default_transitions().into_iter().map(move |to| Transition {
-                from,
-                to,
-                gate: None,
-                condition: TransitionCondition::Automatic,
+        let transitions = all_phases
+            .iter()
+            .flat_map(|&from| {
+                from.default_transitions()
+                    .into_iter()
+                    .map(move |to| Transition {
+                        from,
+                        to,
+                        gate: None,
+                        condition: TransitionCondition::Automatic,
+                    })
             })
-        }).collect();
+            .collect();
 
         Self {
             current: Phase::Idle,
@@ -93,7 +105,9 @@ impl StateMachine {
             return false;
         }
 
-        self.transitions.iter().any(|t| t.from == self.current && t.to == to)
+        self.transitions
+            .iter()
+            .any(|t| t.from == self.current && t.to == to)
     }
 
     /// Get all valid transitions from the current phase.
@@ -145,7 +159,13 @@ impl StateMachine {
             return false;
         }
 
-        let recent: Vec<Phase> = self.history.iter().rev().take(window * 2).map(|t| t.from).collect();
+        let recent: Vec<Phase> = self
+            .history
+            .iter()
+            .rev()
+            .take(window * 2)
+            .map(|t| t.from)
+            .collect();
 
         // Check if the pattern repeats
         let first_half = &recent[..window];
@@ -161,9 +181,7 @@ impl StateMachine {
                 .ok()
                 .map(|dt| {
                     let now = chrono::Utc::now();
-                    now.signed_duration_since(dt)
-                        .to_std()
-                        .unwrap_or_default()
+                    now.signed_duration_since(dt).to_std().unwrap_or_default()
                 })
         })
     }

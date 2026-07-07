@@ -4,10 +4,10 @@
 //! Based on research: https://arxiv.org/abs/2506.06190 (Quantifying Behavioral
 //! Degradation in Multi-Agent LLM Systems).
 
-pub mod metrics;
 pub mod asi;
+pub mod metrics;
 pub mod recovery;
 
-pub use metrics::*;
 pub use asi::ASICalculator;
+pub use metrics::*;
 pub use recovery::*;

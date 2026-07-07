@@ -65,11 +65,11 @@ pub struct ConsensusVerdict {
 
 impl ConsensusConsolidator {
     /// Consolidate multiple review results.
-    pub fn consolidate(
-        results: Vec<TaskResult>,
-        strategy: &ConsensusStrategy,
-    ) -> ConsensusVerdict {
-        let pass_count = results.iter().filter(|r| r.status == TaskStatus::Completed).count();
+    pub fn consolidate(results: Vec<TaskResult>, strategy: &ConsensusStrategy) -> ConsensusVerdict {
+        let pass_count = results
+            .iter()
+            .filter(|r| r.status == TaskStatus::Completed)
+            .count();
         let total = results.len();
 
         let passed = match strategy {
@@ -83,7 +83,11 @@ impl ConsensusConsolidator {
                 for (model, weight) in weights {
                     let result = results.iter().find(|r| r.role == *model);
                     if let Some(r) = result {
-                        let score = if r.status == TaskStatus::Completed { 1.0 } else { 0.0 };
+                        let score = if r.status == TaskStatus::Completed {
+                            1.0
+                        } else {
+                            0.0
+                        };
                         weighted_sum += score * weight;
                         total_weight += weight;
                     }
@@ -106,13 +110,14 @@ impl ConsensusConsolidator {
             (pass_count as f32 / total as f32) * 100.0
         };
 
-        let comments: Vec<String> = results.iter().map(|r| {
-            match &r.status {
+        let comments: Vec<String> = results
+            .iter()
+            .map(|r| match &r.status {
                 TaskStatus::Completed => format!("{}: PASS", r.role),
                 TaskStatus::Failed { reason } => format!("{}: FAIL - {}", r.role, reason),
                 _ => format!("{}: UNKNOWN", r.role),
-            }
-        }).collect();
+            })
+            .collect();
 
         ConsensusVerdict {
             passed,
@@ -131,10 +136,7 @@ pub struct CrossModelFeedbackLoop;
 
 impl CrossModelFeedbackLoop {
     /// Generate consolidated feedback from multiple reviewers.
-    pub fn generate_feedback(
-        review_results: &[TaskResult],
-        original_task: &Task,
-    ) -> String {
+    pub fn generate_feedback(review_results: &[TaskResult], original_task: &Task) -> String {
         let mut feedback = format!("Review feedback for: {}\n\n", original_task.description);
 
         for result in review_results {
@@ -159,7 +161,9 @@ impl CrossModelFeedbackLoop {
 
     /// Check if feedback loop should continue (any reviewer failed).
     pub fn needs_iteration(review_results: &[TaskResult]) -> bool {
-        review_results.iter().any(|r| matches!(r.status, TaskStatus::Failed { .. } | TaskStatus::TimedOut))
+        review_results
+            .iter()
+            .any(|r| matches!(r.status, TaskStatus::Failed { .. } | TaskStatus::TimedOut))
     }
 }
 
@@ -189,15 +193,25 @@ impl PerAgentContextTracker {
     }
 
     /// Update an agent's context metrics.
-    pub fn update(&mut self, agent_id: &str, model: &str, pressure: f32, tokens: u32, compressed: bool) {
-        let info = self.agents.entry(agent_id.to_string()).or_insert_with(|| AgentContextInfo {
-            agent_id: agent_id.to_string(),
-            model: model.to_string(),
-            pressure: 0.0,
-            total_tokens: 0,
-            compression_count: 0,
-            last_compression: None,
-        });
+    pub fn update(
+        &mut self,
+        agent_id: &str,
+        model: &str,
+        pressure: f32,
+        tokens: u32,
+        compressed: bool,
+    ) {
+        let info = self
+            .agents
+            .entry(agent_id.to_string())
+            .or_insert_with(|| AgentContextInfo {
+                agent_id: agent_id.to_string(),
+                model: model.to_string(),
+                pressure: 0.0,
+                total_tokens: 0,
+                compression_count: 0,
+                last_compression: None,
+            });
 
         info.pressure = pressure;
         info.total_tokens = tokens;
@@ -247,7 +261,10 @@ mod tests {
     async fn test_parallel_executor() {
         let tasks = vec![
             ("coder".to_string(), Task::new("coder", "gpt-5", "task 1")),
-            ("reviewer".to_string(), Task::new("reviewer", "claude-4-opus", "task 2")),
+            (
+                "reviewer".to_string(),
+                Task::new("reviewer", "claude-4-opus", "task 2"),
+            ),
         ];
 
         let results = ParallelExecutor::execute(tasks).await;
@@ -286,7 +303,8 @@ mod tests {
             TaskResult::failure("t1", "c", "c", "fail"),
         ];
 
-        let verdict = ConsensusConsolidator::consolidate(results, &ConsensusStrategy::MajorityPass(0.66));
+        let verdict =
+            ConsensusConsolidator::consolidate(results, &ConsensusStrategy::MajorityPass(0.66));
         assert!(verdict.passed); // 2/3 = 66.7% >= 66%
     }
 
@@ -298,7 +316,8 @@ mod tests {
             TaskResult::failure("t1", "c", "c", "fail"),
         ];
 
-        let verdict = ConsensusConsolidator::consolidate(results, &ConsensusStrategy::MajorityPass(0.66));
+        let verdict =
+            ConsensusConsolidator::consolidate(results, &ConsensusStrategy::MajorityPass(0.66));
         assert!(!verdict.passed); // 1/3 = 33.3% < 66%
     }
 
@@ -319,9 +338,7 @@ mod tests {
 
     #[test]
     fn test_needs_iteration() {
-        let results = vec![
-            TaskResult::success("t1", "a", "a", "ok", 100),
-        ];
+        let results = vec![TaskResult::success("t1", "a", "a", "ok", 100)];
         assert!(!CrossModelFeedbackLoop::needs_iteration(&results));
 
         let results = vec![

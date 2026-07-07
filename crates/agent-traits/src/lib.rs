@@ -2,10 +2,10 @@
 //!
 //! These traits define the contracts that all implementations must satisfy.
 
-pub mod provider;
-pub mod tool;
 pub mod memory;
 pub mod persistence;
+pub mod provider;
+pub mod tool;
 
 pub mod prelude {
     pub use crate::memory::MemoryBackend;
@@ -191,9 +191,10 @@ mod tests {
             id: "mem-1".to_string(),
             content: "Important decision: use SQLite".to_string(),
             embedding: Some(vec![0.1, 0.2, 0.3]),
-            metadata: std::collections::HashMap::from([
-                ("category".to_string(), "decision".to_string()),
-            ]),
+            metadata: std::collections::HashMap::from([(
+                "category".to_string(),
+                "decision".to_string(),
+            )]),
             timestamp: chrono::Utc::now().to_rfc3339(),
             session_id: "s1".to_string(),
             project_id: "p1".to_string(),
@@ -229,10 +230,7 @@ mod tests {
             session_id: "s1".to_string(),
             project_id: "p1".to_string(),
         };
-        let result = memory::SearchResult {
-            entry,
-            score: 0.95,
-        };
+        let result = memory::SearchResult { entry, score: 0.95 };
         assert!((result.score - 0.95).abs() < 0.001);
     }
 
@@ -289,7 +287,11 @@ mod tests {
     fn test_praxis_error_display() {
         let err = ProjectXError::ProviderError("test error".to_string());
         let msg = format!("{}", err);
-        assert!(msg.contains("test error"), "Error should contain message: {}", msg);
+        assert!(
+            msg.contains("test error"),
+            "Error should contain message: {}",
+            msg
+        );
     }
 
     #[test]

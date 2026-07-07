@@ -43,7 +43,9 @@ impl KeyringVault {
 
     /// Store a credential.
     pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
-        let mut store = self.file_store.lock()
+        let mut store = self
+            .file_store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         store.insert(key.to_string(), value.to_string());
         self.persist(&store)?;
@@ -52,14 +54,18 @@ impl KeyringVault {
 
     /// Retrieve a credential.
     pub fn get(&self, key: &str) -> Result<Option<String>, String> {
-        let store = self.file_store.lock()
+        let store = self
+            .file_store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         Ok(store.get(key).cloned())
     }
 
     /// Delete a credential.
     pub fn delete(&self, key: &str) -> Result<(), String> {
-        let mut store = self.file_store.lock()
+        let mut store = self
+            .file_store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         store.remove(key);
         self.persist(&store)?;
@@ -68,7 +74,9 @@ impl KeyringVault {
 
     /// List all stored credential keys.
     pub fn list_keys(&self) -> Result<Vec<String>, String> {
-        let store = self.file_store.lock()
+        let store = self
+            .file_store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         Ok(store.keys().cloned().collect())
     }
@@ -76,16 +84,14 @@ impl KeyringVault {
     /// Persist to file.
     fn persist(&self, store: &HashMap<String, String>) -> Result<(), String> {
         if let Some(parent) = self.fallback_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir: {}", e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
         }
 
-        let json = serde_json::to_string_pretty(store)
-            .map_err(|e| format!("Serialize error: {}", e))?;
+        let json =
+            serde_json::to_string_pretty(store).map_err(|e| format!("Serialize error: {}", e))?;
 
         // Write with restrictive permissions (owner only)
-        std::fs::write(&self.fallback_path, json)
-            .map_err(|e| format!("Write error: {}", e))?;
+        std::fs::write(&self.fallback_path, json).map_err(|e| format!("Write error: {}", e))?;
 
         tracing::debug!("Credentials saved to {}", self.fallback_path.display());
         Ok(())

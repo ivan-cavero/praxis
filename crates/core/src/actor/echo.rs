@@ -2,12 +2,15 @@
 //!
 //! Uses ractor 0.15 API: ActorRef<Msg>, impl Future, no async_trait.
 
-use ractor::{Actor, ActorRef, ActorProcessingErr, RpcReplyPort};
+use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
 
 // ─── Messages ─────────────────────────────────────────────────
 
 pub enum EchoMessage {
-    Echo { content: String, reply: RpcReplyPort<String> },
+    Echo {
+        content: String,
+        reply: RpcReplyPort<String>,
+    },
     Ping(RpcReplyPort<String>),
     GetStats(RpcReplyPort<EchoStats>),
     Shutdown,
@@ -97,7 +100,10 @@ impl Actor for EchoAgent {
 
 // ─── Helper Functions ─────────────────────────────────────────
 
-pub async fn echo(agent: &ActorRef<EchoMessage>, content: &str) -> Result<String, crate::CoreError> {
+pub async fn echo(
+    agent: &ActorRef<EchoMessage>,
+    content: &str,
+) -> Result<String, crate::CoreError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     agent
         .cast(EchoMessage::Echo {
@@ -105,7 +111,8 @@ pub async fn echo(agent: &ActorRef<EchoMessage>, content: &str) -> Result<String
             reply: RpcReplyPort::from(tx),
         })
         .map_err(|e| crate::CoreError::Actor(format!("Failed to send echo: {}", e)))?;
-    rx.await.map_err(|e| crate::CoreError::Actor(format!("Echo response error: {}", e)))
+    rx.await
+        .map_err(|e| crate::CoreError::Actor(format!("Echo response error: {}", e)))
 }
 
 pub async fn ping(agent: &ActorRef<EchoMessage>) -> Result<String, crate::CoreError> {
@@ -113,7 +120,8 @@ pub async fn ping(agent: &ActorRef<EchoMessage>) -> Result<String, crate::CoreEr
     agent
         .cast(EchoMessage::Ping(RpcReplyPort::from(tx)))
         .map_err(|e| crate::CoreError::Actor(format!("Failed to ping: {}", e)))?;
-    rx.await.map_err(|e| crate::CoreError::Actor(format!("Ping response error: {}", e)))
+    rx.await
+        .map_err(|e| crate::CoreError::Actor(format!("Ping response error: {}", e)))
 }
 
 pub async fn get_stats(agent: &ActorRef<EchoMessage>) -> Result<EchoStats, crate::CoreError> {
@@ -121,5 +129,6 @@ pub async fn get_stats(agent: &ActorRef<EchoMessage>) -> Result<EchoStats, crate
     agent
         .cast(EchoMessage::GetStats(RpcReplyPort::from(tx)))
         .map_err(|e| crate::CoreError::Actor(format!("Failed to get stats: {}", e)))?;
-    rx.await.map_err(|e| crate::CoreError::Actor(format!("Stats response error: {}", e)))
+    rx.await
+        .map_err(|e| crate::CoreError::Actor(format!("Stats response error: {}", e)))
 }

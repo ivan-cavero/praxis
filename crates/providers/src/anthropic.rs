@@ -29,7 +29,9 @@ impl AnthropicProvider {
         let client = reqwest::Client::builder()
             .timeout(timeout.unwrap_or(std::time::Duration::from_secs(120)))
             .build()
-            .map_err(|error| crate::ProviderInitError(format!("Failed to build HTTP client: {error}")))?;
+            .map_err(|error| {
+                crate::ProviderInitError(format!("Failed to build HTTP client: {error}"))
+            })?;
 
         Ok(Self {
             client,
@@ -70,24 +72,29 @@ impl AnthropicProvider {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     tracing::error!("Anthropic HTTP {}: {}", status, body);
-                    return Err(praxis_shared::error::ProjectXError::ProviderError(
-                        format!("Anthropic HTTP {}: {}", status, body),
-                    ));
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                        "Anthropic HTTP {}: {}",
+                        status, body
+                    )));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     attempts += 1;
                     if attempts > self.max_retries {
-                        return Err(praxis_shared::error::ProjectXError::ProviderError(
-                            format!("Anthropic request failed after {} retries: {}", self.max_retries, e),
-                        ));
+                        return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                            "Anthropic request failed after {} retries: {}",
+                            self.max_retries, e
+                        )));
                     }
                     let backoff = std::time::Duration::from_millis(100 * 2u64.pow(attempts - 1));
                     tracing::warn!("Anthropic request failed: {}, retrying in {:?}", e, backoff);
                     tokio::time::sleep(backoff).await;
                 }
-                Err(e) => return Err(praxis_shared::error::ProjectXError::ProviderError(
-                    format!("Anthropic request error: {}", e),
-                )),
+                Err(e) => {
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                        "Anthropic request error: {}",
+                        e
+                    )));
+                }
             }
         }
     }
@@ -104,25 +111,23 @@ impl LLMProvider for AnthropicProvider {
         let mut system_prompt = String::new();
         let anthropic_messages: Vec<serde_json::Value> = messages
             .iter()
-            .filter_map(|m| {
-                match m.role {
-                    ChatRole::System => {
-                        system_prompt = m.content.clone();
-                        None
-                    }
-                    ChatRole::User => Some(serde_json::json!({
-                        "role": "user",
-                        "content": m.content,
-                    })),
-                    ChatRole::Assistant => Some(serde_json::json!({
-                        "role": "assistant",
-                        "content": m.content,
-                    })),
-                    ChatRole::Tool => Some(serde_json::json!({
-                        "role": "user",
-                        "content": format!("[Tool result]: {}", m.content),
-                    })),
+            .filter_map(|m| match m.role {
+                ChatRole::System => {
+                    system_prompt = m.content.clone();
+                    None
                 }
+                ChatRole::User => Some(serde_json::json!({
+                    "role": "user",
+                    "content": m.content,
+                })),
+                ChatRole::Assistant => Some(serde_json::json!({
+                    "role": "assistant",
+                    "content": m.content,
+                })),
+                ChatRole::Tool => Some(serde_json::json!({
+                    "role": "user",
+                    "content": format!("[Tool result]: {}", m.content),
+                })),
             })
             .collect();
 
@@ -150,11 +155,17 @@ impl LLMProvider for AnthropicProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("Anthropic API error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "Anthropic API error: {}",
+                e
+            ))
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("Failed to parse Anthropic response: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "Failed to parse Anthropic response: {}",
+                e
+            ))
         })?;
 
         // Parse Anthropic response format
@@ -175,10 +186,7 @@ impl LLMProvider for AnthropicProvider {
             value["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32,
         );
 
-        let model = value["model"]
-            .as_str()
-            .unwrap_or(&self.model)
-            .to_string();
+        let model = value["model"].as_str().unwrap_or(&self.model).to_string();
 
         Ok(ChatResponse {
             content,
@@ -196,25 +204,23 @@ impl LLMProvider for AnthropicProvider {
         let mut system_prompt = String::new();
         let anthropic_messages: Vec<serde_json::Value> = messages
             .iter()
-            .filter_map(|m| {
-                match m.role {
-                    ChatRole::System => {
-                        system_prompt = m.content.clone();
-                        None
-                    }
-                    ChatRole::User => Some(serde_json::json!({
-                        "role": "user",
-                        "content": m.content,
-                    })),
-                    ChatRole::Assistant => Some(serde_json::json!({
-                        "role": "assistant",
-                        "content": m.content,
-                    })),
-                    ChatRole::Tool => Some(serde_json::json!({
-                        "role": "user",
-                        "content": format!("[Tool result]: {}", m.content),
-                    })),
+            .filter_map(|m| match m.role {
+                ChatRole::System => {
+                    system_prompt = m.content.clone();
+                    None
                 }
+                ChatRole::User => Some(serde_json::json!({
+                    "role": "user",
+                    "content": m.content,
+                })),
+                ChatRole::Assistant => Some(serde_json::json!({
+                    "role": "assistant",
+                    "content": m.content,
+                })),
+                ChatRole::Tool => Some(serde_json::json!({
+                    "role": "user",
+                    "content": format!("[Tool result]: {}", m.content),
+                })),
             })
             .collect();
 
@@ -239,7 +245,10 @@ impl LLMProvider for AnthropicProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("Anthropic stream error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "Anthropic stream error: {}",
+                e
+            ))
         })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -271,7 +280,9 @@ impl LLMProvider for AnthropicProvider {
                                         "content_block_delta" => {
                                             if let Some(text) = value["delta"]["text"].as_str() {
                                                 if !text.is_empty() {
-                                                    let _ = tx.send(StreamChunk::Delta(text.to_string())).await;
+                                                    let _ = tx
+                                                        .send(StreamChunk::Delta(text.to_string()))
+                                                        .await;
                                                 }
                                             }
                                         }
@@ -287,7 +298,9 @@ impl LLMProvider for AnthropicProvider {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(StreamChunk::Error(format!("Anthropic stream error: {}", e))).await;
+                        let _ = tx
+                            .send(StreamChunk::Error(format!("Anthropic stream error: {}", e)))
+                            .await;
                         break;
                     }
                 }
@@ -300,7 +313,8 @@ impl LLMProvider for AnthropicProvider {
     async fn embed(&self, _input: &[String]) -> crate::Result<Vec<Vec<f32>>> {
         // Anthropic doesn't have a native embeddings API
         Err(praxis_shared::error::ProjectXError::ProviderError(
-            "Anthropic does not support embeddings. Use OpenAI or a dedicated embedding model.".to_string(),
+            "Anthropic does not support embeddings. Use OpenAI or a dedicated embedding model."
+                .to_string(),
         ))
     }
 
@@ -330,7 +344,9 @@ impl LLMProvider for AnthropicProvider {
 
     fn model_cost(&self) -> ModelCost {
         let (input, output) = match self.model.as_str() {
-            "claude-sonnet-4-20250514" | "claude-3-5-sonnet-20241022" => (3.00 / 1_000_000.0, 15.00 / 1_000_000.0),
+            "claude-sonnet-4-20250514" | "claude-3-5-sonnet-20241022" => {
+                (3.00 / 1_000_000.0, 15.00 / 1_000_000.0)
+            }
             "claude-3-opus-20240229" => (15.00 / 1_000_000.0, 75.00 / 1_000_000.0),
             "claude-3-haiku-20240307" => (0.25 / 1_000_000.0, 1.25 / 1_000_000.0),
             _ => (3.00 / 1_000_000.0, 15.00 / 1_000_000.0),

@@ -59,12 +59,14 @@ impl Budget {
 
     /// Remaining tokens this agent can consume.
     pub fn remaining_tokens(&self) -> u64 {
-        self.max_tokens.map_or(u64::MAX, |max| max.saturating_sub(self.used_tokens))
+        self.max_tokens
+            .map_or(u64::MAX, |max| max.saturating_sub(self.used_tokens))
     }
 
     /// Remaining cost this agent can consume.
     pub fn remaining_cost(&self) -> f64 {
-        self.max_cost_usd.map_or(f64::INFINITY, |max| (max - self.used_cost).max(0.0))
+        self.max_cost_usd
+            .map_or(f64::INFINITY, |max| (max - self.used_cost).max(0.0))
     }
 
     /// Remaining turns this agent can take.
@@ -92,12 +94,19 @@ impl Budget {
     pub fn for_child(&self, child_inherent: &Budget) -> Budget {
         Budget {
             max_tokens: narrow_tokens(self.max_tokens, self.used_tokens, child_inherent.max_tokens),
-            max_cost_usd: narrow_cost(self.max_cost_usd, self.used_cost, child_inherent.max_cost_usd),
+            max_cost_usd: narrow_cost(
+                self.max_cost_usd,
+                self.used_cost,
+                child_inherent.max_cost_usd,
+            ),
             // P1: narrow turns — child gets min(parent_remaining, child_inherent)
             max_turns: self.remaining_turns().min(child_inherent.max_turns),
             // P5: depth decrements from parent, but capped by child's own max_depth
             // (a leaf child with max_depth=0 stays a leaf even if parent has depth left)
-            max_depth: self.max_depth.saturating_sub(1).min(child_inherent.max_depth),
+            max_depth: self
+                .max_depth
+                .saturating_sub(1)
+                .min(child_inherent.max_depth),
             used_tokens: 0,
             used_cost: 0.0,
             used_turns: 0,
@@ -128,11 +137,7 @@ impl Default for Budget {
 
 // ─── Narrowing helpers (P1: authority monotonic narrowing) ─────
 
-fn narrow_tokens(
-    parent_max: Option<u64>,
-    parent_used: u64,
-    child_max: Option<u64>,
-) -> Option<u64> {
+fn narrow_tokens(parent_max: Option<u64>, parent_used: u64, child_max: Option<u64>) -> Option<u64> {
     match (parent_max, child_max) {
         (Some(pmax), Some(cmax)) => {
             let parent_remaining = pmax.saturating_sub(parent_used);
@@ -144,11 +149,7 @@ fn narrow_tokens(
     }
 }
 
-fn narrow_cost(
-    parent_max: Option<f64>,
-    parent_used: f64,
-    child_max: Option<f64>,
-) -> Option<f64> {
+fn narrow_cost(parent_max: Option<f64>, parent_used: f64, child_max: Option<f64>) -> Option<f64> {
     match (parent_max, child_max) {
         (Some(pmax), Some(cmax)) => {
             let parent_remaining = (pmax - parent_used).max(0.0);

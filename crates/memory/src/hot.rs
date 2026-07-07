@@ -135,12 +135,16 @@ impl SlidingWindow {
 
     /// Serialize to JSON for context injection.
     pub fn to_json(&self) -> serde_json::Value {
-        let messages: Vec<serde_json::Value> = self.window.iter().map(|i| {
-            serde_json::json!({
-                "role": i.role,
-                "content": i.content,
+        let messages: Vec<serde_json::Value> = self
+            .window
+            .iter()
+            .map(|i| {
+                serde_json::json!({
+                    "role": i.role,
+                    "content": i.content,
+                })
             })
-        }).collect();
+            .collect();
 
         serde_json::json!({
             "messages": messages,
@@ -193,7 +197,8 @@ impl HotMemory {
         };
 
         self.sessions.insert(session_id.to_string(), state.clone());
-        self.total_sessions.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.total_sessions
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         tracing::info!("Session created: {}", session_id);
         state
@@ -216,7 +221,8 @@ impl HotMemory {
 
     /// List all active sessions.
     pub fn active_sessions(&self) -> Vec<SessionState> {
-        self.sessions.iter()
+        self.sessions
+            .iter()
             .filter(|s| s.status == SessionStatus::Active)
             .map(|s| s.clone())
             .collect()
@@ -227,22 +233,30 @@ impl HotMemory {
     /// Push an interaction to an agent's context window.
     pub fn push_interaction(&self, session_id: &str, agent_id: &str, interaction: Interaction) {
         let key = (session_id.to_string(), agent_id.to_string());
-        self.contexts.entry(key).or_insert_with(|| {
-            SlidingWindow::new(50, 62_720) // 70% of 89,600 (GPT-5)
-        }).push(interaction);
+        self.contexts
+            .entry(key)
+            .or_insert_with(|| {
+                SlidingWindow::new(50, 62_720) // 70% of 89,600 (GPT-5)
+            })
+            .push(interaction);
 
-        self.total_interactions.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.total_interactions
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Get an agent's context window.
     pub fn get_context(&self, session_id: &str, agent_id: &str) -> Option<SlidingWindow> {
-        self.contexts.get(&(session_id.to_string(), agent_id.to_string()))
+        self.contexts
+            .get(&(session_id.to_string(), agent_id.to_string()))
             .map(|w| w.clone())
     }
 
     /// Clear an agent's context window.
     pub fn clear_context(&self, session_id: &str, agent_id: &str) {
-        if let Some(mut window) = self.contexts.get_mut(&(session_id.to_string(), agent_id.to_string())) {
+        if let Some(mut window) = self
+            .contexts
+            .get_mut(&(session_id.to_string(), agent_id.to_string()))
+        {
             window.clear();
         }
     }
@@ -259,33 +273,35 @@ impl HotMemory {
 
     /// Set a session variable.
     pub fn set_variable(&self, session_id: &str, key: &str, value: &str) {
-        self.variables.insert(
-            (session_id.to_string(), key.to_string()),
-            value.to_string(),
-        );
+        self.variables
+            .insert((session_id.to_string(), key.to_string()), value.to_string());
     }
 
     /// Get a session variable.
     pub fn get_variable(&self, session_id: &str, key: &str) -> Option<String> {
-        self.variables.get(&(session_id.to_string(), key.to_string()))
+        self.variables
+            .get(&(session_id.to_string(), key.to_string()))
             .map(|v| v.clone())
     }
 
     /// Remove a session variable.
     pub fn remove_variable(&self, session_id: &str, key: &str) {
-        self.variables.remove(&(session_id.to_string(), key.to_string()));
+        self.variables
+            .remove(&(session_id.to_string(), key.to_string()));
     }
 
     // ─── Statistics ─────────────────────────────────────────
 
     /// Get total sessions created.
     pub fn total_sessions(&self) -> u64 {
-        self.total_sessions.load(std::sync::atomic::Ordering::SeqCst)
+        self.total_sessions
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Get total interactions recorded.
     pub fn total_interactions(&self) -> u64 {
-        self.total_interactions.load(std::sync::atomic::Ordering::SeqCst)
+        self.total_interactions
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Get memory statistics.
@@ -407,12 +423,16 @@ mod tests {
     fn test_hot_memory_context() {
         let mem = HotMemory::new();
 
-        mem.push_interaction("s1", "coder", Interaction {
-            role: "user".to_string(),
-            content: "Hello".to_string(),
-            token_count: 5,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        });
+        mem.push_interaction(
+            "s1",
+            "coder",
+            Interaction {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+                token_count: 5,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        );
 
         let ctx = mem.get_context("s1", "coder").unwrap();
         assert_eq!(ctx.len(), 1);
@@ -424,7 +444,10 @@ mod tests {
         let mem = HotMemory::new();
 
         mem.set_variable("s1", "phase", "planning");
-        assert_eq!(mem.get_variable("s1", "phase"), Some("planning".to_string()));
+        assert_eq!(
+            mem.get_variable("s1", "phase"),
+            Some("planning".to_string())
+        );
 
         mem.remove_variable("s1", "phase");
         assert_eq!(mem.get_variable("s1", "phase"), None);

@@ -2,7 +2,7 @@
 //!
 //! Starts a real Axum server on a random port and makes actual HTTP requests.
 
-use axum::{Router, routing::get, Json, extract::State};
+use axum::{Json, Router, extract::State, routing::get};
 use std::sync::Arc;
 
 // ─── Test Server Setup ────────────────────────────────────────
@@ -10,7 +10,9 @@ use std::sync::Arc;
 /// Minimal test server that mimics the real API.
 async fn start_test_server() -> u16 {
     let bus = praxis_core::EventBus::new();
-    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::new(b"test-secret-key-for-e2e-tests-32bytes!!"));
+    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::new(
+        b"test-secret-key-for-e2e-tests-32bytes!!",
+    ));
 
     let state = praxis_core::api::routes::AppState {
         version: "test-0.1.0".to_string(),
@@ -24,17 +26,11 @@ async fn start_test_server() -> u16 {
             None,
         )),
         data_dir: std::env::temp_dir(),
-        token_counters: std::sync::Arc::new(
-            std::sync::RwLock::new(
-                praxis_core::api::routes::TokenCounters::default(),
-            ),
-        ),
-        session_registry: std::sync::Arc::new(
-            std::sync::RwLock::new(Vec::new()),
-        ),
-        active_runs: std::sync::Arc::new(
-            std::sync::RwLock::new(std::collections::HashMap::new()),
-        ),
+        token_counters: std::sync::Arc::new(std::sync::RwLock::new(
+            praxis_core::api::routes::TokenCounters::default(),
+        )),
+        session_registry: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+        active_runs: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
         event_store: None,
         pairing: None,
     };
@@ -64,31 +60,63 @@ async fn start_test_server() -> u16 {
 // ─── Handlers (duplicated for test isolation) ─────────────────
 
 #[derive(serde::Serialize)]
-struct HealthResponse { status: String, version: String }
+struct HealthResponse {
+    status: String,
+    version: String,
+}
 
 async fn health_handler() -> Json<HealthResponse> {
-    Json(HealthResponse { status: "ok".to_string(), version: "test-0.1.0".to_string() })
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        version: "test-0.1.0".to_string(),
+    })
 }
 
-async fn list_projects() -> Json<Vec<serde_json::Value>> { Json(vec![]) }
-async fn list_sessions() -> Json<Vec<serde_json::Value>> { Json(vec![]) }
+async fn list_projects() -> Json<Vec<serde_json::Value>> {
+    Json(vec![])
+}
+async fn list_sessions() -> Json<Vec<serde_json::Value>> {
+    Json(vec![])
+}
 
 #[derive(serde::Serialize)]
-struct TokenMetrics { total_input: u64, total_output: u64, total_tokens: u64 }
+struct TokenMetrics {
+    total_input: u64,
+    total_output: u64,
+    total_tokens: u64,
+}
 async fn token_metrics() -> Json<TokenMetrics> {
-    Json(TokenMetrics { total_input: 0, total_output: 0, total_tokens: 0 })
+    Json(TokenMetrics {
+        total_input: 0,
+        total_output: 0,
+        total_tokens: 0,
+    })
 }
 
 #[derive(serde::Serialize)]
-struct ContextMetrics { avg_pressure: f32, max_pressure: f32 }
+struct ContextMetrics {
+    avg_pressure: f32,
+    max_pressure: f32,
+}
 async fn context_metrics() -> Json<ContextMetrics> {
-    Json(ContextMetrics { avg_pressure: 0.0, max_pressure: 0.0 })
+    Json(ContextMetrics {
+        avg_pressure: 0.0,
+        max_pressure: 0.0,
+    })
 }
 
 #[derive(serde::Serialize)]
-struct MetricsSummary { version: String, active_sessions: u32, avg_asi_score: f32 }
+struct MetricsSummary {
+    version: String,
+    active_sessions: u32,
+    avg_asi_score: f32,
+}
 async fn metrics_summary() -> Json<MetricsSummary> {
-    Json(MetricsSummary { version: "test".to_string(), active_sessions: 0, avg_asi_score: 100.0 })
+    Json(MetricsSummary {
+        version: "test".to_string(),
+        active_sessions: 0,
+        avg_asi_score: 100.0,
+    })
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -101,7 +129,10 @@ async fn e2e_api_health_endpoint() {
     let url = format!("http://127.0.0.1:{}/api/health", port);
 
     let resp = reqwest::get(&url).await.unwrap();
-    assert!(resp.status().is_success(), "Health endpoint should return 200");
+    assert!(
+        resp.status().is_success(),
+        "Health endpoint should return 200"
+    );
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "ok");
@@ -175,7 +206,11 @@ async fn e2e_api_nonexistent_endpoint() {
     let url = format!("http://127.0.0.1:{}/api/nonexistent", port);
 
     let resp = reqwest::get(&url).await.unwrap();
-    assert_eq!(resp.status().as_u16(), 404, "Non-existent endpoint should return 404");
+    assert_eq!(
+        resp.status().as_u16(),
+        404,
+        "Non-existent endpoint should return 404"
+    );
 }
 
 #[tokio::test]
@@ -188,7 +223,11 @@ async fn e2e_api_health_response_time() {
     let elapsed = start.elapsed();
 
     assert!(resp.status().is_success());
-    assert!(elapsed < std::time::Duration::from_secs(2), "Health check should be fast, took {:?}", elapsed);
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "Health check should be fast, took {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
@@ -211,7 +250,10 @@ async fn e2e_api_multiple_concurrent_requests() {
         .map(|r| r.unwrap())
         .collect();
 
-    assert!(results.iter().all(|&r| r), "All concurrent requests should succeed");
+    assert!(
+        results.iter().all(|&r| r),
+        "All concurrent requests should succeed"
+    );
 }
 
 #[tokio::test]
@@ -220,11 +262,15 @@ async fn e2e_api_json_content_type() {
     let url = format!("http://127.0.0.1:{}/api/health", port);
 
     let resp = reqwest::get(&url).await.unwrap();
-    let content_type = resp.headers()
+    let content_type = resp
+        .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    assert!(content_type.contains("application/json"),
-        "Response should be JSON, got: {}", content_type);
+    assert!(
+        content_type.contains("application/json"),
+        "Response should be JSON, got: {}",
+        content_type
+    );
 }

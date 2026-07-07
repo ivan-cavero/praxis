@@ -61,8 +61,16 @@ fn run_cli(args: &[&str]) -> (String, String, bool) {
 fn e2e_cli_version() {
     let (stdout, _, success) = run_cli(&["version"]);
     assert!(success, "CLI version command failed");
-    assert!(stdout.contains("praxis"), "Should contain 'praxis': {}", stdout);
-    assert!(stdout.contains("v0."), "Should contain a version starting with v0.: {}", stdout);
+    assert!(
+        stdout.contains("praxis"),
+        "Should contain 'praxis': {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("v0."),
+        "Should contain a version starting with v0.: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -80,12 +88,26 @@ fn e2e_cli_init_creates_project() {
     let dir = format!("init-test-{}", uuid::Uuid::new_v4());
     let (stdout, _, success) = run_cli_in(&dir, &["init", &project_name]);
     assert!(success, "CLI init failed: {}", stdout);
-    assert!(stdout.contains("Created project"), "Should confirm creation: {}", stdout);
+    assert!(
+        stdout.contains("Created project"),
+        "Should confirm creation: {}",
+        stdout
+    );
 
-    let projects_path = std::env::temp_dir().join("praxis-e2e").join(&dir).join("projects.json");
-    assert!(projects_path.exists(), "projects.json should exist at {}", projects_path.display());
+    let projects_path = std::env::temp_dir()
+        .join("praxis-e2e")
+        .join(&dir)
+        .join("projects.json");
+    assert!(
+        projects_path.exists(),
+        "projects.json should exist at {}",
+        projects_path.display()
+    );
     let content = std::fs::read_to_string(&projects_path).unwrap();
-    assert!(content.contains(&format!("\"name\": \"{}\"", project_name)), "Project should be in projects.json");
+    assert!(
+        content.contains(&format!("\"name\": \"{}\"", project_name)),
+        "Project should be in projects.json"
+    );
 }
 
 #[test]
@@ -98,7 +120,11 @@ fn e2e_cli_init_already_exists() {
 
     let (_, stderr, success) = run_cli_in(&dir, &["init", project_name]);
     assert!(!success, "CLI init should fail when project exists");
-    assert!(stderr.contains("already exists"), "Should show error: {}", stderr);
+    assert!(
+        stderr.contains("already exists"),
+        "Should show error: {}",
+        stderr
+    );
 }
 
 #[test]
@@ -119,8 +145,11 @@ fn e2e_cli_init_help_shows_commands() {
 fn e2e_cli_project_list_empty() {
     let (stdout, _, success) = run_cli(&["project", "list"]);
     assert!(success, "CLI project list should succeed");
-    assert!(stdout.contains("project") || stdout.contains("No") || stdout.contains("no"),
-        "Should handle empty project list: {}", stdout);
+    assert!(
+        stdout.contains("project") || stdout.contains("No") || stdout.contains("no"),
+        "Should handle empty project list: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -133,8 +162,11 @@ fn e2e_cli_session_list_empty() {
 fn e2e_cli_provider_list() {
     let (stdout, _, success) = run_cli(&["provider", "list"]);
     assert!(success, "CLI provider list should succeed");
-    assert!(stdout.contains("OpenAI") || stdout.contains("openai") || stdout.contains("provider"),
-        "Should list providers: {}", stdout);
+    assert!(
+        stdout.contains("OpenAI") || stdout.contains("openai") || stdout.contains("provider"),
+        "Should list providers: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -157,8 +189,11 @@ fn e2e_cli_test_command() {
     // The test command runs internal integration tests
     let (stdout, _, success) = run_cli(&["test"]);
     assert!(success, "CLI test command should succeed");
-    assert!(stdout.contains("passed") || stdout.contains("✓") || stdout.contains("test"),
-        "Should show test results: {}", stdout);
+    assert!(
+        stdout.contains("passed") || stdout.contains("✓") || stdout.contains("test"),
+        "Should show test results: {}",
+        stdout
+    );
 }
 
 #[test]

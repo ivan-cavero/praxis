@@ -5,11 +5,11 @@
 
 use axum::{
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     middleware::Next,
     response::Response,
 };
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -92,11 +92,7 @@ impl AuthState {
     }
 
     /// Generate a JWT token for a user.
-    pub fn generate_token(
-        &self,
-        user_id: &str,
-        role: &str,
-    ) -> Result<String, AuthError> {
+    pub fn generate_token(&self, user_id: &str, role: &str) -> Result<String, AuthError> {
         let now = chrono::Utc::now().timestamp() as u64;
         let claims = Claims {
             sub: user_id.to_string(),
@@ -108,26 +104,19 @@ impl AuthState {
     }
 
     /// Generate a JWT from pre-built claims (used by pairing for long-lived tokens).
-    pub fn generate_token_from_claims(
-        &self,
-        claims: &Claims,
-    ) -> Result<String, AuthError> {
+    pub fn generate_token_from_claims(&self, claims: &Claims) -> Result<String, AuthError> {
         encode(&Header::default(), claims, &self.encoding_key)
             .map_err(|e| AuthError::TokenCreation(e.to_string()))
     }
 
     /// Validate a JWT token and return its claims.
     pub fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {
-        let token_data = decode::<Claims>(
-            token,
-            &self.decoding_key,
-            &Validation::default(),
-        )
-        .map_err(|e| match e.kind() {
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
-            jsonwebtoken::errors::ErrorKind::InvalidSignature => AuthError::InvalidSignature,
-            _ => AuthError::InvalidToken(e.to_string()),
-        })?;
+        let token_data = decode::<Claims>(token, &self.decoding_key, &Validation::default())
+            .map_err(|e| match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
+                jsonwebtoken::errors::ErrorKind::InvalidSignature => AuthError::InvalidSignature,
+                _ => AuthError::InvalidToken(e.to_string()),
+            })?;
 
         Ok(token_data.claims)
     }
@@ -181,10 +170,7 @@ pub async fn auth_middleware(
     let path = request.uri().path();
 
     // Exempt health check, WebSocket, and pairing paths
-    if path == "/api/health"
-        || path.starts_with("/ws/")
-        || path.starts_with("/api/pair/")
-    {
+    if path == "/api/health" || path.starts_with("/ws/") || path.starts_with("/api/pair/") {
         return Ok(next.run(request).await);
     }
 

@@ -30,18 +30,17 @@ impl SqliteEventStore {
                 .map_err(|e| format!("Failed to create directory: {}", e))?;
         }
 
-        let manager = SqliteConnectionManager::file(path)
-            .with_init(|conn| {
-                // Enable WAL mode for better concurrency
-                conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-                // Busy timeout: wait 5s if locked
-                conn.execute_batch("PRAGMA busy_timeout=5000;")?;
-                // Enable foreign keys
-                conn.execute_batch("PRAGMA foreign_keys=ON;")?;
-                // Normal synchronous (good balance of safety/speed)
-                conn.execute_batch("PRAGMA synchronous=NORMAL;")?;
-                Ok(())
-            });
+        let manager = SqliteConnectionManager::file(path).with_init(|conn| {
+            // Enable WAL mode for better concurrency
+            conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+            // Busy timeout: wait 5s if locked
+            conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+            // Enable foreign keys
+            conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+            // Normal synchronous (good balance of safety/speed)
+            conn.execute_batch("PRAGMA synchronous=NORMAL;")?;
+            Ok(())
+        });
 
         let pool = Pool::builder()
             .max_size(10)
@@ -61,12 +60,11 @@ impl SqliteEventStore {
 
     /// Create an in-memory SQLite store (for testing).
     pub fn in_memory() -> Result<Self, String> {
-        let manager = SqliteConnectionManager::memory()
-            .with_init(|conn| {
-                conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-                conn.execute_batch("PRAGMA foreign_keys=ON;")?;
-                Ok(())
-            });
+        let manager = SqliteConnectionManager::memory().with_init(|conn| {
+            conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+            conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+            Ok(())
+        });
 
         let pool = Pool::builder()
             .max_size(1)
@@ -200,9 +198,9 @@ impl EventStore for SqliteEventStore {
             praxis_shared::error::ProjectXError::DatabaseError(format!("Lock error: {}", e))
         })?;
 
-        let conn = self.conn().map_err(|e| {
-            praxis_shared::error::ProjectXError::DatabaseError(e)
-        })?;
+        let conn = self
+            .conn()
+            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
 
         // Check version conflict
         let max_version: i64 = conn
@@ -249,9 +247,9 @@ impl EventStore for SqliteEventStore {
         aggregate_id: Uuid,
         after_version: Option<i64>,
     ) -> praxis_shared::error::Result<Vec<StoredEvent>> {
-        let conn = self.conn().map_err(|e| {
-            praxis_shared::error::ProjectXError::DatabaseError(e)
-        })?;
+        let conn = self
+            .conn()
+            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
 
         let rows = if let Some(version) = after_version {
             let mut stmt = conn
@@ -321,10 +319,13 @@ impl EventStore for SqliteEventStore {
     }
 
     /// Get the latest snapshot for an aggregate.
-    async fn get_snapshot(&self, aggregate_id: Uuid) -> praxis_shared::error::Result<Option<StoredSnapshot>> {
-        let conn = self.conn().map_err(|e| {
-            praxis_shared::error::ProjectXError::DatabaseError(e)
-        })?;
+    async fn get_snapshot(
+        &self,
+        aggregate_id: Uuid,
+    ) -> praxis_shared::error::Result<Option<StoredSnapshot>> {
+        let conn = self
+            .conn()
+            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
 
         let result = conn
             .query_row(
@@ -333,7 +334,8 @@ impl EventStore for SqliteEventStore {
                 params![aggregate_id.to_string()],
                 |row| {
                     Ok(StoredSnapshot {
-                        aggregate_id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                        aggregate_id: Uuid::parse_str(&row.get::<_, String>(0)?)
+                            .unwrap_or_default(),
                         aggregate_type: row.get(1)?,
                         state: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
                         version: row.get(3)?,
@@ -343,7 +345,10 @@ impl EventStore for SqliteEventStore {
             )
             .optional()
             .map_err(|e| {
-                praxis_shared::error::ProjectXError::DatabaseError(format!("Snapshot query error: {}", e))
+                praxis_shared::error::ProjectXError::DatabaseError(format!(
+                    "Snapshot query error: {}",
+                    e
+                ))
             })?;
 
         Ok(result)
@@ -355,9 +360,9 @@ impl EventStore for SqliteEventStore {
             praxis_shared::error::ProjectXError::DatabaseError(format!("Lock error: {}", e))
         })?;
 
-        let conn = self.conn().map_err(|e| {
-            praxis_shared::error::ProjectXError::DatabaseError(e)
-        })?;
+        let conn = self
+            .conn()
+            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
 
         conn.execute(
             "INSERT OR REPLACE INTO snapshots (aggregate_id, aggregate_type, state, version, updated_at)
@@ -378,10 +383,13 @@ impl EventStore for SqliteEventStore {
     }
 
     /// List all aggregate IDs of a given type.
-    async fn list_aggregates(&self, aggregate_type: &str) -> praxis_shared::error::Result<Vec<Uuid>> {
-        let conn = self.conn().map_err(|e| {
-            praxis_shared::error::ProjectXError::DatabaseError(e)
-        })?;
+    async fn list_aggregates(
+        &self,
+        aggregate_type: &str,
+    ) -> praxis_shared::error::Result<Vec<Uuid>> {
+        let conn = self
+            .conn()
+            .map_err(|e| praxis_shared::error::ProjectXError::DatabaseError(e))?;
 
         let ids = conn
             .prepare("SELECT DISTINCT aggregate_id FROM events WHERE aggregate_type = ?1")

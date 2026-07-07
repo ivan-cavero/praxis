@@ -122,11 +122,11 @@ pub fn resolve_agents(
     let mut roles = Vec::new();
 
     for role_name in &goal.agents {
-        let base = available_roles.get(role_name)
+        let base = available_roles
+            .get(role_name)
             .ok_or_else(|| format!("Role '{}' not found in config", role_name))?;
 
-        let override_config = goal.agent_overrides.as_ref()
-            .and_then(|o| o.get(role_name));
+        let override_config = goal.agent_overrides.as_ref().and_then(|o| o.get(role_name));
 
         roles.push(ResolvedRole::resolve(base, override_config));
     }
@@ -180,16 +180,22 @@ mod tests {
     #[test]
     fn test_resolve_agents() {
         let mut available = std::collections::HashMap::new();
-        available.insert("coder".to_string(), RoleConfig {
-            name: "coder".to_string(),
-            model: "gpt-5".to_string(),
-            ..Default::default()
-        });
-        available.insert("reviewer".to_string(), RoleConfig {
-            name: "reviewer".to_string(),
-            model: "claude-4-opus".to_string(),
-            ..Default::default()
-        });
+        available.insert(
+            "coder".to_string(),
+            RoleConfig {
+                name: "coder".to_string(),
+                model: "gpt-5".to_string(),
+                ..Default::default()
+            },
+        );
+        available.insert(
+            "reviewer".to_string(),
+            RoleConfig {
+                name: "reviewer".to_string(),
+                model: "claude-4-opus".to_string(),
+                ..Default::default()
+            },
+        );
 
         let goal = GoalConfig {
             name: "test".to_string(),

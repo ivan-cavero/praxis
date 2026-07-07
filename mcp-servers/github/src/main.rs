@@ -6,7 +6,7 @@
 //! Authentication: reads `GITHUB_TOKEN` from environment, or uses `gh` CLI.
 //! Repository scope: passed via `--repo <owner/repo>` argument.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::process::Command;
 
@@ -30,7 +30,10 @@ fn gh_run(args: &[&str]) -> Result<String, String> {
 
 /// Execute a curl-based HTTP request to the GitHub API (fallback when `gh` is unavailable).
 fn api_get(endpoint: &str, token: &str) -> Result<Value, String> {
-    let url = format!("https://api.github.com/{}", endpoint.trim_start_matches('/'));
+    let url = format!(
+        "https://api.github.com/{}",
+        endpoint.trim_start_matches('/')
+    );
     let output = Command::new("curl")
         .args(&[
             "-s",
@@ -56,13 +59,18 @@ fn api_get(endpoint: &str, token: &str) -> Result<Value, String> {
 }
 
 fn api_post(endpoint: &str, token: &str, body: &Value) -> Result<Value, String> {
-    let url = format!("https://api.github.com/{}", endpoint.trim_start_matches('/'));
-    let body_str = serde_json::to_string(body).map_err(|e| format!("Serialization error: {}", e))?;
+    let url = format!(
+        "https://api.github.com/{}",
+        endpoint.trim_start_matches('/')
+    );
+    let body_str =
+        serde_json::to_string(body).map_err(|e| format!("Serialization error: {}", e))?;
 
     let output = Command::new("curl")
         .args(&[
             "-s",
-            "-X", "POST",
+            "-X",
+            "POST",
             "-H",
             &format!("Authorization: Bearer {}", token),
             "-H",
@@ -114,11 +122,7 @@ fn tool_create_pr(repo: &str, _args: &Value, use_gh: bool, token: &str) -> Resul
 
     if use_gh {
         let output = gh_run(&[
-            "pr", "create",
-            "--repo", repo,
-            "--title", title,
-            "--body", body,
-            "--head", head,
+            "pr", "create", "--repo", repo, "--title", title, "--body", body, "--head", head,
             "--base", base,
         ])?;
         Ok(json!({
@@ -146,30 +150,40 @@ fn tool_list_issues(repo: &str, args: &Value, use_gh: bool, token: &str) -> Resu
 
     if use_gh {
         let output = gh_run(&[
-            "issue", "list",
-            "--repo", repo,
-            "--state", state,
-            "--limit", &limit.to_string(),
-            "--json", "number,title,state,labels,updatedAt",
+            "issue",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            state,
+            "--limit",
+            &limit.to_string(),
+            "--json",
+            "number,title,state,labels,updatedAt",
         ])?;
         Ok(json!({
             "content": [{"type": "text", "text": output}]
         }))
     } else {
         let result = api_get(
-            &format!("repos/{}/issues?state={}&per_page={}&sort=updated", repo, state, limit),
+            &format!(
+                "repos/{}/issues?state={}&per_page={}&sort=updated",
+                repo, state, limit
+            ),
             token,
         )?;
         let items: Vec<Value> = result
             .as_array()
             .unwrap_or(&Vec::new())
             .iter()
-            .map(|issue| json!({
-                "number": issue["number"],
-                "title": issue["title"],
-                "state": issue["state"],
-                "updated_at": issue["updated_at"]
-            }))
+            .map(|issue| {
+                json!({
+                    "number": issue["number"],
+                    "title": issue["title"],
+                    "state": issue["state"],
+                    "updated_at": issue["updated_at"]
+                })
+            })
             .collect();
         Ok(json!({
             "content": [{"type": "text", "text": serde_json::to_string_pretty(&items).unwrap_or_default()}]
@@ -185,10 +199,7 @@ fn tool_create_issue(repo: &str, args: &Value, use_gh: bool, token: &str) -> Res
 
     if use_gh {
         let output = gh_run(&[
-            "issue", "create",
-            "--repo", repo,
-            "--title", title,
-            "--body", body,
+            "issue", "create", "--repo", repo, "--title", title, "--body", body,
         ])?;
         Ok(json!({
             "content": [{"type": "text", "text": output}]
@@ -210,32 +221,42 @@ fn tool_list_prs(repo: &str, args: &Value, use_gh: bool, token: &str) -> Result<
 
     if use_gh {
         let output = gh_run(&[
-            "pr", "list",
-            "--repo", repo,
-            "--state", state,
-            "--limit", &limit.to_string(),
-            "--json", "number,title,state,headRefName,baseRefName,updatedAt",
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            state,
+            "--limit",
+            &limit.to_string(),
+            "--json",
+            "number,title,state,headRefName,baseRefName,updatedAt",
         ])?;
         Ok(json!({
             "content": [{"type": "text", "text": output}]
         }))
     } else {
         let result = api_get(
-            &format!("repos/{}/pulls?state={}&per_page={}&sort=updated", repo, state, limit),
+            &format!(
+                "repos/{}/pulls?state={}&per_page={}&sort=updated",
+                repo, state, limit
+            ),
             token,
         )?;
         let items: Vec<Value> = result
             .as_array()
             .unwrap_or(&Vec::new())
             .iter()
-            .map(|pr| json!({
-                "number": pr["number"],
-                "title": pr["title"],
-                "state": pr["state"],
-                "head": pr["head"]["ref"],
-                "base": pr["base"]["ref"],
-                "updated_at": pr["updated_at"]
-            }))
+            .map(|pr| {
+                json!({
+                    "number": pr["number"],
+                    "title": pr["title"],
+                    "state": pr["state"],
+                    "head": pr["head"]["ref"],
+                    "base": pr["base"]["ref"],
+                    "updated_at": pr["updated_at"]
+                })
+            })
             .collect();
         Ok(json!({
             "content": [{"type": "text", "text": serde_json::to_string_pretty(&items).unwrap_or_default()}]
@@ -243,13 +264,22 @@ fn tool_list_prs(repo: &str, args: &Value, use_gh: bool, token: &str) -> Result<
     }
 }
 
-fn tool_list_branches(repo: &str, _args: &Value, use_gh: bool, token: &str) -> Result<Value, String> {
+fn tool_list_branches(
+    repo: &str,
+    _args: &Value,
+    use_gh: bool,
+    token: &str,
+) -> Result<Value, String> {
     if use_gh {
         let output = gh_run(&[
-            "repo", "view",
-            "--repo", repo,
-            "--json", "refs",
-            "--jq", ".refs.nodes[] | select(.prefix == \"refs/heads/\") | {name: .name}",
+            "repo",
+            "view",
+            "--repo",
+            repo,
+            "--json",
+            "refs",
+            "--jq",
+            ".refs.nodes[] | select(.prefix == \"refs/heads/\") | {name: .name}",
         ])?;
         Ok(json!({
             "content": [{"type": "text", "text": output}]
@@ -274,11 +304,7 @@ fn tool_search_code(_repo: &str, args: &Value, use_gh: bool, token: &str) -> Res
         .ok_or_else(|| "Missing required argument: query".to_string())?;
 
     if use_gh {
-        let output = gh_run(&[
-            "search", "code",
-            query,
-            "--limit", "20",
-        ])?;
+        let output = gh_run(&["search", "code", query, "--limit", "20"])?;
         Ok(json!({
             "content": [{"type": "text", "text": output}]
         }))
@@ -291,12 +317,14 @@ fn tool_search_code(_repo: &str, args: &Value, use_gh: bool, token: &str) -> Res
             .as_array()
             .unwrap_or(&Vec::new())
             .iter()
-            .map(|item| json!({
-                "name": item["name"],
-                "path": item["path"],
-                "repository": item["repository"]["full_name"],
-                "url": item["html_url"]
-            }))
+            .map(|item| {
+                json!({
+                    "name": item["name"],
+                    "path": item["path"],
+                    "repository": item["repository"]["full_name"],
+                    "url": item["html_url"]
+                })
+            })
             .collect();
         Ok(json!({
             "content": [{"type": "text", "text": serde_json::to_string_pretty(&items).unwrap_or_default()}]
@@ -317,7 +345,14 @@ fn urlencode(s: &str) -> String {
 
 // ─── MCP Protocol ─────────────────────────────────────────────────────
 
-fn handle_request(repo: &str, use_gh: bool, token: &str, id: &Value, method: &str, params: &Value) -> Value {
+fn handle_request(
+    repo: &str,
+    use_gh: bool,
+    token: &str,
+    id: &Value,
+    method: &str,
+    params: &Value,
+) -> Value {
     let result = match method {
         "initialize" => Ok(json!({
             "protocolVersion": "2025-03-26",
@@ -433,9 +468,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let repo = if let Some(pos) = args.iter().position(|a| a == "--repo") {
-        args.get(pos + 1)
-            .cloned()
-            .unwrap_or_default()
+        args.get(pos + 1).cloned().unwrap_or_default()
     } else {
         String::new()
     };
@@ -447,7 +480,11 @@ fn main() {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    let token = if !use_gh { get_token().unwrap_or_default() } else { String::new() };
+    let token = if !use_gh {
+        get_token().unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     if repo.is_empty() {
         eprintln!("Warning: no --repo specified. Use --repo <owner/repo>");
@@ -456,7 +493,13 @@ fn main() {
     eprintln!(
         "praxis-mcp-github starting, repo: {}, auth: {}",
         if repo.is_empty() { "none" } else { &repo },
-        if use_gh { "gh CLI" } else if !token.is_empty() { "GITHUB_TOKEN" } else { "none" }
+        if use_gh {
+            "gh CLI"
+        } else if !token.is_empty() {
+            "GITHUB_TOKEN"
+        } else {
+            "none"
+        }
     );
 
     let stdin = io::stdin();
@@ -484,7 +527,11 @@ fn main() {
                     "id": null,
                     "error": {"code": -32700, "message": format!("Parse error: {}", e)}
                 });
-                let _ = writeln!(stdout_lock, "{}", serde_json::to_string(&error_resp).unwrap());
+                let _ = writeln!(
+                    stdout_lock,
+                    "{}",
+                    serde_json::to_string(&error_resp).unwrap()
+                );
                 let _ = stdout_lock.flush();
                 continue;
             }

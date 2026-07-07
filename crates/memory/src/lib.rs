@@ -10,28 +10,27 @@
 //! - Chunker: splits long text into chunks for embedding + indexing.
 //! - Qdrant-backed EpisodicMemory: replaces the in-memory store with Qdrant.
 
-pub mod hot;
-pub mod episodic;
-pub mod consolidated;
 pub mod cache;
+pub mod chunker;
+pub mod consolidated;
 pub mod context;
 pub mod embedding;
-pub mod chunker;
+pub mod episodic;
+pub mod hot;
 
-pub use hot::{HotMemory, Interaction, SessionState, SessionStatus, SlidingWindow, HotMemoryStats};
-pub use cache::{LLMCache, CachedResponse, CacheStats};
-pub use context::{
-    TokenCounter, BudgetProfile, ContextBudget, ContextManager,
-    CompressionPipeline, CompressionResult, ContextHealth, HealthStatus,
-    ContextWindow, Message, Section,
-};
-pub use episodic::{
-    EpisodicMemory, MemoryChunk, ChunkMetadata, ChunkType,
-    SearchResult as EpisodicSearchResult, EpisodicStats, cosine_similarity,
-};
+pub use cache::{CacheStats, CachedResponse, LLMCache};
+pub use chunker::{Chunk, ChunkBoundary, ChunkStrategy, Chunker, chunk_text, chunk_text_auto};
 pub use consolidated::{
-    ConsolidatedMemory, MemorySummary, KeyDecision, ErrorLearned,
-    Summarizer, InteractionSummary, InteractionKind, ConsolidatedStats,
+    ConsolidatedMemory, ConsolidatedStats, ErrorLearned, InteractionKind, InteractionSummary,
+    KeyDecision, MemorySummary, Summarizer,
+};
+pub use context::{
+    BudgetProfile, CompressionPipeline, CompressionResult, ContextBudget, ContextHealth,
+    ContextManager, ContextWindow, HealthStatus, Message, Section, TokenCounter,
 };
 pub use embedding::{EmbeddingService, EmbeddingStats};
-pub use chunker::{Chunker, Chunk, ChunkBoundary, ChunkStrategy, chunk_text, chunk_text_auto};
+pub use episodic::{
+    ChunkMetadata, ChunkType, EpisodicMemory, EpisodicStats, MemoryChunk,
+    SearchResult as EpisodicSearchResult, cosine_similarity,
+};
+pub use hot::{HotMemory, HotMemoryStats, Interaction, SessionState, SessionStatus, SlidingWindow};

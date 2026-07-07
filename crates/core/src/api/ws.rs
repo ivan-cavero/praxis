@@ -3,12 +3,12 @@
 //! Each connected client receives all system events as JSON.
 //! Clients can send commands (inject, subscribe, unsubscribe).
 
-use std::sync::Arc;
-use axum::extract::ws::{Message, WebSocket};
-use axum::extract::State;
-use futures_util::{SinkExt, StreamExt};
-use tokio::sync::broadcast;
 use super::routes::AppState;
+use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket};
+use futures_util::{SinkExt, StreamExt};
+use std::sync::Arc;
+use tokio::sync::broadcast;
 
 /// Handle an incoming WebSocket connection.
 pub async fn ws_handler(

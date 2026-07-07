@@ -27,11 +27,11 @@ pub struct PairingCode {
     pub code: String,
     pub created_at: Instant,
     pub expires_at: Instant,
-    pub qr_path: String,       // e.g. "/api/pair/ABC12345"
-    pub challenge: String,     // random bytes base64 — prevents CSRF on confirm
+    pub qr_path: String,   // e.g. "/api/pair/ABC12345"
+    pub challenge: String, // random bytes base64 — prevents CSRF on confirm
     pub claimed_at: Option<Instant>,
     pub claimed_by_device: Option<String>, // device name
-    pub device_id: Option<String>,        // UUID assigned on claim
+    pub device_id: Option<String>,         // UUID assigned on claim
 }
 
 impl PairingCode {
@@ -55,9 +55,9 @@ impl PairingCode {
 pub struct Device {
     pub id: String,
     pub name: String,
-    pub token_hash: String,    // SHA-256 of the JWT
-    pub last_seen: String,     // RFC3339
-    pub created_at: String,    // RFC3339
+    pub token_hash: String, // SHA-256 of the JWT
+    pub last_seen: String,  // RFC3339
+    pub created_at: String, // RFC3339
 }
 
 /// Devices stored in `{data_dir}/devices.json`.
@@ -170,7 +170,9 @@ fn generate_code(map: &HashMap<String, PairingCode>) -> String {
     let mut rng = rand::rng();
     let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".chars().collect();
     loop {
-        let code: String = (0..8).map(|_| chars[rng.random_range(0..chars.len())]).collect();
+        let code: String = (0..8)
+            .map(|_| chars[rng.random_range(0..chars.len())])
+            .collect();
         if !map.contains_key(&code) {
             return code;
         }
@@ -229,7 +231,9 @@ pub struct PairResponse {
 pub async fn create_pairing(
     State(state): State<Arc<super::routes::AppState>>,
 ) -> Result<Json<PairResponse>, StatusCode> {
-    let pairing_state = state.pairing.as_ref()
+    let pairing_state = state
+        .pairing
+        .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
     // Determine the host from the request, or use a reasonable default
@@ -250,7 +254,7 @@ pub async fn create_pairing(
 /// Status of a pairing code. No auth required.
 #[derive(Serialize)]
 pub struct PairStatusResponse {
-    pub status: String,       // "pending", "claimed", "expired"
+    pub status: String, // "pending", "claimed", "expired"
     pub device_name: Option<String>,
     pub device_id: Option<String>,
     pub expires_in: u64,
@@ -260,10 +264,15 @@ pub async fn get_pairing_status(
     State(state): State<Arc<super::routes::AppState>>,
     Path(code): Path<String>,
 ) -> Result<Json<PairStatusResponse>, StatusCode> {
-    let pairing_state = state.pairing.as_ref()
+    let pairing_state = state
+        .pairing
+        .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let pc = pairing_state.get(&code).await.ok_or(StatusCode::NOT_FOUND)?;
+    let pc = pairing_state
+        .get(&code)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     if pc.is_expired() {
         return Ok(Json(PairStatusResponse {
@@ -312,10 +321,14 @@ pub async fn confirm_pairing(
     Path(code): Path<String>,
     Json(body): Json<ConfirmPairingBody>,
 ) -> Result<Json<ConfirmPairingResponse>, StatusCode> {
-    let pairing_state = state.pairing.as_ref()
+    let pairing_state = state
+        .pairing
+        .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let result = pairing_state.claim(&code, &body.challenge, &body.device_name).await;
+    let result = pairing_state
+        .claim(&code, &body.challenge, &body.device_name)
+        .await;
 
     match result {
         Some(Ok(device_id)) => {
@@ -327,7 +340,9 @@ pub async fn confirm_pairing(
                 exp: now + 86400 * 365, // 1 year for paired devices
                 role: "device".to_string(),
             };
-            let jwt = state.auth.generate_token_from_claims(&claims)
+            let jwt = state
+                .auth
+                .generate_token_from_claims(&claims)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
             // Compute token hash and save device
@@ -374,10 +389,15 @@ pub async fn pairing_page(
     State(state): State<Arc<super::routes::AppState>>,
     Path(code): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    let pairing_state = state.pairing.as_ref()
+    let pairing_state = state
+        .pairing
+        .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let pc = pairing_state.get(&code).await.ok_or(StatusCode::NOT_FOUND)?;
+    let pc = pairing_state
+        .get(&code)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     if pc.is_expired() {
         return Ok(Html(EXPIRED_PAGE.to_string()));
@@ -408,10 +428,15 @@ pub async fn get_pairing_token(
     State(state): State<Arc<super::routes::AppState>>,
     Path(code): Path<String>,
 ) -> Result<Json<TokenResponse>, StatusCode> {
-    let pairing_state = state.pairing.as_ref()
+    let pairing_state = state
+        .pairing
+        .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let pc = pairing_state.get(&code).await.ok_or(StatusCode::NOT_FOUND)?;
+    let pc = pairing_state
+        .get(&code)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     if !pc.is_claimed() {
         return Err(StatusCode::PRECONDITION_FAILED);
@@ -428,7 +453,9 @@ pub async fn get_pairing_token(
         exp: now + 86400 * 365, // 1 year validity
         role: "device".to_string(),
     };
-    let jwt = state.auth.generate_token_from_claims(&claims)
+    let jwt = state
+        .auth
+        .generate_token_from_claims(&claims)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     pairing_state.mark_token_retrieved(&code).await;
@@ -450,7 +477,9 @@ pub async fn list_devices(
     State(state): State<Arc<super::routes::AppState>>,
 ) -> Json<DevicesResponse> {
     let devices = load_devices(&state.data_dir);
-    Json(DevicesResponse { devices: devices.devices })
+    Json(DevicesResponse {
+        devices: devices.devices,
+    })
 }
 
 /// Revoke a device by ID. Requires auth.
@@ -460,8 +489,7 @@ pub async fn revoke_device(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut devices = load_devices(&state.data_dir);
     remove_device(&mut devices, &device_id);
-    save_devices(&state.data_dir, &devices)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    save_devices(&state.data_dir, &devices).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "success": true })))
 }
 
@@ -471,7 +499,11 @@ fn sha256_hex(input: &str) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();
     hasher.update(input.as_bytes());
-    hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 // ─── HTML pages for browser confirmation ────────────────────────

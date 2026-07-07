@@ -41,9 +41,10 @@ pub fn build_initialized_notification() -> super::messages::JsonRpcNotification 
 /// Parse server capabilities from initialize response
 pub fn parse_server_capabilities(response: &JsonRpcResponse) -> Result<ServerCapabilities, String> {
     let result = response.result.as_ref().ok_or("No result in response")?;
-    let capabilities = result.get("capabilities")
+    let capabilities = result
+        .get("capabilities")
         .ok_or("No capabilities in result")?;
-    
+
     Ok(ServerCapabilities {
         tools: capabilities.get("tools").cloned(),
         resources: capabilities.get("resources").cloned(),
@@ -68,12 +69,15 @@ mod tests {
 
     #[test]
     fn test_parse_capabilities() {
-        let resp = JsonRpcResponse::success(1, serde_json::json!({
-            "capabilities": {
-                "tools": {"listChanged": true},
-                "resources": {}
-            }
-        }));
+        let resp = JsonRpcResponse::success(
+            1,
+            serde_json::json!({
+                "capabilities": {
+                    "tools": {"listChanged": true},
+                    "resources": {}
+                }
+            }),
+        );
         let caps = parse_server_capabilities(&resp).unwrap();
         assert!(caps.tools.is_some());
         assert!(caps.resources.is_some());

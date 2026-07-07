@@ -73,10 +73,7 @@ impl LLMProvider for MockProvider {
         }
 
         // Estimate tokens: ~4 chars per token
-        let input_tokens = _messages
-            .iter()
-            .map(|m| m.content.len() / 4)
-            .sum::<usize>() as u32;
+        let input_tokens = _messages.iter().map(|m| m.content.len() / 4).sum::<usize>() as u32;
         let output_tokens = (self.chat_response.len() / 4) as u32;
 
         self.total_tokens
@@ -120,7 +117,10 @@ impl LLMProvider for MockProvider {
             let input_tokens = 0; // Mock doesn't track this precisely
             let output_tokens = (full_response.len() / 4) as u32;
             let _ = tx
-                .send(StreamChunk::Done(TokenUsage::new(input_tokens, output_tokens)))
+                .send(StreamChunk::Done(TokenUsage::new(
+                    input_tokens,
+                    output_tokens,
+                )))
                 .await;
         });
 

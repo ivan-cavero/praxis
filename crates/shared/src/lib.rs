@@ -3,11 +3,11 @@
 //! Core type definitions, protocol messages, configuration structs
 //! shared across all crates in the workspace.
 
-pub mod types;
-pub mod protocol;
+pub mod budget;
 pub mod config;
 pub mod error;
-pub mod budget;
+pub mod protocol;
+pub mod types;
 
 /// Prelude module: re-exports the most commonly used types.
 pub mod prelude {

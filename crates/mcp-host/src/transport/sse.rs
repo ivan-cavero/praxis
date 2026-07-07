@@ -3,7 +3,9 @@
 //! Connects to an MCP server over HTTP using SSE for the receive channel
 //! and POST requests for sending.
 
-use crate::protocol::messages::{JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, JsonRpcNotification};
+use crate::protocol::messages::{
+    JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+};
 use reqwest::Client;
 use tokio::sync::mpsc;
 
@@ -94,13 +96,17 @@ impl SseTransport {
     }
 
     /// Send a request and wait for the response.
-    pub async fn request(&mut self, method: &str, params: Option<serde_json::Value>) -> Result<JsonRpcResponse, String> {
+    pub async fn request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<JsonRpcResponse, String> {
         let id = self.next_id;
         self.next_id += 1;
 
         let request = JsonRpcRequest::new(id, method, params);
-        let json = serde_json::to_string(&request)
-            .map_err(|e| format!("Serialize error: {}", e))?;
+        let json =
+            serde_json::to_string(&request).map_err(|e| format!("Serialize error: {}", e))?;
 
         self.client
             .post(&self.post_endpoint)
@@ -121,10 +127,14 @@ impl SseTransport {
     }
 
     /// Send a notification (no response expected).
-    pub async fn notify(&mut self, method: &str, params: Option<serde_json::Value>) -> Result<(), String> {
+    pub async fn notify(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<(), String> {
         let notification = JsonRpcNotification::new(method, params);
-        let json = serde_json::to_string(&notification)
-            .map_err(|e| format!("Serialize error: {}", e))?;
+        let json =
+            serde_json::to_string(&notification).map_err(|e| format!("Serialize error: {}", e))?;
 
         self.client
             .post(&self.post_endpoint)

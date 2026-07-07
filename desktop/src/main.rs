@@ -15,9 +15,9 @@ use praxis_core::CoreRuntime;
 use praxis_persistence::SqliteEventStore;
 use std::path::PathBuf;
 use tauri::{
+    Emitter, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
 };
 
 fn main() {
@@ -44,7 +44,8 @@ pub fn run() {
 
             // ── 1. Auto-updater plugin ──────────────────────────
             #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
 
             // ── 2. System tray ──────────────────────────────────
             build_tray(app)?;
@@ -90,7 +91,10 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&show_hide, &new_session, &settings, &separator, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show_hide, &new_session, &settings, &separator, &quit],
+    )?;
 
     TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
@@ -236,19 +240,15 @@ async fn init_backend(handle: &tauri::AppHandle) {
         api_port
     );
 
-    let vault = std::sync::Arc::new(
-        praxis_vault::VaultService::with_path(
-            data_dir.join("credentials.vault.json"),
-            None,
-        )
-    );
+    let vault = std::sync::Arc::new(praxis_vault::VaultService::with_path(
+        data_dir.join("credentials.vault.json"),
+        None,
+    ));
     let _ = vault.init();
 
-    let auth = std::sync::Arc::new(
-        praxis_core::api::auth::AuthState::from_file_or_create(
-            &data_dir.join("jwt.secret"),
-        ),
-    );
+    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::from_file_or_create(
+        &data_dir.join("jwt.secret"),
+    ));
 
     // Generate and display first-run admin token
     if let Ok(token) = praxis_core::api::auth::generate_first_run_token(&auth) {
@@ -264,31 +264,23 @@ async fn init_backend(handle: &tauri::AppHandle) {
         println!();
     }
 
-    let app = praxis_core::api::ApiServer::router(
-        praxis_core::api::AppState {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            port: api_port,
-            hostname: gethostname::gethostname().to_string_lossy().to_string(),
-            started_at: chrono::Utc::now(),
-            bus: praxis_core::EventBus::new(),
-            auth,
-            vault,
-            data_dir: data_dir.clone(),
-            token_counters: std::sync::Arc::new(
-                std::sync::RwLock::new(
-                    praxis_core::api::routes::TokenCounters::default(),
-                ),
-            ),
-            session_registry: std::sync::Arc::new(
-                std::sync::RwLock::new(Vec::new()),
-            ),
-            active_runs: std::sync::Arc::new(
-                std::sync::RwLock::new(std::collections::HashMap::new()),
-            ),
-            event_store: shared_store.clone(),
-            pairing: None,
-        },
-    );
+    let app = praxis_core::api::ApiServer::router(praxis_core::api::AppState {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        port: api_port,
+        hostname: gethostname::gethostname().to_string_lossy().to_string(),
+        started_at: chrono::Utc::now(),
+        bus: praxis_core::EventBus::new(),
+        auth,
+        vault,
+        data_dir: data_dir.clone(),
+        token_counters: std::sync::Arc::new(std::sync::RwLock::new(
+            praxis_core::api::routes::TokenCounters::default(),
+        )),
+        session_registry: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+        active_runs: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+        event_store: shared_store.clone(),
+        pairing: None,
+    });
 
     // Spawn API server in background
     tauri::async_runtime::spawn(async move {
@@ -311,4 +303,6 @@ async fn init_backend(handle: &tauri::AppHandle) {
 }
 
 // Re-exports for Tauri's state management
-pub use commands::{AppState as DesktopAppState, MetricsInfo, RunGoalRequest, SessionInfo, StatusInfo, VersionInfo};
+pub use commands::{
+    AppState as DesktopAppState, MetricsInfo, RunGoalRequest, SessionInfo, StatusInfo, VersionInfo,
+};

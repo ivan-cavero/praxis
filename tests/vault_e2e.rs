@@ -2,13 +2,15 @@
 //!
 //! Starts a real Axum server and tests vault CRUD operations.
 
-use axum::{Router, routing::get, Json, extract::State};
+use axum::{Json, Router, extract::State, routing::get};
 use std::sync::Arc;
 
 /// Minimal test server with vault endpoints.
 async fn start_vault_server() -> (u16, String) {
     let bus = praxis_core::EventBus::new();
-    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::new(b"test-secret-key-for-vault-e2e-tests-32b!!"));
+    let auth = std::sync::Arc::new(praxis_core::api::auth::AuthState::new(
+        b"test-secret-key-for-vault-e2e-tests-32b!!",
+    ));
     let vault = std::sync::Arc::new(praxis_vault::VaultService::with_path(
         std::env::temp_dir().join(format!("vault-e2e-{}.json", uuid::Uuid::new_v4())),
         None,
@@ -23,17 +25,11 @@ async fn start_vault_server() -> (u16, String) {
         auth,
         vault,
         data_dir: std::env::temp_dir(),
-        token_counters: std::sync::Arc::new(
-            std::sync::RwLock::new(
-                praxis_core::api::routes::TokenCounters::default(),
-            ),
-        ),
-        session_registry: std::sync::Arc::new(
-            std::sync::RwLock::new(Vec::new()),
-        ),
-        active_runs: std::sync::Arc::new(
-            std::sync::RwLock::new(std::collections::HashMap::new()),
-        ),
+        token_counters: std::sync::Arc::new(std::sync::RwLock::new(
+            praxis_core::api::routes::TokenCounters::default(),
+        )),
+        session_registry: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+        active_runs: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
         event_store: None,
         pairing: None,
     };
@@ -103,7 +99,12 @@ async fn e2e_vault_set_key() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 200, "Vault set response: {:?}", resp.text().await.unwrap_or_default());
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "Vault set response: {:?}",
+        resp.text().await.unwrap_or_default()
+    );
 
     let json: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(json["provider"], "test_provider");
@@ -196,7 +197,9 @@ async fn e2e_vault_multiple_keys() {
     }
 
     // List should show all 3
-    let resp = reqwest::get(format!("{}/api/vault/keys", base)).await.unwrap();
+    let resp = reqwest::get(format!("{}/api/vault/keys", base))
+        .await
+        .unwrap();
     let json: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(json["total"], 3);
 
@@ -231,7 +234,11 @@ async fn e2e_vault_key_masking() {
     let json: serde_json::Value = resp.json().await.unwrap();
     let masked = json["key_masked"].as_str().unwrap();
     // Should show first 4 and last 4 chars with "..." in between
-    assert!(masked.contains("..."), "Masked key should contain '...': {}", masked);
+    assert!(
+        masked.contains("..."),
+        "Masked key should contain '...': {}",
+        masked
+    );
     assert!(masked.len() < 20, "Masked key should be short: {}", masked);
 }
 

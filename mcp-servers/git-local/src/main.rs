@@ -7,7 +7,7 @@
 //! argument or the first positional argument). The server discovers the
 //! git repo root from that path.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -81,7 +81,10 @@ fn tool_commit(repo: &Path, args: &Value) -> Result<Value, String> {
         .ok_or_else(|| "Missing required argument: message".to_string())?;
 
     let mut cmd_args = vec!["commit", "-m", message];
-    let allow_empty = args.get("allow_empty").and_then(|v| v.as_bool()).unwrap_or(false);
+    let allow_empty = args
+        .get("allow_empty")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     if allow_empty {
         cmd_args.push("--allow-empty");
     }
@@ -94,13 +97,19 @@ fn tool_commit(repo: &Path, args: &Value) -> Result<Value, String> {
 
 fn tool_log(repo: &Path, args: &Value) -> Result<Value, String> {
     let max_count = args.get("max_count").and_then(|v| v.as_u64()).unwrap_or(20);
-    let format = args.get("format").and_then(|v| v.as_str()).unwrap_or("%h %s (%an, %ar)");
+    let format = args
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("%h %s (%an, %ar)");
 
-    let output = git_run(repo, &[
-        "log",
-        &format!("--max-count={}", max_count),
-        &format!("--format={}", format),
-    ])?;
+    let output = git_run(
+        repo,
+        &[
+            "log",
+            &format!("--max-count={}", max_count),
+            &format!("--format={}", format),
+        ],
+    )?;
 
     let commits: Vec<&str> = output.lines().collect();
     Ok(json!({
@@ -109,7 +118,10 @@ fn tool_log(repo: &Path, args: &Value) -> Result<Value, String> {
 }
 
 fn tool_diff(repo: &Path, args: &Value) -> Result<Value, String> {
-    let staged = args.get("staged").and_then(|v| v.as_bool()).unwrap_or(false);
+    let staged = args
+        .get("staged")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let path = args.get("path").and_then(|v| v.as_str());
 
     let mut cmd_args = vec!["diff"];
@@ -128,7 +140,10 @@ fn tool_diff(repo: &Path, args: &Value) -> Result<Value, String> {
 }
 
 fn tool_branch(repo: &Path, args: &Value) -> Result<Value, String> {
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
 
     match action {
         "list" => {
@@ -161,7 +176,10 @@ fn tool_branch(repo: &Path, args: &Value) -> Result<Value, String> {
                 "content": [{"type": "text", "text": format!("Deleted branch: {}", name)}]
             }))
         }
-        _ => Err(format!("Unknown branch action: {}. Use list, create, or delete.", action)),
+        _ => Err(format!(
+            "Unknown branch action: {}. Use list, create, or delete.",
+            action
+        )),
     }
 }
 
@@ -170,7 +188,10 @@ fn tool_checkout(repo: &Path, args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or_else(|| "Missing required argument: branch".to_string())?;
 
-    let create = args.get("create").and_then(|v| v.as_bool()).unwrap_or(false);
+    let create = args
+        .get("create")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     if create {
         git_run(repo, &["checkout", "-b", branch])?;
         Ok(json!({
@@ -185,8 +206,14 @@ fn tool_checkout(repo: &Path, args: &Value) -> Result<Value, String> {
 }
 
 fn tool_push(repo: &Path, args: &Value) -> Result<Value, String> {
-    let remote = args.get("remote").and_then(|v| v.as_str()).unwrap_or("origin");
-    let branch = args.get("branch").and_then(|v| v.as_str()).unwrap_or("HEAD");
+    let remote = args
+        .get("remote")
+        .and_then(|v| v.as_str())
+        .unwrap_or("origin");
+    let branch = args
+        .get("branch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("HEAD");
 
     let output = git_run(repo, &["push", remote, branch])?;
     Ok(json!({
@@ -195,8 +222,14 @@ fn tool_push(repo: &Path, args: &Value) -> Result<Value, String> {
 }
 
 fn tool_pull(repo: &Path, args: &Value) -> Result<Value, String> {
-    let remote = args.get("remote").and_then(|v| v.as_str()).unwrap_or("origin");
-    let branch = args.get("branch").and_then(|v| v.as_str()).unwrap_or("HEAD");
+    let remote = args
+        .get("remote")
+        .and_then(|v| v.as_str())
+        .unwrap_or("origin");
+    let branch = args
+        .get("branch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("HEAD");
 
     let output = git_run(repo, &["pull", remote, branch])?;
     Ok(json!({
@@ -397,7 +430,11 @@ fn main() {
                     "id": null,
                     "error": {"code": -32700, "message": format!("Parse error: {}", e)}
                 });
-                let _ = writeln!(stdout_lock, "{}", serde_json::to_string(&error_resp).unwrap());
+                let _ = writeln!(
+                    stdout_lock,
+                    "{}",
+                    serde_json::to_string(&error_resp).unwrap()
+                );
                 let _ = stdout_lock.flush();
                 continue;
             }
@@ -428,7 +465,8 @@ mod tests {
     use std::fs;
 
     fn setup_test_repo(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("praxis-git-test-{}-{}", name, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("praxis-git-test-{}-{}", name, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let output = Command::new("git")
@@ -486,7 +524,11 @@ mod tests {
     fn test_git_branch_list() {
         let repo = setup_test_repo("branch-list");
         let result = tool_branch(&repo, &json!({"action": "list"}));
-        assert!(result.is_ok(), "tool_branch(list) failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "tool_branch(list) failed: {:?}",
+            result.err()
+        );
         let _ = fs::remove_dir_all(&repo);
     }
 
@@ -494,9 +536,17 @@ mod tests {
     fn test_git_branch_create_delete() {
         let repo = setup_test_repo("branch-cd");
         let result = tool_branch(&repo, &json!({"action": "create", "name": "test-branch"}));
-        assert!(result.is_ok(), "tool_branch(create) failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "tool_branch(create) failed: {:?}",
+            result.err()
+        );
         let result = tool_branch(&repo, &json!({"action": "delete", "name": "test-branch"}));
-        assert!(result.is_ok(), "tool_branch(delete) failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "tool_branch(delete) failed: {:?}",
+            result.err()
+        );
         let _ = fs::remove_dir_all(&repo);
     }
 

@@ -48,11 +48,7 @@ impl SummarizerAgent {
     /// the resulting `MemorySummary` in consolidated memory.
     ///
     /// Returns the generated summary.
-    pub async fn summarize_session(
-        &self,
-        session_id: &str,
-        project_id: &str,
-    ) -> MemorySummary {
+    pub async fn summarize_session(&self, session_id: &str, project_id: &str) -> MemorySummary {
         // 1. Read chunks from episodic memory
         let chunks = {
             let memory = self.episodic_memory.read().await;
@@ -64,7 +60,10 @@ impl SummarizerAgent {
         };
 
         if chunks.is_empty() {
-            tracing::debug!("SummarizerAgent: no chunks to summarize for session {}", session_id);
+            tracing::debug!(
+                "SummarizerAgent: no chunks to summarize for session {}",
+                session_id
+            );
             let now = chrono::Utc::now().to_rfc3339();
             let summary = MemorySummary {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -269,10 +268,25 @@ mod tests {
 
     #[test]
     fn test_detect_interaction_kind() {
-        assert_eq!(detect_interaction_kind("Tool call: filesystem/read"), InteractionKind::Error);
-        assert_eq!(detect_interaction_kind("Decided to use Rust"), InteractionKind::Decision);
-        assert_eq!(detect_interaction_kind("fn calculate_tax()"), InteractionKind::Code);
-        assert_eq!(detect_interaction_kind("Researching API design patterns"), InteractionKind::Research);
-        assert_eq!(detect_interaction_kind("Regular task work"), InteractionKind::Task);
+        assert_eq!(
+            detect_interaction_kind("Tool call: filesystem/read"),
+            InteractionKind::Error
+        );
+        assert_eq!(
+            detect_interaction_kind("Decided to use Rust"),
+            InteractionKind::Decision
+        );
+        assert_eq!(
+            detect_interaction_kind("fn calculate_tax()"),
+            InteractionKind::Code
+        );
+        assert_eq!(
+            detect_interaction_kind("Researching API design patterns"),
+            InteractionKind::Research
+        );
+        assert_eq!(
+            detect_interaction_kind("Regular task work"),
+            InteractionKind::Task
+        );
     }
 }

@@ -2,12 +2,14 @@
 
 #[cfg(test)]
 mod integration_tests {
-    use crate::actor::roles::base::{Architect, Coder, Reviewer, Security, Tester, BaseAgent};
+    use crate::actor::roles::base::{Architect, BaseAgent, Coder, Reviewer, Security, Tester};
     use crate::drift::metrics::MetricSample;
     use crate::drift::recovery::DriftGuard;
-    use crate::machine::phase::{Phase, StateMachine};
     use crate::machine::gate::{Gate, GateEvaluator, GateRegistry, ReviewResult};
-    use crate::orchestrator::injection::{Injection, InjectionChannel, InjectionType, InjectionPriority, InjectionSource};
+    use crate::machine::phase::{Phase, StateMachine};
+    use crate::orchestrator::injection::{
+        Injection, InjectionChannel, InjectionPriority, InjectionSource, InjectionType,
+    };
     use crate::orchestrator::task::Task;
 
     fn test_role(name: &str, model: &str) -> crate::orchestrator::roles::ResolvedRole {
@@ -38,26 +40,38 @@ mod integration_tests {
 
         let task = Task::new("coder", "gpt-5", "implement the API");
         let code = coder.execute(&task).await;
-        assert_eq!(code.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert_eq!(
+            code.status,
+            crate::orchestrator::task::TaskStatus::Completed
+        );
 
         let task = Task::new("reviewer", "gemini-2.5-pro", "review the code");
         let review = reviewer.execute(&task).await;
-        assert_eq!(review.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert_eq!(
+            review.status,
+            crate::orchestrator::task::TaskStatus::Completed
+        );
 
         let task = Task::new("security", "claude-4-haiku", "scan for vulnerabilities");
         let security_result = security.execute(&task).await;
-        assert_eq!(security_result.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert_eq!(
+            security_result.status,
+            crate::orchestrator::task::TaskStatus::Completed
+        );
 
         let task = Task::new("tester", "gpt-5", "write tests");
         let test_result = tester.execute(&task).await;
-        assert_eq!(test_result.status, crate::orchestrator::task::TaskStatus::Completed);
+        assert_eq!(
+            test_result.status,
+            crate::orchestrator::task::TaskStatus::Completed
+        );
     }
 
     // ─── Context Stress Test ───────────────────────────────────
 
     #[test]
     fn test_context_stress() {
-        use praxis_memory::context::{ContextManager, BudgetProfile, ContextWindow, Message};
+        use praxis_memory::context::{BudgetProfile, ContextManager, ContextWindow, Message};
 
         let mut manager = ContextManager::new(128_000, BudgetProfile::Balanced);
         let mut context = ContextWindow::new();
@@ -82,35 +96,41 @@ mod integration_tests {
 
         // Establish baseline with healthy metrics
         for i in 0..12 {
-            guard.record_and_evaluate(MetricSample {
-                iteration: i,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                latency_ms: 100 + i as u64 * 10,
-                output_tokens: 50 + i as u32 * 5,
-                input_tokens: 100,
-                tool_calls: 2,
-                tool_errors: 0,
-                output_length_chars: 200 + i as usize * 20,
-                gate_passed: true,
-                context_pressure: 0.3,
-            }, Some("coder"));
+            guard.record_and_evaluate(
+                MetricSample {
+                    iteration: i,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    latency_ms: 100 + i as u64 * 10,
+                    output_tokens: 50 + i as u32 * 5,
+                    input_tokens: 100,
+                    tool_calls: 2,
+                    tool_errors: 0,
+                    output_length_chars: 200 + i as usize * 20,
+                    gate_passed: true,
+                    context_pressure: 0.3,
+                },
+                Some("coder"),
+            );
         }
 
         // Record degraded metrics
         let _drift_detected = false;
         for i in 0..10 {
-            let report = guard.record_and_evaluate(MetricSample {
-                iteration: i + 12,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                latency_ms: 5000,
-                output_tokens: 800,
-                input_tokens: 100,
-                tool_calls: 2,
-                tool_errors: 2,
-                output_length_chars: 8000,
-                gate_passed: false,
-                context_pressure: 0.98,
-            }, Some("coder"));
+            let report = guard.record_and_evaluate(
+                MetricSample {
+                    iteration: i + 12,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    latency_ms: 5000,
+                    output_tokens: 800,
+                    input_tokens: 100,
+                    tool_calls: 2,
+                    tool_errors: 2,
+                    output_length_chars: 8000,
+                    gate_passed: false,
+                    context_pressure: 0.98,
+                },
+                Some("coder"),
+            );
 
             if let Some(report) = report {
                 if report.recovery_action.is_some() {
@@ -130,12 +150,36 @@ mod integration_tests {
     fn test_injection_workflow() {
         let mut channel = InjectionChannel::new(10);
 
-        channel.submit(Injection::new("s1", "coder", InjectionType::Instruction,
-            InjectionPriority::Normal, "Use thiserror", InjectionSource::CLI)).unwrap();
-        channel.submit(Injection::new("s1", "coder", InjectionType::Correction,
-            InjectionPriority::High, "Fix the bug", InjectionSource::Dashboard)).unwrap();
-        channel.submit(Injection::new("s1", "all", InjectionType::Instruction,
-            InjectionPriority::Critical, "Halt all work", InjectionSource::CLI)).unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Instruction,
+                InjectionPriority::Normal,
+                "Use thiserror",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "coder",
+                InjectionType::Correction,
+                InjectionPriority::High,
+                "Fix the bug",
+                InjectionSource::Dashboard,
+            ))
+            .unwrap();
+        channel
+            .submit(Injection::new(
+                "s1",
+                "all",
+                InjectionType::Instruction,
+                InjectionPriority::Critical,
+                "Halt all work",
+                InjectionSource::CLI,
+            ))
+            .unwrap();
 
         let inj = channel.next_for_agent("coder").unwrap();
         assert_eq!(inj.priority, InjectionPriority::Critical);

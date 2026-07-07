@@ -12,9 +12,9 @@ pub mod delegation;
 pub mod drift;
 pub mod r#loop;
 pub mod machine;
-pub mod workflow;
 pub mod orchestrator;
 pub mod skills;
+pub mod workflow;
 
 #[cfg(test)]
 mod integration_tests;
@@ -22,25 +22,24 @@ mod integration_tests;
 // Re-exports for convenience
 pub use actor::*;
 pub use bus::EventBus;
+pub use completion::{
+    CompletionCriterion, OutcomeResult, OutcomeVerifier, default_coding_criterion,
+};
 pub use drift::*;
 pub use r#loop::*;
 pub use machine::*;
-pub use workflow::*;
-pub use orchestrator::{RoleConfig, RoleOverride, GoalConfig, ResolvedRole};
 pub use orchestrator::roles::ResolvedRole as AgentRoleResolved;
+pub use orchestrator::{GoalConfig, ResolvedRole, RoleConfig, RoleOverride};
 pub use orchestrator::{Task, TaskResult, TaskStatus};
-pub use completion::{
-    CompletionCriterion, OutcomeResult, OutcomeVerifier,
-    default_coding_criterion,
-};
+pub use workflow::*;
 
-use praxis_mcp_host::McpHost;
-use praxis_vault::VaultService;
 use praxis_agent_traits::persistence::EventStore;
-use praxis_memory::episodic::{EpisodicMemory, SqliteBackend};
+use praxis_mcp_host::McpHost;
 use praxis_memory::embedding::EmbeddingService;
-use tokio::sync::RwLock;
+use praxis_memory::episodic::{EpisodicMemory, SqliteBackend};
+use praxis_vault::VaultService;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use thiserror::Error;
 
@@ -80,8 +79,8 @@ pub type Result<T> = std::result::Result<T, CoreError>;
 /// A message injected mid-loop into a running agent session.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InjectedMessage {
-    pub target_agent: String,  // "coder", "all", etc.
-    pub message_type: String,  // "instruction", "context", "correction", "halt"
+    pub target_agent: String, // "coder", "all", etc.
+    pub message_type: String, // "instruction", "context", "correction", "halt"
     pub content: String,
     pub created_at: String,
 }
@@ -112,7 +111,9 @@ pub struct CoreRuntime {
     /// Background MemoryKeeper task handle (for lifecycle management).
     pub memory_keeper: Option<std::sync::Arc<crate::actor::roles::memory_keeper::MemoryKeeper>>,
     /// Consolidated memory for long-term summarization (shared with SummarizerAgent).
-    pub consolidated_memory: Option<std::sync::Arc<tokio::sync::RwLock<praxis_memory::consolidated::ConsolidatedMemory>>>,
+    pub consolidated_memory: Option<
+        std::sync::Arc<tokio::sync::RwLock<praxis_memory::consolidated::ConsolidatedMemory>>,
+    >,
     /// SummarizerAgent for generating session summaries.
     pub summarizer_agent: Option<crate::actor::roles::summarizer::SummarizerAgent>,
     /// Context budget for MemoryRAG allocation (budget-aware RAG injection).
@@ -276,9 +277,14 @@ impl CoreRuntime {
         }
 
         if content.is_empty() {
-            tracing::debug!("No SKILL.md or skills/ directory found. Agents will run without skills.");
+            tracing::debug!(
+                "No SKILL.md or skills/ directory found. Agents will run without skills."
+            );
         } else {
-            tracing::info!("Loaded skills ({} bytes) for agent context injection.", content.len());
+            tracing::info!(
+                "Loaded skills ({} bytes) for agent context injection.",
+                content.len()
+            );
             self.skills_content = Some(content);
         }
 
@@ -331,7 +337,10 @@ impl CoreRuntime {
         if content.is_empty() {
             tracing::debug!("No skills loaded. Agents will run without skills.");
         } else {
-            tracing::info!("Loaded skills ({} bytes) for agent context injection.", content.len());
+            tracing::info!(
+                "Loaded skills ({} bytes) for agent context injection.",
+                content.len()
+            );
             self.skills_content = Some(content);
         }
 
@@ -358,10 +367,8 @@ impl CoreRuntime {
         embedding: Option<EmbeddingService>,
     ) -> Self {
         let memory = std::sync::Arc::new(RwLock::new(memory));
-        let mut keeper = crate::actor::roles::memory_keeper::MemoryKeeper::new(
-            self.bus.clone(),
-            memory.clone(),
-        );
+        let mut keeper =
+            crate::actor::roles::memory_keeper::MemoryKeeper::new(self.bus.clone(), memory.clone());
         if let Some(es) = embedding {
             keeper = keeper.with_embedding_service(std::sync::Arc::new(es));
         }
@@ -399,10 +406,7 @@ impl CoreRuntime {
     /// errors, and learnings across a session.
     ///
     /// Call `summarize_current_session()` from `run_goal()` after each phase.
-    pub fn with_consolidated_memory(
-        mut self,
-        max_summaries: usize,
-    ) -> Self {
+    pub fn with_consolidated_memory(mut self, max_summaries: usize) -> Self {
         let consolidated = std::sync::Arc::new(tokio::sync::RwLock::new(
             praxis_memory::consolidated::ConsolidatedMemory::new(max_summaries),
         ));
@@ -428,8 +432,12 @@ impl CoreRuntime {
 
     /// Generate a consolidated summary for the current session.
     async fn summarize_current_session(&self) {
-        let Some(ref agent) = self.summarizer_agent else { return };
-        let Some(session_id) = self.session_id else { return };
+        let Some(ref agent) = self.summarizer_agent else {
+            return;
+        };
+        let Some(session_id) = self.session_id else {
+            return;
+        };
 
         let sid = session_id.to_string();
         let _summary = agent.summarize_session(&sid, "default").await;
@@ -454,11 +462,16 @@ impl CoreRuntime {
     /// chunks are TTL-evicted. Called at session end so the next session
     /// starts with a clean episodic store.
     async fn cleanup_episodic_memory(&self) {
-        let Some(ref episodic) = self.episodic_memory else { return };
+        let Some(ref episodic) = self.episodic_memory else {
+            return;
+        };
         const EPISODIC_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 60 * 60);
         let removed = episodic.write().await.cleanup(EPISODIC_TTL);
         if removed > 0 {
-            tracing::info!("Episodic memory TTL cleanup: removed {} chunks older than 30 days", removed);
+            tracing::info!(
+                "Episodic memory TTL cleanup: removed {} chunks older than 30 days",
+                removed
+            );
         }
     }
 
@@ -466,7 +479,10 @@ impl CoreRuntime {
     ///
     /// Called from `run_goal()` after the LLM provider is initialized, so the
     /// EmbeddingService wraps the real provider for semantic vector generation.
-    pub async fn with_embedding_provider(&self, provider: std::sync::Arc<dyn praxis_agent_traits::provider::LLMProvider>) {
+    pub async fn with_embedding_provider(
+        &self,
+        provider: std::sync::Arc<dyn praxis_agent_traits::provider::LLMProvider>,
+    ) {
         let es = std::sync::Arc::new(EmbeddingService::new_default(provider));
         if let Some(ref keeper) = self.memory_keeper {
             keeper.set_embedding_service(es).await;
@@ -517,7 +533,8 @@ impl CoreRuntime {
     /// Called after each agent execution to reflect how full the context window is.
     fn set_context_pressure(&self, pressure: f32) {
         let scaled = (pressure.clamp(0.0, 1.0) * 1000.0) as u32;
-        self.context_pressure.store(scaled, std::sync::atomic::Ordering::Relaxed);
+        self.context_pressure
+            .store(scaled, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Compute context pressure from accumulated session tokens vs the budget.
@@ -565,7 +582,10 @@ impl CoreRuntime {
                 tracing::warn!(
                     "Context for agent '{}' exceeded budget ({} tokens > {} limit), \
                      truncated {} chars from front",
-                    task.role, token_count, budget.hard_limit, removed
+                    task.role,
+                    token_count,
+                    budget.hard_limit,
+                    removed
                 );
             }
         }
@@ -655,7 +675,8 @@ impl CoreRuntime {
                 .join("\n\n---\n\n");
 
             if !history.is_empty() {
-                let history_section = format!("--- Recent History ---\n{history}\n--- End History ---");
+                let history_section =
+                    format!("--- Recent History ---\n{history}\n--- End History ---");
                 task.context = if task.context.is_empty() {
                     history_section
                 } else {
@@ -668,34 +689,34 @@ impl CoreRuntime {
     /// Evaluate drift and handle any recovery action.
     async fn evaluate_drift(&mut self, agent_id: Option<&str>) {
         // Force evaluate to get current ASI (doesn't trigger recovery)
-        let Some(report) = self.drift_guard.force_evaluate(agent_id) else { return };
+        let Some(report) = self.drift_guard.force_evaluate(agent_id) else {
+            return;
+        };
 
         // Publish drift alert for dashboard visibility
         self.bus.publish(
-            praxis_shared::protocol::MessageKind::DriftAlert(
-                praxis_shared::protocol::DriftAlert {
-                    agent_id: agent_id.map(|s| s.to_string()),
-                    old_asi: self.drift_guard.health_summary().overall_asi,
-                    new_asi: report.asi_score,
-                    dimension: "overall".to_string(),
-                    severity: if report.asi_score < 40.0 {
-                        praxis_shared::protocol::DriftSeverity::Critical
-                    } else if report.asi_score < 60.0 {
-                        praxis_shared::protocol::DriftSeverity::Warning
-                    } else {
-                        praxis_shared::protocol::DriftSeverity::Warning
-                    },
+            praxis_shared::protocol::MessageKind::DriftAlert(praxis_shared::protocol::DriftAlert {
+                agent_id: agent_id.map(|s| s.to_string()),
+                old_asi: self.drift_guard.health_summary().overall_asi,
+                new_asi: report.asi_score,
+                dimension: "overall".to_string(),
+                severity: if report.asi_score < 40.0 {
+                    praxis_shared::protocol::DriftSeverity::Critical
+                } else if report.asi_score < 60.0 {
+                    praxis_shared::protocol::DriftSeverity::Warning
+                } else {
+                    praxis_shared::protocol::DriftSeverity::Warning
                 },
-            ),
+            }),
             "core",
         );
 
         // Trigger recovery if below threshold
         if report.asi_score < self.drift_guard.recovery_threshold {
-            let action = self.drift_guard.recovery.evaluate(
-                report.status.clone(),
-                agent_id,
-            );
+            let action = self
+                .drift_guard
+                .recovery
+                .evaluate(report.status.clone(), agent_id);
             if let Some(action) = action {
                 self.handle_recovery_action(&action, agent_id).await;
             }
@@ -728,7 +749,10 @@ impl CoreRuntime {
             RecoveryKind::ModelUpgrade => {
                 // Upgrade to a more capable model. The override applies to all
                 // agents in subsequent iterations until the session ends.
-                let current = self.model_override.clone().unwrap_or_else(|| "gpt-4o".to_string());
+                let current = self
+                    .model_override
+                    .clone()
+                    .unwrap_or_else(|| "gpt-4o".to_string());
                 let upgraded = match current.as_str() {
                     "gpt-4o-mini" | "gpt-4o" => "gpt-5",
                     "claude-3-haiku" | "claude-3-5-haiku" => "claude-3-5-sonnet",
@@ -738,10 +762,7 @@ impl CoreRuntime {
                 };
                 if upgraded != current.as_str() {
                     self.model_override = Some(upgraded.to_string());
-                    tracing::info!(
-                        "Model upgrade: {} → {} (drift recovery)",
-                        current, upgraded
-                    );
+                    tracing::info!("Model upgrade: {} → {} (drift recovery)", current, upgraded);
                 } else {
                     tracing::warn!(
                         "Model upgrade requested but already at max tier: {}",
@@ -766,7 +787,8 @@ impl CoreRuntime {
 
             RecoveryKind::KillSession => {
                 tracing::error!("KillSession: severe drift, stopping execution.");
-                self.shutdown_requested.store(true, std::sync::atomic::Ordering::SeqCst);
+                self.shutdown_requested
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
             }
 
             RecoveryKind::LogOnly => {
@@ -805,7 +827,11 @@ impl CoreRuntime {
         };
         if let Ok(mut guard) = self.injections.write() {
             guard.push(msg);
-            tracing::info!("Injected message for agent '{}' (type: {})", target_agent, message_type);
+            tracing::info!(
+                "Injected message for agent '{}' (type: {})",
+                target_agent,
+                message_type
+            );
         }
     }
 
@@ -840,13 +866,20 @@ impl CoreRuntime {
                             if let Ok(content) = std::fs::read_to_string(&path) {
                                 if let Ok(msg) = serde_json::from_str::<InjectedMessage>(&content) {
                                     if msg.target_agent == agent_name || msg.target_agent == "all" {
-                                        tracing::info!("Picked up file injection for '{}': {}", agent_name, msg.content);
+                                        tracing::info!(
+                                            "Picked up file injection for '{}': {}",
+                                            agent_name,
+                                            msg.content
+                                        );
                                         relevant.push(msg);
                                         // Only delete the file if it was successfully parsed and matched
                                         let _ = std::fs::remove_file(&path);
                                     }
                                 } else {
-                                    tracing::warn!("Failed to parse injection file: {}", path.display());
+                                    tracing::warn!(
+                                        "Failed to parse injection file: {}",
+                                        path.display()
+                                    );
                                 }
                             }
                         }
@@ -1046,21 +1079,35 @@ impl CoreRuntime {
     /// Connect MCP servers defined in the forge.toml config.
     pub async fn connect_mcp_servers(&mut self, config: &ForgeConfig) {
         for server_config in &config.mcp_servers {
-            tracing::info!("Connecting to MCP server: {} ({} {:?})",
-                server_config.name, server_config.command, server_config.args);
-            match self.mcp_host.connect_server(
-                &server_config.name,
-                &server_config.command,
-                &server_config.args,
-            ).await {
+            tracing::info!(
+                "Connecting to MCP server: {} ({} {:?})",
+                server_config.name,
+                server_config.command,
+                server_config.args
+            );
+            match self
+                .mcp_host
+                .connect_server(
+                    &server_config.name,
+                    &server_config.command,
+                    &server_config.args,
+                )
+                .await
+            {
                 Ok(()) => {
                     let tools = self.mcp_host.tools_for(&server_config.name);
-                    tracing::info!("MCP server '{}' connected with {} tools",
-                        server_config.name, tools.len());
+                    tracing::info!(
+                        "MCP server '{}' connected with {} tools",
+                        server_config.name,
+                        tools.len()
+                    );
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to connect MCP server '{}': {}",
-                        server_config.name, e);
+                    tracing::warn!(
+                        "Failed to connect MCP server '{}': {}",
+                        server_config.name,
+                        e
+                    );
                 }
             }
         }
@@ -1103,7 +1150,7 @@ impl CoreRuntime {
         lines.join("\n")
     }
 
-/// Parse and execute tool calls from agent output.
+    /// Parse and execute tool calls from agent output.
     /// Publishes `AgentOutput` streaming deltas for each tool call so the
     /// Publish an event with the current session_id in metadata.
     /// This allows the frontend to filter events by session.
@@ -1121,11 +1168,7 @@ impl CoreRuntime {
     ///
     /// Only agents whose `AgentDefinition.can_delegate()` is true can delegate.
     /// The parent's budget is derived from the session's LoopController limits.
-    async fn process_delegation_requests(
-        &mut self,
-        agent_name: &str,
-        output: &str,
-    ) -> String {
+    async fn process_delegation_requests(&mut self, agent_name: &str, output: &str) -> String {
         // Check if this agent can delegate at all
         let parent_def = match self.agent_registry.resolve(agent_name) {
             Some(a) if a.definition.can_delegate() => a.definition.clone(),
@@ -1148,14 +1191,17 @@ impl CoreRuntime {
             if !parent_def.can_spawn_type(child_type) {
                 tracing::warn!(
                     "Agent '{}' tried to delegate to '{}' but it's not in can_spawn {:?}",
-                    agent_name, child_type, parent_def.can_spawn()
+                    agent_name,
+                    child_type,
+                    parent_def.can_spawn()
                 );
                 continue;
             }
 
             tracing::info!(
                 "Agent '{}' delegating to '{}': {}",
-                agent_name, child_type,
+                agent_name,
+                child_type,
                 task_desc.chars().take(80).collect::<String>()
             );
 
@@ -1185,7 +1231,9 @@ impl CoreRuntime {
                 &self.agent_registry,
                 provider,
                 Some(&self.bus),
-            ).await {
+            )
+            .await
+            {
                 Ok(delegate_result) => {
                     // Roll up child budget into session totals
                     let child_tokens = delegate_result.child_budget.used_tokens;
@@ -1204,7 +1252,12 @@ impl CoreRuntime {
                     ));
                 }
                 Err(e) => {
-                    tracing::warn!("Delegation from '{}' to '{}' failed: {}", agent_name, child_type, e);
+                    tracing::warn!(
+                        "Delegation from '{}' to '{}' failed: {}",
+                        agent_name,
+                        child_type,
+                        e
+                    );
                     result_output.push_str(&format!(
                         "\n\n─── DELEGATION FAILED: {} → {} ───\nError: {}",
                         agent_name, child_type, e
@@ -1230,7 +1283,10 @@ impl CoreRuntime {
     }
 
     /// Resolve a provider for a given model name.
-    fn resolve_provider_for_model(&self, _model: &str) -> Option<std::sync::Arc<dyn praxis_agent_traits::provider::LLMProvider>> {
+    fn resolve_provider_for_model(
+        &self,
+        _model: &str,
+    ) -> Option<std::sync::Arc<dyn praxis_agent_traits::provider::LLMProvider>> {
         // In production, this would use the provider router.
         // For now, return None (mock mode) — the delegation still works with mock agents.
         None
@@ -1281,18 +1337,21 @@ impl CoreRuntime {
 
                     tracing::info!(
                         "Agent called tool: {}/{} with args: {:?}",
-                        server, tool_name, args
+                        server,
+                        tool_name,
+                        args
                     );
 
                     let start = std::time::Instant::now();
-                    let (tool_result, success) = match self.mcp_host.call_tool(server, tool_name, args).await
-                    {
-                        Ok(value) => {
-                            (serde_json::to_string_pretty(&value)
-                                .unwrap_or_else(|_| "{}".to_string()), true)
-                        }
-                        Err(e) => (format!("ERROR: {}", e), false),
-                    };
+                    let (tool_result, success) =
+                        match self.mcp_host.call_tool(server, tool_name, args).await {
+                            Ok(value) => (
+                                serde_json::to_string_pretty(&value)
+                                    .unwrap_or_else(|_| "{}".to_string()),
+                                true,
+                            ),
+                            Err(e) => (format!("ERROR: {}", e), false),
+                        };
                     let duration_ms = start.elapsed().as_millis() as u64;
 
                     tools_called.push(ToolCallInfo {
@@ -1316,7 +1375,10 @@ impl CoreRuntime {
             }
         }
 
-        ToolExecResult { output: result, tools_called }
+        ToolExecResult {
+            output: result,
+            tools_called,
+        }
     }
 
     /// Initialize a ProviderRouter from forge.toml providers + vault/env.
@@ -1333,13 +1395,20 @@ impl CoreRuntime {
         let mut router = praxis_providers::ProviderRouter::new();
 
         for (name, provider_cfg) in &config.providers {
-            tracing::info!("Initializing provider: {} ({})", name, provider_cfg.base_url);
+            tracing::info!(
+                "Initializing provider: {} ({})",
+                name,
+                provider_cfg.base_url
+            );
 
             // Resolve API key
             let api_key = self.resolve_api_key(&provider_cfg.api_key_ref, vault, name);
 
             if api_key.is_empty() {
-                tracing::warn!("No API key for provider '{}'. Agent will use mock behavior.", name);
+                tracing::warn!(
+                    "No API key for provider '{}'. Agent will use mock behavior.",
+                    name
+                );
                 continue;
             }
 
@@ -1355,7 +1424,11 @@ impl CoreRuntime {
                         ) {
                             Ok(p) => std::sync::Arc::new(p),
                             Err(e) => {
-                                tracing::warn!("Failed to init OpenAI provider '{}': {}. Using mock.", name, e.0);
+                                tracing::warn!(
+                                    "Failed to init OpenAI provider '{}': {}. Using mock.",
+                                    name,
+                                    e.0
+                                );
                                 continue;
                             }
                         }
@@ -1370,7 +1443,11 @@ impl CoreRuntime {
                         ) {
                             Ok(p) => std::sync::Arc::new(p),
                             Err(e) => {
-                                tracing::warn!("Failed to init Anthropic provider '{}': {}. Using mock.", name, e.0);
+                                tracing::warn!(
+                                    "Failed to init Anthropic provider '{}': {}. Using mock.",
+                                    name,
+                                    e.0
+                                );
                                 continue;
                             }
                         }
@@ -1385,7 +1462,11 @@ impl CoreRuntime {
                         ) {
                             Ok(p) => std::sync::Arc::new(p),
                             Err(e) => {
-                                tracing::warn!("Failed to init Gemini provider '{}': {}. Using mock.", name, e.0);
+                                tracing::warn!(
+                                    "Failed to init Gemini provider '{}': {}. Using mock.",
+                                    name,
+                                    e.0
+                                );
                                 continue;
                             }
                         }
@@ -1397,7 +1478,11 @@ impl CoreRuntime {
                         ) {
                             Ok(p) => std::sync::Arc::new(p),
                             Err(e) => {
-                                tracing::warn!("Failed to init Ollama provider '{}': {}. Using mock.", name, e.0);
+                                tracing::warn!(
+                                    "Failed to init Ollama provider '{}': {}. Using mock.",
+                                    name,
+                                    e.0
+                                );
                                 continue;
                             }
                         }
@@ -1412,7 +1497,11 @@ impl CoreRuntime {
                         ) {
                             Ok(p) => std::sync::Arc::new(p),
                             Err(e) => {
-                                tracing::warn!("Failed to init provider '{}': {}. Using mock.", name, e.0);
+                                tracing::warn!(
+                                    "Failed to init provider '{}': {}. Using mock.",
+                                    name,
+                                    e.0
+                                );
                                 continue;
                             }
                         }
@@ -1420,7 +1509,11 @@ impl CoreRuntime {
                 };
 
             router.register(name, provider, praxis_providers::ModelTier::Balanced);
-            tracing::info!("Provider '{}' registered with model '{}'", name, provider_cfg.default_model);
+            tracing::info!(
+                "Provider '{}' registered with model '{}'",
+                name,
+                provider_cfg.default_model
+            );
         }
 
         router
@@ -1433,7 +1526,12 @@ impl CoreRuntime {
     /// - `env:VAR_NAME` → look up environment variable
     /// - `""` (empty) → try vault by provider name, then give up
     /// - anything else → treat as literal key (with warning if it looks like a real key)
-    fn resolve_api_key(&self, ref_str: &str, vault: Option<&VaultService>, provider_name: &str) -> String {
+    fn resolve_api_key(
+        &self,
+        ref_str: &str,
+        vault: Option<&VaultService>,
+        provider_name: &str,
+    ) -> String {
         // 1. Explicit vault/keyring reference: "keyring:NAME" or "vault:NAME"
         let vault_name = ref_str
             .strip_prefix("keyring:")
@@ -1442,12 +1540,20 @@ impl CoreRuntime {
             if let Some(v) = vault {
                 if let Ok(Some(key)) = v.get(name) {
                     if !key.is_empty() {
-                        tracing::info!("Loaded API key for '{}' from vault (ref: {})", name, ref_str);
+                        tracing::info!(
+                            "Loaded API key for '{}' from vault (ref: {})",
+                            name,
+                            ref_str
+                        );
                         return key;
                     }
                 }
             }
-            tracing::warn!("Vault ref '{}' but no key found in vault for '{}'", ref_str, name);
+            tracing::warn!(
+                "Vault ref '{}' but no key found in vault for '{}'",
+                ref_str,
+                name
+            );
             return String::new();
         }
 
@@ -1455,11 +1561,19 @@ impl CoreRuntime {
         if let Some(var_name) = ref_str.strip_prefix("env:") {
             if let Ok(value) = std::env::var(var_name) {
                 if !value.is_empty() {
-                    tracing::info!("Loaded API key for '{}' from env:{}", provider_name, var_name);
+                    tracing::info!(
+                        "Loaded API key for '{}' from env:{}",
+                        provider_name,
+                        var_name
+                    );
                     return value;
                 }
             }
-            tracing::warn!("Env var '{}' not set or empty for provider '{}'", var_name, provider_name);
+            tracing::warn!(
+                "Env var '{}' not set or empty for provider '{}'",
+                var_name,
+                provider_name
+            );
             return String::new();
         }
 
@@ -1468,7 +1582,10 @@ impl CoreRuntime {
             if let Some(v) = vault {
                 if let Ok(Some(key)) = v.get(provider_name) {
                     if !key.is_empty() {
-                        tracing::info!("Loaded API key for '{}' from vault (by name)", provider_name);
+                        tracing::info!(
+                            "Loaded API key for '{}' from vault (by name)",
+                            provider_name
+                        );
                         return key;
                     }
                 }
@@ -1478,7 +1595,10 @@ impl CoreRuntime {
 
         // 4. Literal key in config
         if ref_str.starts_with("sk-") || ref_str.starts_with("xai-") {
-            tracing::warn!("⚠️  Using literal API key in config for '{}' — consider using Settings page", provider_name);
+            tracing::warn!(
+                "⚠️  Using literal API key in config for '{}' — consider using Settings page",
+                provider_name
+            );
         }
         ref_str.to_string()
     }
@@ -1489,7 +1609,10 @@ impl CoreRuntime {
             if task.context.is_empty() {
                 task.context = format!("--- Skills ---\n{}", skills);
             } else {
-                task.context = format!("--- Skills ---\n{}\n\n--- Task Context ---\n{}", skills, task.context);
+                task.context = format!(
+                    "--- Skills ---\n{}\n\n--- Task Context ---\n{}",
+                    skills, task.context
+                );
             }
         }
     }
@@ -1651,11 +1774,8 @@ impl CoreRuntime {
                 let mut join_set = tokio::task::JoinSet::new();
 
                 for role_config in &phase_agents {
-                    let mut task = orchestrator::Task::new(
-                        &role_config.name,
-                        &role_config.model,
-                        goal,
-                    );
+                    let mut task =
+                        orchestrator::Task::new(&role_config.name, &role_config.model, goal);
 
                     // Inject MCP tool context
                     let tool_context = self.prepare_tool_context(&role_config.tools);
@@ -1690,11 +1810,14 @@ impl CoreRuntime {
                     let (agent, provider_name) = match provider_router.resolve(effective_model) {
                         Ok(provider) => {
                             let name = provider.provider_name().to_string();
-                            (crate::actor::roles::AgentFactory::create_with_provider_and_bus(
-                                &resolved_role,
-                                provider,
-                                self.bus.clone(),
-                            ), name)
+                            (
+                                crate::actor::roles::AgentFactory::create_with_provider_and_bus(
+                                    &resolved_role,
+                                    provider,
+                                    self.bus.clone(),
+                                ),
+                                name,
+                            )
                         }
                         Err(_) => {
                             tracing::warn!(
@@ -1702,7 +1825,10 @@ impl CoreRuntime {
                                 effective_model,
                                 role_config.name
                             );
-                            (crate::actor::roles::AgentFactory::create(&resolved_role), "mock".to_string())
+                            (
+                                crate::actor::roles::AgentFactory::create(&resolved_role),
+                                "mock".to_string(),
+                            )
                         }
                     };
 
@@ -1738,7 +1864,9 @@ impl CoreRuntime {
 
                             // Process delegation requests (DELEGATE: lines in output)
                             let result = TaskResult {
-                                content: self.process_delegation_requests(&result.agent_id, &result.content).await,
+                                content: self
+                                    .process_delegation_requests(&result.agent_id, &result.content)
+                                    .await,
                                 ..result
                             };
 
@@ -1790,7 +1918,8 @@ impl CoreRuntime {
                                     result.token_usage.input,
                                     result.token_usage.output,
                                 );
-                                self.loop_controller.record_token_usage(result.token_usage.total, cost);
+                                self.loop_controller
+                                    .record_token_usage(result.token_usage.total, cost);
                             }
 
                             results.push(result);
@@ -1815,14 +1944,22 @@ impl CoreRuntime {
                                 output_tokens: result.token_usage.output,
                                 input_tokens: result.token_usage.input,
                                 tool_calls: tool_exec.tools_called.len() as u32,
-                                tool_errors: tool_exec.tools_called.iter().filter(|t| !t.success).count() as u32,
+                                tool_errors: tool_exec
+                                    .tools_called
+                                    .iter()
+                                    .filter(|t| !t.success)
+                                    .count() as u32,
                                 output_length_chars: result.content.len(),
                                 gate_passed: self.last_gate_passed,
                                 context_pressure: pressure,
                             };
-                            if let Some(report) = self.drift_guard.record_and_evaluate(drift_sample, Some(&result.agent_id)) {
+                            if let Some(report) = self
+                                .drift_guard
+                                .record_and_evaluate(drift_sample, Some(&result.agent_id))
+                            {
                                 if let Some(action) = &report.recovery_action {
-                                    self.handle_recovery_action(action, Some(&result.agent_id)).await;
+                                    self.handle_recovery_action(action, Some(&result.agent_id))
+                                        .await;
                                 }
                             }
                             // ── End drift metrics ──────────────────────────
@@ -1841,16 +1978,15 @@ impl CoreRuntime {
                 );
                 tracing::info!(
                     "Consensus verdict: passed={}, confidence={:.1}%, reviewers={}",
-                    verdict.passed, verdict.confidence, review_results.len()
+                    verdict.passed,
+                    verdict.confidence,
+                    review_results.len()
                 );
             } else {
                 // ── Sequential execution (single agent or non-review phases) ──
                 for role_config in &phase_agents {
-                    let mut task = orchestrator::Task::new(
-                        &role_config.name,
-                        &role_config.model,
-                        goal,
-                    );
+                    let mut task =
+                        orchestrator::Task::new(&role_config.name, &role_config.model, goal);
 
                     let has_feedback = !feedback.is_empty() && role_config.name == "coder";
                     if has_feedback {
@@ -1908,8 +2044,7 @@ impl CoreRuntime {
                             for result in &results {
                                 rag_parts.push(format!(
                                     "• [score={:.2}] {}",
-                                    result.score,
-                                    result.chunk.content
+                                    result.score, result.chunk.content
                                 ));
                             }
                             rag_parts.push("─── END MEMORY ───".to_string());
@@ -1943,11 +2078,14 @@ impl CoreRuntime {
                     let (agent, provider_name) = match provider_router.resolve(effective_model) {
                         Ok(provider) => {
                             let name = provider.provider_name().to_string();
-                            (crate::actor::roles::AgentFactory::create_with_provider_and_bus(
-                                &resolved_role,
-                                provider,
-                                self.bus.clone(),
-                            ), name)
+                            (
+                                crate::actor::roles::AgentFactory::create_with_provider_and_bus(
+                                    &resolved_role,
+                                    provider,
+                                    self.bus.clone(),
+                                ),
+                                name,
+                            )
                         }
                         Err(_) => {
                             tracing::warn!(
@@ -1955,7 +2093,10 @@ impl CoreRuntime {
                                 effective_model,
                                 role_config.name
                             );
-                            (crate::actor::roles::AgentFactory::create(&resolved_role), "mock".to_string())
+                            (
+                                crate::actor::roles::AgentFactory::create(&resolved_role),
+                                "mock".to_string(),
+                            )
                         }
                     };
 
@@ -2000,11 +2141,8 @@ impl CoreRuntime {
 
                     // Accumulate tool call metrics across all rounds
                     let mut total_tool_calls = tool_exec.tools_called.len() as u32;
-                    let mut total_tool_errors = tool_exec
-                        .tools_called
-                        .iter()
-                        .filter(|t| !t.success)
-                        .count() as u32;
+                    let mut total_tool_errors =
+                        tool_exec.tools_called.iter().filter(|t| !t.success).count() as u32;
 
                     // Tool call loop: re-invoke agent with tool results, execute
                     // new tool calls from the follow-up response, repeat until no
@@ -2022,7 +2160,9 @@ impl CoreRuntime {
                             round
                         );
 
-                        let follow_up_agent = match provider_router.resolve(self.effective_model(&role_config.model)) {
+                        let follow_up_agent = match provider_router
+                            .resolve(self.effective_model(&role_config.model))
+                        {
                             Ok(provider) => {
                                 crate::actor::roles::AgentFactory::create_with_provider_and_bus(
                                     &resolved_role,
@@ -2030,9 +2170,7 @@ impl CoreRuntime {
                                     self.bus.clone(),
                                 )
                             }
-                            Err(_) => {
-                                crate::actor::roles::AgentFactory::create(&resolved_role)
-                            }
+                            Err(_) => crate::actor::roles::AgentFactory::create(&resolved_role),
                         };
                         let follow_up_task = orchestrator::task::Task {
                             id: uuid::Uuid::new_v4().to_string(),
@@ -2055,9 +2193,7 @@ impl CoreRuntime {
                         result = TaskResult {
                             content: format!(
                                 "{}\n\n─── FOLLOW-UP AFTER TOOL RESULTS (round {}) ───\n{}",
-                                result.content,
-                                round,
-                                tool_exec.output
+                                result.content, round, tool_exec.output
                             ),
                             ..result
                         };
@@ -2076,11 +2212,8 @@ impl CoreRuntime {
                         }
 
                         total_tool_calls += tool_exec.tools_called.len() as u32;
-                        total_tool_errors += tool_exec
-                            .tools_called
-                            .iter()
-                            .filter(|t| !t.success)
-                            .count() as u32;
+                        total_tool_errors +=
+                            tool_exec.tools_called.iter().filter(|t| !t.success).count() as u32;
 
                         if round == MAX_TOOL_ROUNDS && !tool_exec.tools_called.is_empty() {
                             tracing::warn!(
@@ -2094,7 +2227,9 @@ impl CoreRuntime {
                     // Process delegation requests from the agent's output
                     // (agents can request subagent delegation via DELEGATE: lines)
                     result = TaskResult {
-                        content: self.process_delegation_requests(&role_config.name, &result.content).await,
+                        content: self
+                            .process_delegation_requests(&role_config.name, &result.content)
+                            .await,
                         ..result
                     };
 
@@ -2134,7 +2269,8 @@ impl CoreRuntime {
                             result.token_usage.input,
                             result.token_usage.output,
                         );
-                        self.loop_controller.record_token_usage(result.token_usage.total, cost);
+                        self.loop_controller
+                            .record_token_usage(result.token_usage.total, cost);
                     }
 
                     results.push(result);
@@ -2165,9 +2301,13 @@ impl CoreRuntime {
                         gate_passed: self.last_gate_passed,
                         context_pressure: pressure,
                     };
-                    if let Some(report) = self.drift_guard.record_and_evaluate(drift_sample, Some(&result.agent_id)) {
+                    if let Some(report) = self
+                        .drift_guard
+                        .record_and_evaluate(drift_sample, Some(&result.agent_id))
+                    {
                         if let Some(action) = &report.recovery_action {
-                            self.handle_recovery_action(action, Some(&result.agent_id)).await;
+                            self.handle_recovery_action(action, Some(&result.agent_id))
+                                .await;
                         }
                     }
                     // ── End drift metrics ──────────────────────────────
@@ -2247,7 +2387,10 @@ impl CoreRuntime {
             self.evaluate_drift(None).await;
 
             // EMC: emergency consolidation when context pressure > 85%
-            let pressure = self.context_pressure.load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0;
+            let pressure = self
+                .context_pressure
+                .load(std::sync::atomic::Ordering::Relaxed) as f32
+                / 1000.0;
             if pressure > 0.85 {
                 tracing::warn!(
                     "EMC triggered: context pressure {:.1}% > 85%. Forcing consolidation.",
@@ -2257,7 +2400,9 @@ impl CoreRuntime {
                 self.set_context_pressure(0.5);
                 // Force a context reset via drift guard
                 self.drift_guard.recovery.execute_context_reset(
-                    &self.session_id.map_or("unknown".to_string(), |s| s.to_string()),
+                    &self
+                        .session_id
+                        .map_or("unknown".to_string(), |s| s.to_string()),
                     "EMC: emergency consolidation",
                     goal,
                 );
@@ -2334,10 +2479,7 @@ impl CoreRuntime {
                                     "core",
                                 );
                             } else {
-                                tracing::info!(
-                                    "Cross-model verification: {}",
-                                    verification
-                                );
+                                tracing::info!("Cross-model verification: {}", verification);
                             }
                         } else {
                             tracing::debug!("No provider available for cross-model verification");
@@ -2390,17 +2532,11 @@ impl CoreRuntime {
                             break;
                         }
                         completion::OutcomeResult::Exhausted { reason } => {
-                            tracing::warn!(
-                                "Goal exhausted: {}. Stopping loop.",
-                                reason
-                            );
+                            tracing::warn!("Goal exhausted: {}. Stopping loop.", reason);
                             break;
                         }
                         completion::OutcomeResult::NotAchieved { reason } => {
-                            tracing::info!(
-                                "Goal not yet achieved: {}. Continuing.",
-                                reason
-                            );
+                            tracing::info!("Goal not yet achieved: {}. Continuing.", reason);
                         }
                     }
                 }
@@ -2515,7 +2651,9 @@ impl CoreRuntime {
         self.propagate_session_to_memory(session_id);
         self.loop_controller.iteration = saved_iteration;
         // Restore the state machine to the saved phase (bypasses transition validation)
-        self.loop_controller.state_machine.restore_phase(saved_phase);
+        self.loop_controller
+            .state_machine
+            .restore_phase(saved_phase);
 
         // Common setup: load config, init providers, connect MCP, apply limits, register gates
         let (config, provider_router) = self.prepare_goal_run(config_path, vault).await;
@@ -2565,11 +2703,8 @@ impl CoreRuntime {
             let results_before = results.len();
 
             for role_config in &phase_agents {
-                let mut task = orchestrator::Task::new(
-                    &role_config.name,
-                    &role_config.model,
-                    &goal,
-                );
+                let mut task =
+                    orchestrator::Task::new(&role_config.name, &role_config.model, &goal);
 
                 let has_feedback = !feedback.is_empty() && role_config.name == "coder";
                 if has_feedback {
@@ -2584,7 +2719,10 @@ impl CoreRuntime {
                     } else {
                         task.context = format!("{}\n\n{}", task.context, injection);
                     }
-                    tracing::info!("Injected message into task for agent '{}'", role_config.name);
+                    tracing::info!(
+                        "Injected message into task for agent '{}'",
+                        role_config.name
+                    );
                 }
 
                 // Inject skills content (SKILL.md) into the task context
@@ -2600,7 +2738,8 @@ impl CoreRuntime {
                     .unwrap_or_else(|| {
                         orchestrator::roles::ResolvedRole::resolve(role_config, None)
                     });
-                let agent = match provider_router.resolve(self.effective_model(&role_config.model)) {
+                let agent = match provider_router.resolve(self.effective_model(&role_config.model))
+                {
                     Ok(provider) => {
                         crate::actor::roles::AgentFactory::create_with_provider_and_bus(
                             &resolved_role,
@@ -2608,9 +2747,7 @@ impl CoreRuntime {
                             self.bus.clone(),
                         )
                     }
-                    Err(_) => {
-                        crate::actor::roles::AgentFactory::create(&resolved_role)
-                    }
+                    Err(_) => crate::actor::roles::AgentFactory::create(&resolved_role),
                 };
 
                 let result = if has_feedback {
@@ -2638,7 +2775,8 @@ impl CoreRuntime {
                         result.token_usage.input,
                         result.token_usage.output,
                     );
-                    self.loop_controller.record_token_usage(result.token_usage.total, cost);
+                    self.loop_controller
+                        .record_token_usage(result.token_usage.total, cost);
                 }
 
                 // ── Drift metrics recording (resume_goal) ────────────
@@ -2657,9 +2795,13 @@ impl CoreRuntime {
                     gate_passed: self.last_gate_passed,
                     context_pressure: pressure,
                 };
-                if let Some(report) = self.drift_guard.record_and_evaluate(drift_sample, Some(&result.agent_id)) {
+                if let Some(report) = self
+                    .drift_guard
+                    .record_and_evaluate(drift_sample, Some(&result.agent_id))
+                {
                     if let Some(action) = &report.recovery_action {
-                        self.handle_recovery_action(action, Some(&result.agent_id)).await;
+                        self.handle_recovery_action(action, Some(&result.agent_id))
+                            .await;
                     }
                 }
                 // ── End drift metrics ──────────────────────────────
@@ -2692,7 +2834,10 @@ impl CoreRuntime {
             // ── Drift evaluation + EMC (resume_goal) ──────────────
             self.evaluate_drift(None).await;
 
-            let pressure = self.context_pressure.load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0;
+            let pressure = self
+                .context_pressure
+                .load(std::sync::atomic::Ordering::Relaxed) as f32
+                / 1000.0;
             if pressure > 0.85 {
                 tracing::warn!(
                     "EMC triggered (resume): context pressure {:.1}% > 85%. Forcing consolidation.",
@@ -2943,7 +3088,9 @@ impl ForgeConfig {
     /// This is the single source of truth for the mapping between the two systems.
     pub fn from_project_config(pc: praxis_shared::config::ProjectConfig) -> Self {
         // Roles: shared RoleConfig (Option fields) → orchestrator RoleConfig (with defaults)
-        let roles = pc.roles.unwrap_or_default()
+        let roles = pc
+            .roles
+            .unwrap_or_default()
             .into_iter()
             .map(|(name, shared_role)| {
                 let role = orchestrator::RoleConfig {
@@ -2962,15 +3109,19 @@ impl ForgeConfig {
             .collect();
 
         // Providers: shared ProviderConfig (Option fields) → core ProviderConfig
-        let providers = pc.providers.unwrap_or_default()
+        let providers = pc
+            .providers
+            .unwrap_or_default()
             .into_iter()
             .map(|(name, shared_provider)| {
                 let provider = ProviderConfig {
                     name: name.clone(),
-                    base_url: shared_provider.base_url
+                    base_url: shared_provider
+                        .base_url
                         .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
                     api_key_ref: shared_provider.api_key.unwrap_or_default(),
-                    default_model: shared_provider.default_model
+                    default_model: shared_provider
+                        .default_model
                         .unwrap_or_else(|| "gpt-4o".to_string()),
                 };
                 (name, provider)
@@ -2978,7 +3129,9 @@ impl ForgeConfig {
             .collect();
 
         // Goals: shared GoalConfig → orchestrator GoalConfig
-        let goals = pc.goals.unwrap_or_default()
+        let goals = pc
+            .goals
+            .unwrap_or_default()
             .into_iter()
             .map(|shared_goal| orchestrator::GoalConfig {
                 name: shared_goal.name,
@@ -2993,7 +3146,9 @@ impl ForgeConfig {
             .collect();
 
         // MCP servers: shared McpServerConfig → core McpServerConfig
-        let mcp_servers = pc.mcp_servers.unwrap_or_default()
+        let mcp_servers = pc
+            .mcp_servers
+            .unwrap_or_default()
             .into_iter()
             .map(|shared_server| McpServerConfig {
                 name: shared_server.name,
@@ -3006,13 +3161,17 @@ impl ForgeConfig {
         let limits = pc.limits.map(|shared_limits| {
             let defaults = crate::r#loop::Limits::default();
             crate::r#loop::Limits {
-                max_iterations_per_goal: shared_limits.max_iterations_per_goal
+                max_iterations_per_goal: shared_limits
+                    .max_iterations_per_goal
                     .unwrap_or(defaults.max_iterations_per_goal),
-                max_iterations_per_phase: shared_limits.max_iterations_per_phase
+                max_iterations_per_phase: shared_limits
+                    .max_iterations_per_phase
                     .unwrap_or(defaults.max_iterations_per_phase),
-                session_ttl_seconds: shared_limits.session_ttl_seconds
+                session_ttl_seconds: shared_limits
+                    .session_ttl_seconds
                     .unwrap_or(defaults.session_ttl_seconds),
-                phase_timeout_seconds: shared_limits.phase_timeout_seconds
+                phase_timeout_seconds: shared_limits
+                    .phase_timeout_seconds
                     .unwrap_or(defaults.phase_timeout_seconds),
                 cycle_detection_window: defaults.cycle_detection_window,
                 max_tokens: shared_limits.max_tokens,
@@ -3089,9 +3248,7 @@ fn get_agents_for_phase(
         machine::phase::Phase::Planning | machine::phase::Phase::Designing => {
             lookup("architect").into_iter().collect()
         }
-        machine::phase::Phase::Implementing => {
-            lookup("coder").into_iter().collect()
-        }
+        machine::phase::Phase::Implementing => lookup("coder").into_iter().collect(),
         machine::phase::Phase::Reviewing | machine::phase::Phase::Fixing => {
             let mut agents: Vec<orchestrator::RoleConfig> = Vec::new();
             if let Some(count) = parallel_reviewers.filter(|c| *c > 0) {
@@ -3109,8 +3266,11 @@ fn get_agents_for_phase(
                         "Focus on test coverage and maintainability.",
                     ];
                     let angle = angles[index as usize % angles.len()];
-                    role.system_prompt = role.system_prompt
-                        .or_else(|| Some(default_role("reviewer").system_prompt.unwrap_or_default()))
+                    role.system_prompt = role
+                        .system_prompt
+                        .or_else(|| {
+                            Some(default_role("reviewer").system_prompt.unwrap_or_default())
+                        })
                         .map(|p| format!("{}\n\nYour specific focus: {}", p, angle));
                     agents.push(role);
                 }
@@ -3121,12 +3281,8 @@ fn get_agents_for_phase(
             }
             agents
         }
-        machine::phase::Phase::Testing => {
-            lookup("tester").into_iter().collect()
-        }
-        machine::phase::Phase::SecurityScan => {
-            lookup("security").into_iter().collect()
-        }
+        machine::phase::Phase::Testing => lookup("tester").into_iter().collect(),
+        machine::phase::Phase::SecurityScan => lookup("security").into_iter().collect(),
         machine::phase::Phase::Finalizing => Vec::new(),
         _ => Vec::new(),
     }
@@ -3192,7 +3348,9 @@ fn parse_delegate_requests(output: &str) -> Vec<(String, String)> {
 /// Converts the most recent reviewer/security/tester output into a
 /// `ReviewResult` that the gate system can evaluate. Parses the agent's
 /// text output for PASS/FAIL keywords.
-fn extract_review_results(results: &[orchestrator::TaskResult]) -> Vec<machine::gate::ReviewResult> {
+fn extract_review_results(
+    results: &[orchestrator::TaskResult],
+) -> Vec<machine::gate::ReviewResult> {
     results
         .iter()
         .rev()
@@ -3308,8 +3466,14 @@ mod tests {
             praxis_shared::protocol::MessageKind::SessionHeartbeat,
             "test",
         );
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), rx1.recv()).await.expect("timeout").expect("recv error");
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), rx2.recv()).await.expect("timeout").expect("recv error");
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), rx1.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), rx2.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
     }
 
     #[tokio::test]
@@ -3337,18 +3501,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_supervisor() {
-        let supervisor = actor::Supervisor::spawn().await.expect("Failed to spawn Supervisor");
+        let supervisor = actor::Supervisor::spawn()
+            .await
+            .expect("Failed to spawn Supervisor");
 
-        let handle = actor::spawn_echo(&supervisor, "agent-1").await.expect("spawn failed");
+        let handle = actor::spawn_echo(&supervisor, "agent-1")
+            .await
+            .expect("spawn failed");
         assert_eq!(handle.name, "agent-1");
 
-        let handle2 = actor::spawn_echo(&supervisor, "agent-2").await.expect("spawn failed");
+        let handle2 = actor::spawn_echo(&supervisor, "agent-2")
+            .await
+            .expect("spawn failed");
         assert_eq!(handle2.name, "agent-2");
 
-        let response = actor::supervisor_echo_to(&supervisor, "agent-1", "test msg").await.expect("echo failed");
+        let response = actor::supervisor_echo_to(&supervisor, "agent-1", "test msg")
+            .await
+            .expect("echo failed");
         assert!(response.contains("test msg"));
 
-        let children = actor::list_children(&supervisor).await.expect("list failed");
+        let children = actor::list_children(&supervisor)
+            .await
+            .expect("list failed");
         assert_eq!(children.len(), 2);
 
         let _ = actor::shutdown_all(&supervisor).await;
@@ -3358,10 +3532,16 @@ mod tests {
     async fn test_core_runtime() {
         let runtime = CoreRuntime::new().await.expect("Failed to create runtime");
 
-        let handle = runtime.spawn_echo_agent("test-agent").await.expect("spawn failed");
+        let handle = runtime
+            .spawn_echo_agent("test-agent")
+            .await
+            .expect("spawn failed");
         assert_eq!(handle.name, "test-agent");
 
-        let response = runtime.echo_to("test-agent", "hello runtime").await.expect("echo failed");
+        let response = runtime
+            .echo_to("test-agent", "hello runtime")
+            .await
+            .expect("echo failed");
         assert!(response.contains("hello runtime"));
 
         let agents = runtime.list_agents().await.expect("list failed");
@@ -3379,8 +3559,14 @@ mod tests {
             .await
             .expect("run_goal failed");
 
-        assert!(!result.agent_results.is_empty(), "should have executed agents");
-        assert!(result.passed, "goal should pass with mock agents (all gates pass)");
+        assert!(
+            !result.agent_results.is_empty(),
+            "should have executed agents"
+        );
+        assert!(
+            result.passed,
+            "goal should pass with mock agents (all gates pass)"
+        );
 
         let _ = runtime.shutdown().await;
     }
@@ -3407,8 +3593,11 @@ mod tests {
     #[test]
     fn test_extract_review_results_pass() {
         let results = vec![orchestrator::TaskResult::success(
-            "t1", "reviewer", "reviewer",
-            "Review: PASS\nNo issues found", 100,
+            "t1",
+            "reviewer",
+            "reviewer",
+            "Review: PASS\nNo issues found",
+            100,
         )];
         let review = extract_review_results(&results);
         assert_eq!(review.len(), 1);
@@ -3418,29 +3607,44 @@ mod tests {
     #[test]
     fn test_extract_review_results_fail() {
         let results = vec![orchestrator::TaskResult::success(
-            "t1", "reviewer", "reviewer",
-            "Review: FAIL\nCritical issue found", 100,
+            "t1",
+            "reviewer",
+            "reviewer",
+            "Review: FAIL\nCritical issue found",
+            100,
         )];
         let review = extract_review_results(&results);
         assert_eq!(review.len(), 1);
         assert!(!review[0].passed, "should fail when content says FAIL");
-        assert!(!review[0].comments.is_empty(), "should have critical comments");
+        assert!(
+            !review[0].comments.is_empty(),
+            "should have critical comments"
+        );
     }
 
     #[test]
     fn test_consolidate_feedback() {
         let results = vec![
             orchestrator::TaskResult::success("t1", "coder", "coder", "code here", 100),
-            orchestrator::TaskResult::success("t2", "reviewer", "reviewer", "Fix the error handling", 100),
+            orchestrator::TaskResult::success(
+                "t2",
+                "reviewer",
+                "reviewer",
+                "Fix the error handling",
+                100,
+            ),
         ];
         let feedback = consolidate_feedback(&results);
-        assert!(feedback.contains("Fix the error handling"), "should include reviewer feedback");
+        assert!(
+            feedback.contains("Fix the error handling"),
+            "should include reviewer feedback"
+        );
     }
 
     #[tokio::test]
     async fn test_checkpoint_saved_and_loaded() {
-        let store = praxis_persistence::SqliteEventStore::in_memory()
-            .expect("Failed to create store");
+        let store =
+            praxis_persistence::SqliteEventStore::in_memory().expect("Failed to create store");
 
         let mut runtime = CoreRuntime::new()
             .await
@@ -3472,9 +3676,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_graceful_shutdown_request() {
-        let mut runtime = CoreRuntime::new()
-            .await
-            .expect("Failed to create runtime");
+        let mut runtime = CoreRuntime::new().await.expect("Failed to create runtime");
 
         let handle = runtime.shutdown_handle();
 
@@ -3497,8 +3699,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_resume_goal_no_checkpoint() {
-        let store = praxis_persistence::SqliteEventStore::in_memory()
-            .expect("Failed to create store");
+        let store =
+            praxis_persistence::SqliteEventStore::in_memory().expect("Failed to create store");
 
         let mut runtime = CoreRuntime::new()
             .await
@@ -3511,15 +3713,18 @@ mod tests {
             .await
             .expect("resume_goal failed");
 
-        assert!(result.is_none(), "should return None when no checkpoint exists");
+        assert!(
+            result.is_none(),
+            "should return None when no checkpoint exists"
+        );
 
         let _ = runtime.shutdown().await;
     }
 
     #[tokio::test]
     async fn test_resume_goal_from_checkpoint() {
-        let store = praxis_persistence::SqliteEventStore::in_memory()
-            .expect("Failed to create store");
+        let store =
+            praxis_persistence::SqliteEventStore::in_memory().expect("Failed to create store");
 
         let mut runtime = CoreRuntime::new()
             .await
@@ -3561,7 +3766,8 @@ mod tests {
 
     #[test]
     fn test_parse_delegate_requests_multiple() {
-        let output = "DELEGATE:researcher:find async patterns\nDELEGATE:explorer:grep for AgentFactory";
+        let output =
+            "DELEGATE:researcher:find async patterns\nDELEGATE:explorer:grep for AgentFactory";
         let requests = parse_delegate_requests(output);
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, "researcher");

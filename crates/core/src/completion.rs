@@ -18,18 +18,11 @@ use std::sync::Arc;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum OutcomeResult {
     /// The goal is verified complete. Evidence proves it.
-    Achieved {
-        evidence: String,
-        timestamp: String,
-    },
+    Achieved { evidence: String, timestamp: String },
     /// The goal is not yet achieved. Keep iterating.
-    NotAchieved {
-        reason: String,
-    },
+    NotAchieved { reason: String },
     /// No more options. Give up gracefully.
-    Exhausted {
-        reason: String,
-    },
+    Exhausted { reason: String },
 }
 
 impl OutcomeResult {
@@ -106,7 +99,9 @@ impl CompletionCriterion {
             "coding" | "default" | "" => Some(default_coding_criterion()),
             "manual" => Some(CompletionCriterion::new(Arc::new(ManualCompletionVerifier))),
             _ => {
-                let stagnant = s.strip_prefix("stagnant=").and_then(|n| n.parse::<u32>().ok());
+                let stagnant = s
+                    .strip_prefix("stagnant=")
+                    .and_then(|n| n.parse::<u32>().ok());
                 stagnant.map(|max| {
                     CompletionCriterion::with_stagnant_limit(Arc::new(CodingOutcomeVerifier), max)
                 })
@@ -206,13 +201,10 @@ impl OutcomeVerifier for CodingOutcomeVerifier {
             };
         }
 
-        let review_passed = results
-            .iter()
-            .filter(|r| r.role == "reviewer")
-            .all(|r| {
-                let lower = r.content.to_lowercase();
-                !lower.contains("fail")
-            });
+        let review_passed = results.iter().filter(|r| r.role == "reviewer").all(|r| {
+            let lower = r.content.to_lowercase();
+            !lower.contains("fail")
+        });
 
         if !review_passed {
             return OutcomeResult::NotAchieved {
@@ -221,15 +213,12 @@ impl OutcomeVerifier for CodingOutcomeVerifier {
         }
 
         let security_clean = if has_security {
-            results
-                .iter()
-                .filter(|r| r.role == "security")
-                .all(|r| {
-                    let lower = r.content.to_lowercase();
-                    !lower.contains("critical")
-                        || lower.contains("0 critical")
-                        || lower.contains("no critical")
-                })
+            results.iter().filter(|r| r.role == "security").all(|r| {
+                let lower = r.content.to_lowercase();
+                !lower.contains("critical")
+                    || lower.contains("0 critical")
+                    || lower.contains("no critical")
+            })
         } else {
             true
         };
@@ -241,13 +230,10 @@ impl OutcomeVerifier for CodingOutcomeVerifier {
         }
 
         let tests_pass = if has_tester {
-            results
-                .iter()
-                .filter(|r| r.role == "tester")
-                .all(|r| {
-                    let lower = r.content.to_lowercase();
-                    !lower.contains("fail")
-                })
+            results.iter().filter(|r| r.role == "tester").all(|r| {
+                let lower = r.content.to_lowercase();
+                !lower.contains("fail")
+            })
         } else {
             true
         };
@@ -260,7 +246,13 @@ impl OutcomeVerifier for CodingOutcomeVerifier {
 
         let evidence_parts: Vec<String> = results
             .iter()
-            .map(|r| format!("{}: {}", r.role, r.content.chars().take(80).collect::<String>()))
+            .map(|r| {
+                format!(
+                    "{}: {}",
+                    r.role,
+                    r.content.chars().take(80).collect::<String>()
+                )
+            })
             .collect();
 
         OutcomeResult::Achieved {
@@ -342,12 +334,7 @@ impl OutcomeVerifier for CommandOutcomeVerifier {
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(120),
-            cmd.output(),
-        )
-        .await
-        {
+        match tokio::time::timeout(std::time::Duration::from_secs(120), cmd.output()).await {
             Ok(Ok(output)) => {
                 if output.status.success() {
                     OutcomeResult::Achieved {
@@ -429,11 +416,18 @@ mod tests {
         let results = vec![
             completed("coder", "password = 'hardcoded'"),
             completed("reviewer", "Review: PASS."),
-            completed("security", "Security Scan: FAIL. Critical: hardcoded secret."),
+            completed(
+                "security",
+                "Security Scan: FAIL. Critical: hardcoded secret.",
+            ),
         ];
 
         let result = verifier.verify("build api", &results).await;
-        assert!(result.should_continue(), "should continue due to critical: {:?}", result);
+        assert!(
+            result.should_continue(),
+            "should continue due to critical: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -467,7 +461,10 @@ mod tests {
 
         // Third iteration: should become Exhausted
         let r3 = criterion.evaluate("goal", &[]).await;
-        assert!(r3.is_exhausted(), "should be exhausted after 3 stagnant iterations");
+        assert!(
+            r3.is_exhausted(),
+            "should be exhausted after 3 stagnant iterations"
+        );
     }
 
     #[tokio::test]
@@ -516,20 +513,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_verifier_success() {
-        let verifier = CommandOutcomeVerifier::new(
-            if cfg!(windows) { "exit 0" } else { "true" }.to_string(),
-        );
+        let verifier =
+            CommandOutcomeVerifier::new(if cfg!(windows) { "exit 0" } else { "true" }.to_string());
         let result = verifier.verify("goal", &[]).await;
-        assert!(result.is_achieved(), "exit 0 should be achieved: {:?}", result);
+        assert!(
+            result.is_achieved(),
+            "exit 0 should be achieved: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
     async fn test_command_verifier_failure() {
-        let verifier = CommandOutcomeVerifier::new(
-            if cfg!(windows) { "exit 1" } else { "false" }.to_string(),
-        );
+        let verifier =
+            CommandOutcomeVerifier::new(if cfg!(windows) { "exit 1" } else { "false" }.to_string());
         let result = verifier.verify("goal", &[]).await;
-        assert!(result.should_continue(), "non-zero exit should continue: {:?}", result);
+        assert!(
+            result.should_continue(),
+            "non-zero exit should continue: {:?}",
+            result
+        );
     }
 
     #[test]

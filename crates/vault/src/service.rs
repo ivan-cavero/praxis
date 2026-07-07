@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Key};
+use aes_gcm::{Aes256Gcm, Key, KeyInit, aead::Aead};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use sha2::{Digest, Sha256};
 
@@ -24,7 +24,8 @@ fn derive_key(password: &str) -> [u8; 32] {
 fn encrypt(value: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let nonce = aes_gcm::Nonce::from([0u8; 12]);
-    let ciphertext = cipher.encrypt(&nonce, value.as_bytes())
+    let ciphertext = cipher
+        .encrypt(&nonce, value.as_bytes())
         .map_err(|e| VaultError::EncryptionError(e.to_string()))?;
     // Combine IV + ciphertext and base64 encode
     let mut data = nonce.to_vec();
@@ -35,7 +36,8 @@ fn encrypt(value: &str, key: &[u8; 32]) -> Result<String, VaultError> {
 /// Decrypt a base64-encoded AES-256-GCM ciphertext.
 #[allow(deprecated)]
 fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> {
-    let data = STANDARD.decode(encrypted)
+    let data = STANDARD
+        .decode(encrypted)
         .map_err(|e| VaultError::DecryptionError(e.to_string()))?;
     if data.len() < 12 {
         return Err(VaultError::DecryptionError("Data too short".to_string()));
@@ -43,10 +45,10 @@ fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let nonce = aes_gcm::Nonce::from_slice(&data[..12]);
     let ciphertext = &data[12..];
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-    let plaintext = cipher.decrypt(nonce, ciphertext)
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|e| VaultError::DecryptionError(e.to_string()))?;
-    String::from_utf8(plaintext)
-        .map_err(|e| VaultError::DecryptionError(e.to_string()))
+    String::from_utf8(plaintext).map_err(|e| VaultError::DecryptionError(e.to_string()))
 }
 
 /// Vault service — secure credential storage with AES-256-GCM encryption.
@@ -105,22 +107,20 @@ impl VaultService {
             return Ok(HashMap::new());
         }
 
-        let content = std::fs::read_to_string(&self.file_path)
-            .map_err(|e| VaultError::FileReadError {
+        let content =
+            std::fs::read_to_string(&self.file_path).map_err(|e| VaultError::FileReadError {
                 path: self.file_path.display().to_string(),
                 reason: e.to_string(),
             })?;
 
-        let entries: HashMap<String, String> = serde_json::from_str(&content)
-            .map_err(|e| VaultError::ParseError(e.to_string()))?;
+        let entries: HashMap<String, String> =
+            serde_json::from_str(&content).map_err(|e| VaultError::ParseError(e.to_string()))?;
 
         let mut store = HashMap::new();
         for (key, value) in entries {
             let resolved = if self.encrypted {
-                let master_key = self.master_key.as_ref()
-                    .ok_or(VaultError::NoMasterKey)?;
-                decrypt(&value, master_key)
-                    .unwrap_or_else(|_| value) // If decryption fails, store raw
+                let master_key = self.master_key.as_ref().ok_or(VaultError::NoMasterKey)?;
+                decrypt(&value, master_key).unwrap_or_else(|_| value) // If decryption fails, store raw
             } else {
                 value
             };
@@ -133,17 +133,16 @@ impl VaultService {
     /// Persist credentials to disk.
     fn persist(&self, store: &HashMap<String, String>) -> Result<(), VaultError> {
         if let Some(parent) = self.file_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| VaultError::FileWriteError {
-                    path: self.file_path.display().to_string(),
-                    reason: e.to_string(),
-                })?;
+            std::fs::create_dir_all(parent).map_err(|e| VaultError::FileWriteError {
+                path: self.file_path.display().to_string(),
+                reason: e.to_string(),
+            })?;
         }
 
         let entries: HashMap<String, String> = if self.encrypted {
-            let key = self.master_key.as_ref()
-                .ok_or(VaultError::NoMasterKey)?;
-            store.iter()
+            let key = self.master_key.as_ref().ok_or(VaultError::NoMasterKey)?;
+            store
+                .iter()
                 .map(|(k, v)| {
                     let enc = encrypt(v, key).unwrap_or_else(|_| v.clone());
                     (k.clone(), enc)
@@ -156,18 +155,20 @@ impl VaultService {
         let json = serde_json::to_string_pretty(&entries)
             .map_err(|e| VaultError::SerializationError(e.to_string()))?;
 
-        std::fs::write(&self.file_path, json)
-            .map_err(|e| VaultError::FileWriteError {
-                path: self.file_path.display().to_string(),
-                reason: e.to_string(),
-            })?;
+        std::fs::write(&self.file_path, json).map_err(|e| VaultError::FileWriteError {
+            path: self.file_path.display().to_string(),
+            reason: e.to_string(),
+        })?;
 
         Ok(())
     }
 
     /// Store a credential.
     pub fn set(&self, key: &str, value: &str) -> Result<(), VaultError> {
-        let mut store = self.store.lock().map_err(|e| VaultError::LockError(e.to_string()))?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| VaultError::LockError(e.to_string()))?;
         store.insert(key.to_string(), value.to_string());
         self.persist(&store)?;
         Ok(())
@@ -175,13 +176,19 @@ impl VaultService {
 
     /// Retrieve a credential.
     pub fn get(&self, key: &str) -> Result<Option<String>, VaultError> {
-        let store = self.store.lock().map_err(|e| VaultError::LockError(e.to_string()))?;
+        let store = self
+            .store
+            .lock()
+            .map_err(|e| VaultError::LockError(e.to_string()))?;
         Ok(store.get(key).cloned())
     }
 
     /// Delete a credential.
     pub fn delete(&self, key: &str) -> Result<(), VaultError> {
-        let mut store = self.store.lock().map_err(|e| VaultError::LockError(e.to_string()))?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| VaultError::LockError(e.to_string()))?;
         store.remove(key);
         self.persist(&store)?;
         Ok(())
@@ -189,13 +196,19 @@ impl VaultService {
 
     /// List all stored credential keys.
     pub fn list_keys(&self) -> Result<Vec<String>, VaultError> {
-        let store = self.store.lock().map_err(|e| VaultError::LockError(e.to_string()))?;
+        let store = self
+            .store
+            .lock()
+            .map_err(|e| VaultError::LockError(e.to_string()))?;
         Ok(store.keys().cloned().collect())
     }
 
     /// Clear all credentials.
     pub fn clear(&self) -> Result<(), VaultError> {
-        let mut store = self.store.lock().map_err(|e| VaultError::LockError(e.to_string()))?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| VaultError::LockError(e.to_string()))?;
         store.clear();
         self.persist(&store)?;
         Ok(())
@@ -204,7 +217,10 @@ impl VaultService {
     /// Initialize the vault by loading from disk.
     pub fn init(&self) -> Result<(), VaultError> {
         let store = self.load()?;
-        let mut guard = self.store.lock().map_err(|e| VaultError::LockError(e.to_string()))?;
+        let mut guard = self
+            .store
+            .lock()
+            .map_err(|e| VaultError::LockError(e.to_string()))?;
         *guard = store;
         Ok(())
     }

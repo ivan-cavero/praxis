@@ -5,7 +5,7 @@
 //! - Falls back to a default embedding model if the provider doesn't support
 //!   embeddings (e.g., Anthropic, Gemini without embedding API).
 
-    use praxis_agent_traits::prelude::LLMProvider;
+use praxis_agent_traits::prelude::LLMProvider;
 use std::sync::Arc;
 
 /// Default embedding dimension (OpenAI text-embedding-3-small).
@@ -71,7 +71,9 @@ impl EmbeddingService {
 
         tracing::info!(
             "EmbeddingService initialized (supports_embeddings={}, max_batch={}, cache={})",
-            supports_embeddings, max_batch_size, max_cache_entries,
+            supports_embeddings,
+            max_batch_size,
+            max_cache_entries,
         );
 
         Self {
@@ -99,9 +101,7 @@ impl EmbeddingService {
         }
 
         // Generate embedding
-        let result = self
-            .embed_batch_impl(&[text.to_string()])
-            .await;
+        let result = self.embed_batch_impl(&[text.to_string()]).await;
 
         match result {
             Ok(mut vectors) if !vectors.is_empty() => {
@@ -156,10 +156,7 @@ impl EmbeddingService {
 
             // Fetch uncached texts in a single API call
             if !uncached.is_empty() {
-                let uncached_texts: Vec<String> = uncached
-                    .iter()
-                    .map(|(_, t)| t.clone())
-                    .collect();
+                let uncached_texts: Vec<String> = uncached.iter().map(|(_, t)| t.clone()).collect();
 
                 if let Ok(vectors) = self.embed_batch_impl(&uncached_texts).await {
                     // Cache and insert results
@@ -234,7 +231,9 @@ impl EmbeddingService {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatResponse, ModelCost, StreamReceiver};
+    use praxis_agent_traits::provider::{
+        ChatConfig, ChatMessage, ChatResponse, ModelCost, StreamReceiver,
+    };
     use praxis_shared::types::ModelInfo;
     use std::sync::Arc;
 
@@ -245,27 +244,40 @@ mod tests {
 
     #[async_trait]
     impl LLMProvider for MockEmbedProvider {
-        async fn chat(&self, _messages: &[ChatMessage], _config: &ChatConfig) -> praxis_agent_traits::Result<ChatResponse> {
+        async fn chat(
+            &self,
+            _messages: &[ChatMessage],
+            _config: &ChatConfig,
+        ) -> praxis_agent_traits::Result<ChatResponse> {
             unimplemented!()
         }
 
-        async fn stream(&self, _messages: &[ChatMessage], _config: &ChatConfig) -> praxis_agent_traits::Result<StreamReceiver> {
+        async fn stream(
+            &self,
+            _messages: &[ChatMessage],
+            _config: &ChatConfig,
+        ) -> praxis_agent_traits::Result<StreamReceiver> {
             unimplemented!()
         }
 
         async fn embed(&self, input: &[String]) -> praxis_agent_traits::Result<Vec<Vec<f32>>> {
-            Ok(input.iter().map(|s| {
-                let mut v = vec![0.0; self.dimension];
-                let bytes = s.as_bytes();
-                for (i, b) in bytes.iter().enumerate() {
-                    v[i % self.dimension] += *b as f32 / 255.0;
-                }
-                let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-                if norm > 0.0 {
-                    for x in &mut v { *x /= norm; }
-                }
-                v
-            }).collect())
+            Ok(input
+                .iter()
+                .map(|s| {
+                    let mut v = vec![0.0; self.dimension];
+                    let bytes = s.as_bytes();
+                    for (i, b) in bytes.iter().enumerate() {
+                        v[i % self.dimension] += *b as f32 / 255.0;
+                    }
+                    let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+                    if norm > 0.0 {
+                        for x in &mut v {
+                            *x /= norm;
+                        }
+                    }
+                    v
+                })
+                .collect())
         }
 
         fn count_tokens(&self, text: &str) -> usize {
@@ -292,7 +304,9 @@ mod tests {
             }
         }
 
-        fn provider_name(&self) -> &str { "mock" }
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
     }
 
     #[tokio::test]

@@ -183,30 +183,57 @@ mod ollama_tests {
 
 #[cfg(test)]
 mod router_tests {
-    use crate::{ProviderRouter, MockProvider};
+    use crate::{MockProvider, ProviderRouter};
     use praxis_agent_traits::provider::ModelTier;
     use std::sync::Arc;
 
     #[test]
     fn test_router_model_detection_comprehensive() {
         // OpenAI
-        assert_eq!(crate::ProviderRouter::detect_provider("gpt-4o"), Some("openai".to_string()));
-        assert_eq!(crate::ProviderRouter::detect_provider("gpt-4o-mini"), Some("openai".to_string()));
-        assert_eq!(crate::ProviderRouter::detect_provider("text-embedding-3-small"), Some("openai".to_string()));
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("gpt-4o"),
+            Some("openai".to_string())
+        );
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("gpt-4o-mini"),
+            Some("openai".to_string())
+        );
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("text-embedding-3-small"),
+            Some("openai".to_string())
+        );
 
         // Anthropic
-        assert_eq!(crate::ProviderRouter::detect_provider("claude-sonnet-4-20250514"), Some("anthropic".to_string()));
-        assert_eq!(crate::ProviderRouter::detect_provider("claude-3-opus-20240229"), Some("anthropic".to_string()));
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("claude-sonnet-4-20250514"),
+            Some("anthropic".to_string())
+        );
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("claude-3-opus-20240229"),
+            Some("anthropic".to_string())
+        );
 
         // Gemini
-        assert_eq!(crate::ProviderRouter::detect_provider("gemini-2.5-pro"), Some("gemini".to_string()));
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("gemini-2.5-pro"),
+            Some("gemini".to_string())
+        );
 
         // Ollama
-        assert_eq!(crate::ProviderRouter::detect_provider("llama-3.2"), Some("ollama".to_string()));
-        assert_eq!(crate::ProviderRouter::detect_provider("mistral-7b"), Some("ollama".to_string()));
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("llama-3.2"),
+            Some("ollama".to_string())
+        );
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("mistral-7b"),
+            Some("ollama".to_string())
+        );
 
         // Unknown
-        assert_eq!(crate::ProviderRouter::detect_provider("unknown-model"), None);
+        assert_eq!(
+            crate::ProviderRouter::detect_provider("unknown-model"),
+            None
+        );
     }
 
     #[tokio::test]
@@ -221,7 +248,10 @@ mod router_tests {
         router.register("anthropic", anthropic, ModelTier::Capable);
 
         assert_eq!(router.tier_for("gpt-4o"), Some(ModelTier::Balanced));
-        assert_eq!(router.tier_for("claude-sonnet-4-20250514"), Some(ModelTier::Capable));
+        assert_eq!(
+            router.tier_for("claude-sonnet-4-20250514"),
+            Some(ModelTier::Capable)
+        );
         assert_eq!(router.tier_for("unknown"), None);
     }
 

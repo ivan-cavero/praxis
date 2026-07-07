@@ -93,7 +93,9 @@ impl QdrantBackend {
         if let Some(key) = &self.api_key {
             builder = builder.api_key(key.clone());
         }
-        builder.build().map_err(|e| format!("Qdrant connection failed: {}", e))
+        builder
+            .build()
+            .map_err(|e| format!("Qdrant connection failed: {}", e))
     }
 
     /// Ensure the collection exists with the right vector size and distance.
@@ -174,8 +176,8 @@ impl SqliteBackend {
     /// Upsert a single memory chunk.
     pub fn upsert_chunk(&self, chunk: &MemoryChunk) -> Result<(), String> {
         let conn = self.pool.get().map_err(|e| format!("Pool error: {}", e))?;
-        let embedding_bytes =
-            serde_json::to_vec(&chunk.embedding).map_err(|e| format!("Serialize embedding: {}", e))?;
+        let embedding_bytes = serde_json::to_vec(&chunk.embedding)
+            .map_err(|e| format!("Serialize embedding: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO episodic_chunks \
              (id, content, embedding, session_id, project_id, agent_id, chunk_type, timestamp, token_count) \
@@ -210,7 +212,14 @@ impl SqliteBackend {
             .query_map(rusqlite::params![], |row| {
                 let embedding: Vec<f32> = serde_json::from_slice(
                     row.get::<_, String>("embedding")?.as_bytes(),
-                ).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
+                )
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
 
                 let chunk_type_str: String = row.get("chunk_type")?;
                 let chunk_type = match chunk_type_str.as_str() {
@@ -240,9 +249,7 @@ impl SqliteBackend {
             })
             .map_err(|e| format!("SQLite query error: {}", e))?;
 
-        let chunks: Vec<MemoryChunk> = rows
-            .filter_map(|r| r.ok())
-            .collect();
+        let chunks: Vec<MemoryChunk> = rows.filter_map(|r| r.ok()).collect();
 
         Ok(chunks)
     }
@@ -389,13 +396,34 @@ impl EpisodicMemory {
         let client = qdrant.build_client().await?;
 
         let payload: std::collections::HashMap<String, serde_json::Value> = [
-            ("session_id".to_string(), serde_json::Value::String(chunk.metadata.session_id.clone())),
-            ("project_id".to_string(), serde_json::Value::String(chunk.metadata.project_id.clone())),
-            ("agent_id".to_string(), serde_json::Value::String(chunk.metadata.agent_id.clone())),
-            ("chunk_type".to_string(), serde_json::Value::String(format!("{:?}", chunk.metadata.chunk_type))),
-            ("timestamp".to_string(), serde_json::Value::String(chunk.metadata.timestamp.clone())),
-            ("token_count".to_string(), serde_json::json!(chunk.metadata.token_count)),
-            ("content".to_string(), serde_json::Value::String(chunk.content.clone())),
+            (
+                "session_id".to_string(),
+                serde_json::Value::String(chunk.metadata.session_id.clone()),
+            ),
+            (
+                "project_id".to_string(),
+                serde_json::Value::String(chunk.metadata.project_id.clone()),
+            ),
+            (
+                "agent_id".to_string(),
+                serde_json::Value::String(chunk.metadata.agent_id.clone()),
+            ),
+            (
+                "chunk_type".to_string(),
+                serde_json::Value::String(format!("{:?}", chunk.metadata.chunk_type)),
+            ),
+            (
+                "timestamp".to_string(),
+                serde_json::Value::String(chunk.metadata.timestamp.clone()),
+            ),
+            (
+                "token_count".to_string(),
+                serde_json::json!(chunk.metadata.token_count),
+            ),
+            (
+                "content".to_string(),
+                serde_json::Value::String(chunk.content.clone()),
+            ),
         ]
         .into_iter()
         .collect();
@@ -403,7 +431,10 @@ impl EpisodicMemory {
         let point = PointStruct::new(chunk.id.clone(), chunk.embedding.clone(), payload);
 
         client
-            .upsert_points(UpsertPointsBuilder::new(qdrant.collection.clone(), vec![point]))
+            .upsert_points(UpsertPointsBuilder::new(
+                qdrant.collection.clone(),
+                vec![point],
+            ))
             .await
             .map_err(|e| format!("Qdrant upsert failed: {}", e))?;
 
@@ -428,7 +459,11 @@ impl EpisodicMemory {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }
@@ -470,7 +505,11 @@ impl EpisodicMemory {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }
@@ -506,7 +545,11 @@ impl EpisodicMemory {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }
@@ -519,7 +562,10 @@ impl EpisodicMemory {
         session_filter: Option<&str>,
         project_filter: Option<&str>,
     ) -> Result<Vec<SearchResult>, String> {
-        let qdrant = self.qdrant.as_ref().ok_or_else(|| "No Qdrant backend configured".to_string())?;
+        let qdrant = self
+            .qdrant
+            .as_ref()
+            .ok_or_else(|| "No Qdrant backend configured".to_string())?;
         let client = qdrant.build_client().await?;
 
         use qdrant_client::qdrant::{Condition, Filter, QueryPointsBuilder};
@@ -618,7 +664,11 @@ impl EpisodicMemory {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }
@@ -668,14 +718,14 @@ impl EpisodicMemory {
             has_qdrant: self.qdrant.is_some(),
             has_sqlite: self.sqlite.is_some(),
             has_embedding_service: self.embedding_service.is_some(),
-            by_type: self.chunks.iter().fold(
-                std::collections::HashMap::new(),
-                |mut acc, c| {
+            by_type: self
+                .chunks
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, c| {
                     *acc.entry(format!("{:?}", c.metadata.chunk_type))
                         .or_insert(0) += 1;
                     acc
-                },
-            ),
+                }),
         }
     }
 
@@ -783,35 +833,39 @@ mod tests {
     async fn test_search_text() {
         let mut memory = EpisodicMemory::new(10);
 
-        memory.store(MemoryChunk {
-            id: "1".to_string(),
-            content: "Rust is a systems programming language".to_string(),
-            embedding: vec![],
-            metadata: ChunkMetadata {
-                session_id: "s1".to_string(),
-                project_id: "p1".to_string(),
-                agent_id: "a1".to_string(),
-                chunk_type: ChunkType::Research,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                token_count: 10,
-            },
-            score: None,
-        }).await;
+        memory
+            .store(MemoryChunk {
+                id: "1".to_string(),
+                content: "Rust is a systems programming language".to_string(),
+                embedding: vec![],
+                metadata: ChunkMetadata {
+                    session_id: "s1".to_string(),
+                    project_id: "p1".to_string(),
+                    agent_id: "a1".to_string(),
+                    chunk_type: ChunkType::Research,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    token_count: 10,
+                },
+                score: None,
+            })
+            .await;
 
-        memory.store(MemoryChunk {
-            id: "2".to_string(),
-            content: "Python is great for data science".to_string(),
-            embedding: vec![],
-            metadata: ChunkMetadata {
-                session_id: "s1".to_string(),
-                project_id: "p1".to_string(),
-                agent_id: "a1".to_string(),
-                chunk_type: ChunkType::Research,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                token_count: 8,
-            },
-            score: None,
-        }).await;
+        memory
+            .store(MemoryChunk {
+                id: "2".to_string(),
+                content: "Python is great for data science".to_string(),
+                embedding: vec![],
+                metadata: ChunkMetadata {
+                    session_id: "s1".to_string(),
+                    project_id: "p1".to_string(),
+                    agent_id: "a1".to_string(),
+                    chunk_type: ChunkType::Research,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    token_count: 8,
+                },
+                score: None,
+            })
+            .await;
 
         let results = memory.search_text("Rust programming", 5);
         assert_eq!(results.len(), 1);
@@ -824,20 +878,22 @@ mod tests {
         let mut memory = EpisodicMemory::new(3);
 
         for i in 0..5 {
-            memory.store(MemoryChunk {
-                id: i.to_string(),
-                content: format!("Chunk {}", i),
-                embedding: vec![i as f32],
-                metadata: ChunkMetadata {
-                    session_id: "s1".to_string(),
-                    project_id: "p1".to_string(),
-                    agent_id: "a1".to_string(),
-                    chunk_type: ChunkType::Conversation,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    token_count: 5,
-                },
-                score: None,
-            }).await;
+            memory
+                .store(MemoryChunk {
+                    id: i.to_string(),
+                    content: format!("Chunk {}", i),
+                    embedding: vec![i as f32],
+                    metadata: ChunkMetadata {
+                        session_id: "s1".to_string(),
+                        project_id: "p1".to_string(),
+                        agent_id: "a1".to_string(),
+                        chunk_type: ChunkType::Conversation,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        token_count: 5,
+                    },
+                    score: None,
+                })
+                .await;
         }
 
         assert_eq!(memory.count(), 3);
@@ -863,20 +919,26 @@ mod tests {
         let mut memory = EpisodicMemory::new(10);
 
         for i in 0..5 {
-            memory.store(MemoryChunk {
-                id: i.to_string(),
-                content: format!("Chunk {}", i),
-                embedding: vec![],
-                metadata: ChunkMetadata {
-                    session_id: if i < 3 { "s1".to_string() } else { "s2".to_string() },
-                    project_id: "p1".to_string(),
-                    agent_id: "a1".to_string(),
-                    chunk_type: ChunkType::Conversation,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    token_count: 5,
-                },
-                score: None,
-            }).await;
+            memory
+                .store(MemoryChunk {
+                    id: i.to_string(),
+                    content: format!("Chunk {}", i),
+                    embedding: vec![],
+                    metadata: ChunkMetadata {
+                        session_id: if i < 3 {
+                            "s1".to_string()
+                        } else {
+                            "s2".to_string()
+                        },
+                        project_id: "p1".to_string(),
+                        agent_id: "a1".to_string(),
+                        chunk_type: ChunkType::Conversation,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        token_count: 5,
+                    },
+                    score: None,
+                })
+                .await;
         }
 
         let s1_chunks = memory.by_session("s1");
@@ -886,51 +948,83 @@ mod tests {
     #[tokio::test]
     async fn test_auto_embed() {
         use crate::EmbeddingService;
-        use praxis_agent_traits::prelude::LLMProvider;
-        use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatResponse, ModelCost, StreamReceiver};
-        use praxis_shared::types::ModelInfo;
         use async_trait::async_trait;
+        use praxis_agent_traits::prelude::LLMProvider;
+        use praxis_agent_traits::provider::{
+            ChatConfig, ChatMessage, ChatResponse, ModelCost, StreamReceiver,
+        };
+        use praxis_shared::types::ModelInfo;
 
         struct MockProvider;
 
         #[async_trait]
         impl LLMProvider for MockProvider {
-            async fn chat(&self, _: &[ChatMessage], _: &ChatConfig) -> praxis_agent_traits::Result<ChatResponse> {
+            async fn chat(
+                &self,
+                _: &[ChatMessage],
+                _: &ChatConfig,
+            ) -> praxis_agent_traits::Result<ChatResponse> {
                 unimplemented!()
             }
-            async fn stream(&self, _: &[ChatMessage], _: &ChatConfig) -> praxis_agent_traits::Result<StreamReceiver> {
+            async fn stream(
+                &self,
+                _: &[ChatMessage],
+                _: &ChatConfig,
+            ) -> praxis_agent_traits::Result<StreamReceiver> {
                 unimplemented!()
             }
             async fn embed(&self, input: &[String]) -> praxis_agent_traits::Result<Vec<Vec<f32>>> {
-                Ok(input.iter().map(|s| {
-                    let mut v = vec![0.0; 4];
-                    let bytes = s.as_bytes();
-                    for (i, b) in bytes.iter().enumerate() {
-                        v[i % 4] += *b as f32 / 255.0;
-                    }
-                    let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-                    if norm > 0.0 { for x in &mut v { *x /= norm; } }
-                    v
-                }).collect())
+                Ok(input
+                    .iter()
+                    .map(|s| {
+                        let mut v = vec![0.0; 4];
+                        let bytes = s.as_bytes();
+                        for (i, b) in bytes.iter().enumerate() {
+                            v[i % 4] += *b as f32 / 255.0;
+                        }
+                        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+                        if norm > 0.0 {
+                            for x in &mut v {
+                                *x /= norm;
+                            }
+                        }
+                        v
+                    })
+                    .collect())
             }
-            fn count_tokens(&self, text: &str) -> usize { text.len() / 4 }
+            fn count_tokens(&self, text: &str) -> usize {
+                text.len() / 4
+            }
             fn model_info(&self) -> ModelInfo {
-                ModelInfo { name: "mock".into(), provider: "mock".into(), context_window: 128000, hard_limit_pct: 0.7, max_output_tokens: 4096, supports_streaming: true, supports_embeddings: true }
+                ModelInfo {
+                    name: "mock".into(),
+                    provider: "mock".into(),
+                    context_window: 128000,
+                    hard_limit_pct: 0.7,
+                    max_output_tokens: 4096,
+                    supports_streaming: true,
+                    supports_embeddings: true,
+                }
             }
             fn model_cost(&self) -> ModelCost {
-                ModelCost { per_input_token: 0.0, per_output_token: 0.0, currency: "USD".into() }
+                ModelCost {
+                    per_input_token: 0.0,
+                    per_output_token: 0.0,
+                    currency: "USD".into(),
+                }
             }
-            fn provider_name(&self) -> &str { "mock" }
+            fn provider_name(&self) -> &str {
+                "mock"
+            }
         }
 
         let embedding_service = Arc::new(EmbeddingService::new(Arc::new(MockProvider), 10, 100));
-        let mut memory = EpisodicMemory::new(10)
-            .with_embedding_service(embedding_service);
+        let mut memory = EpisodicMemory::new(10).with_embedding_service(embedding_service);
 
         let chunk = MemoryChunk {
             id: "auto-1".to_string(),
             content: "Auto-embedded chunk test".to_string(),
-            embedding: vec![],  // Empty — should be auto-filled
+            embedding: vec![], // Empty — should be auto-filled
             metadata: ChunkMetadata {
                 session_id: "s1".to_string(),
                 project_id: "p1".to_string(),
@@ -944,7 +1038,10 @@ mod tests {
 
         memory.store(chunk).await;
         let stored = &memory.chunks[0];
-        assert!(!stored.embedding.is_empty(), "Embedding should be auto-generated");
+        assert!(
+            !stored.embedding.is_empty(),
+            "Embedding should be auto-generated"
+        );
         assert_eq!(stored.embedding.len(), 4);
     }
 

@@ -2,22 +2,22 @@
 //!
 //! Each provider implements the `LLMProvider` trait from agent-traits.
 
-pub mod openai;
 pub mod anthropic;
 pub mod gemini;
-pub mod ollama;
-pub mod openai_compat;
 pub mod mock;
+pub mod ollama;
+pub mod openai;
+pub mod openai_compat;
 pub mod router;
 
 #[cfg(test)]
 mod tests;
 
-pub use mock::MockProvider;
-pub use openai::OpenAIProvider;
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
+pub use mock::MockProvider;
 pub use ollama::OllamaProvider;
+pub use openai::OpenAIProvider;
 pub use router::ProviderRouter;
 
 // Re-export key types from agent-traits for convenience

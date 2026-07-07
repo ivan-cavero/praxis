@@ -2,7 +2,9 @@
 //!
 //! Handles server lifecycle: connect, negotiate, list tools, call tools, disconnect.
 
-use crate::protocol::initialize::{build_initialize_request, parse_server_capabilities, ClientInfo, ServerCapabilities};
+use crate::protocol::initialize::{
+    ClientInfo, ServerCapabilities, build_initialize_request, parse_server_capabilities,
+};
 use crate::transport::stdio::StdioTransport;
 use std::collections::HashMap;
 
@@ -42,8 +44,18 @@ impl McpHost {
     }
 
     /// Connect to an MCP server and negotiate capabilities.
-    pub async fn connect_server(&mut self, name: &str, command: &str, args: &[String]) -> Result<(), String> {
-        tracing::info!("Connecting to MCP server '{}' ({} {:?})", name, command, args);
+    pub async fn connect_server(
+        &mut self,
+        name: &str,
+        command: &str,
+        args: &[String],
+    ) -> Result<(), String> {
+        tracing::info!(
+            "Connecting to MCP server '{}' ({} {:?})",
+            name,
+            command,
+            args
+        );
 
         // Spawn process and connect
         let mut transport = StdioTransport::connect(command, args).await?;
@@ -59,7 +71,8 @@ impl McpHost {
         // Send initialized notification
         transport.notify("notifications/initialized", None).await?;
 
-        tracing::info!("MCP server '{}' connected, capabilities: tools={}, resources={}, prompts={}",
+        tracing::info!(
+            "MCP server '{}' connected, capabilities: tools={}, resources={}, prompts={}",
             name,
             capabilities.tools.is_some(),
             capabilities.resources.is_some(),
@@ -68,7 +81,9 @@ impl McpHost {
 
         // List tools if server supports them
         let tools = if capabilities.tools.is_some() {
-            self.list_tools_from_server(&mut transport).await.unwrap_or_default()
+            self.list_tools_from_server(&mut transport)
+                .await
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -85,42 +100,66 @@ impl McpHost {
     }
 
     /// List tools from a connected server.
-    async fn list_tools_from_server(&self, transport: &mut StdioTransport) -> Result<Vec<McpTool>, String> {
+    async fn list_tools_from_server(
+        &self,
+        transport: &mut StdioTransport,
+    ) -> Result<Vec<McpTool>, String> {
         let response = transport.request("tools/list", None).await?;
 
         let tools_value = response.result.ok_or("No result in tools/list")?;
-        let tools_array = tools_value.get("tools")
+        let tools_array = tools_value
+            .get("tools")
             .and_then(|v| v.as_array())
             .ok_or("No tools array in result")?;
 
-        let tools: Vec<McpTool> = tools_array.iter().filter_map(|tool| {
-            let name = tool.get("name")?.as_str()?.to_string();
-            let description = tool.get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let input_schema = tool.get("inputSchema").cloned().unwrap_or(serde_json::json!({}));
+        let tools: Vec<McpTool> = tools_array
+            .iter()
+            .filter_map(|tool| {
+                let name = tool.get("name")?.as_str()?.to_string();
+                let description = tool
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input_schema = tool
+                    .get("inputSchema")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
 
-            Some(McpTool {
-                name,
-                description,
-                input_schema,
-                server_name: String::new(), // Will be set by caller
+                Some(McpTool {
+                    name,
+                    description,
+                    input_schema,
+                    server_name: String::new(), // Will be set by caller
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(tools)
     }
 
     /// Call a tool on a specific server.
-    pub async fn call_tool(&mut self, server_name: &str, tool_name: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
-        let server = self.servers.get_mut(server_name)
+    pub async fn call_tool(
+        &mut self,
+        server_name: &str,
+        tool_name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let server = self
+            .servers
+            .get_mut(server_name)
             .ok_or_else(|| format!("Server '{}' not found", server_name))?;
 
-        let response = server.transport.request("tools/call", Some(serde_json::json!({
-            "name": tool_name,
-            "arguments": args,
-        }))).await?;
+        let response = server
+            .transport
+            .request(
+                "tools/call",
+                Some(serde_json::json!({
+                    "name": tool_name,
+                    "arguments": args,
+                })),
+            )
+            .await?;
 
         if let Some(error) = response.error {
             return Err(format!("Tool error: {}", error.message));
@@ -131,21 +170,24 @@ impl McpHost {
 
     /// Get all tools from all connected servers.
     pub fn all_tools(&self) -> Vec<McpTool> {
-        self.servers.values()
+        self.servers
+            .values()
             .flat_map(|s| s.tools.iter().cloned())
             .collect()
     }
 
     /// Get tools from a specific server.
     pub fn tools_for(&self, server_name: &str) -> Vec<McpTool> {
-        self.servers.get(server_name)
+        self.servers
+            .get(server_name)
             .map(|s| s.tools.clone())
             .unwrap_or_default()
     }
 
     /// List connected servers.
     pub fn list_servers(&self) -> Vec<(String, Vec<String>)> {
-        self.servers.iter()
+        self.servers
+            .iter()
             .map(|(name, server)| {
                 let tool_names: Vec<String> = server.tools.iter().map(|t| t.name.clone()).collect();
                 (name.clone(), tool_names)

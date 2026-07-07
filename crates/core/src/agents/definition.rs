@@ -50,11 +50,21 @@ pub struct AgentFrontmatter {
     pub can_spawn: Vec<String>,
 }
 
-fn default_model() -> String { "gpt-5".to_string() }
-fn default_temperature() -> f32 { 0.3 }
-fn default_max_tokens() -> u32 { 4096 }
-fn default_max_turns() -> u32 { 25 }
-fn default_max_depth() -> u8 { 0 }
+fn default_model() -> String {
+    "gpt-5".to_string()
+}
+fn default_temperature() -> f32 {
+    0.3
+}
+fn default_max_tokens() -> u32 {
+    4096
+}
+fn default_max_turns() -> u32 {
+    25
+}
+fn default_max_depth() -> u8 {
+    0
+}
 
 impl Default for AgentFrontmatter {
     fn default() -> Self {
@@ -84,13 +94,27 @@ pub struct AgentDefinition {
 }
 
 impl AgentDefinition {
-    pub fn name(&self) -> &str { &self.frontmatter.name }
-    pub fn model(&self) -> &str { &self.frontmatter.model }
-    pub fn system_prompt(&self) -> &str { &self.system_prompt }
-    pub fn tools(&self) -> &[String] { &self.frontmatter.tools }
-    pub fn can_spawn(&self) -> &[String] { &self.frontmatter.can_spawn }
-    pub fn max_depth(&self) -> u8 { self.frontmatter.max_depth }
-    pub fn max_turns(&self) -> u32 { self.frontmatter.max_turns }
+    pub fn name(&self) -> &str {
+        &self.frontmatter.name
+    }
+    pub fn model(&self) -> &str {
+        &self.frontmatter.model
+    }
+    pub fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
+    pub fn tools(&self) -> &[String] {
+        &self.frontmatter.tools
+    }
+    pub fn can_spawn(&self) -> &[String] {
+        &self.frontmatter.can_spawn
+    }
+    pub fn max_depth(&self) -> u8 {
+        self.frontmatter.max_depth
+    }
+    pub fn max_turns(&self) -> u32 {
+        self.frontmatter.max_turns
+    }
 
     /// Can this agent delegate to subagents?
     pub fn can_delegate(&self) -> bool {
@@ -211,7 +235,10 @@ mod tests {
     #[test]
     fn test_parse_missing_delimiters() {
         let md = "name: test\nYou are a test.";
-        assert!(matches!(parse_agent_md(md), Err(ParseError::MissingDelimiters)));
+        assert!(matches!(
+            parse_agent_md(md),
+            Err(ParseError::MissingDelimiters)
+        ));
     }
 
     #[test]
@@ -229,9 +256,13 @@ mod tests {
     #[test]
     fn test_all_builtin_agents_parse() {
         for (name, content) in BUILTIN_AGENTS {
-            let def = parse_agent_md(content).unwrap_or_else(|e| panic!("built-in agent '{name}' failed to parse: {e}"));
+            let def = parse_agent_md(content)
+                .unwrap_or_else(|e| panic!("built-in agent '{name}' failed to parse: {e}"));
             assert_eq!(def.name(), *name, "built-in agent name mismatch");
-            assert!(!def.system_prompt().is_empty(), "built-in agent '{name}' has empty system prompt");
+            assert!(
+                !def.system_prompt().is_empty(),
+                "built-in agent '{name}' has empty system prompt"
+            );
         }
     }
 

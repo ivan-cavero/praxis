@@ -20,7 +20,9 @@ impl OllamaProvider {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(300))
             .build()
-            .map_err(|error| crate::ProviderInitError(format!("Failed to build HTTP client: {error}")))?;
+            .map_err(|error| {
+                crate::ProviderInitError(format!("Failed to build HTTP client: {error}"))
+            })?;
 
         Ok(Self {
             client,
@@ -43,15 +45,17 @@ impl LLMProvider for OllamaProvider {
     ) -> crate::Result<ChatResponse> {
         let ollama_messages: Vec<serde_json::Value> = messages
             .iter()
-            .map(|m| serde_json::json!({
-                "role": match m.role {
-                    ChatRole::System => "system",
-                    ChatRole::User => "user",
-                    ChatRole::Assistant => "assistant",
-                    ChatRole::Tool => "tool",
-                },
-                "content": m.content,
-            }))
+            .map(|m| {
+                serde_json::json!({
+                    "role": match m.role {
+                        ChatRole::System => "system",
+                        ChatRole::User => "user",
+                        ChatRole::Assistant => "assistant",
+                        ChatRole::Tool => "tool",
+                    },
+                    "content": m.content,
+                })
+            })
             .collect();
 
         let body = serde_json::json!({
@@ -72,9 +76,10 @@ impl LLMProvider for OllamaProvider {
             .send()
             .await
             .map_err(|e| {
-                praxis_shared::error::ProjectXError::ProviderError(
-                    format!("Ollama request failed (is Ollama running?): {}", e),
-                )
+                praxis_shared::error::ProjectXError::ProviderError(format!(
+                    "Ollama request failed (is Ollama running?): {}",
+                    e
+                ))
             })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
@@ -106,15 +111,17 @@ impl LLMProvider for OllamaProvider {
     ) -> crate::Result<StreamReceiver> {
         let ollama_messages: Vec<serde_json::Value> = messages
             .iter()
-            .map(|m| serde_json::json!({
-                "role": match m.role {
-                    ChatRole::System => "system",
-                    ChatRole::User => "user",
-                    ChatRole::Assistant => "assistant",
-                    ChatRole::Tool => "tool",
-                },
-                "content": m.content,
-            }))
+            .map(|m| {
+                serde_json::json!({
+                    "role": match m.role {
+                        ChatRole::System => "system",
+                        ChatRole::User => "user",
+                        ChatRole::Assistant => "assistant",
+                        ChatRole::Tool => "tool",
+                    },
+                    "content": m.content,
+                })
+            })
             .collect();
 
         let body = serde_json::json!({
@@ -135,9 +142,10 @@ impl LLMProvider for OllamaProvider {
             .send()
             .await
             .map_err(|e| {
-                praxis_shared::error::ProjectXError::ProviderError(
-                    format!("Ollama stream failed: {}", e),
-                )
+                praxis_shared::error::ProjectXError::ProviderError(format!(
+                    "Ollama stream failed: {}",
+                    e
+                ))
             })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -154,12 +162,15 @@ impl LLMProvider for OllamaProvider {
                         while let Some(line_end) = buffer.find('\n') {
                             let line = buffer[..line_end].trim().to_string();
                             buffer = buffer[line_end + 1..].to_string();
-                            if line.is_empty() { continue; }
+                            if line.is_empty() {
+                                continue;
+                            }
 
                             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
                                 if let Some(content) = value["message"]["content"].as_str() {
                                     if !content.is_empty() {
-                                        let _ = tx.send(StreamChunk::Delta(content.to_string())).await;
+                                        let _ =
+                                            tx.send(StreamChunk::Delta(content.to_string())).await;
                                     }
                                 }
                                 if value["done"].as_bool().unwrap_or(false) {
@@ -174,7 +185,9 @@ impl LLMProvider for OllamaProvider {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(StreamChunk::Error(format!("Ollama stream error: {}", e))).await;
+                        let _ = tx
+                            .send(StreamChunk::Error(format!("Ollama stream error: {}", e)))
+                            .await;
                         break;
                     }
                 }

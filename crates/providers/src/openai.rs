@@ -34,7 +34,9 @@ impl OpenAIProvider {
         let client = reqwest::Client::builder()
             .timeout(timeout.unwrap_or(std::time::Duration::from_secs(120)))
             .build()
-            .map_err(|error| crate::ProviderInitError(format!("Failed to build HTTP client: {error}")))?;
+            .map_err(|error| {
+                crate::ProviderInitError(format!("Failed to build HTTP client: {error}"))
+            })?;
 
         Ok(Self {
             client,
@@ -62,11 +64,11 @@ impl OpenAIProvider {
     ) -> Result<reqwest::Response, praxis_shared::error::ProjectXError> {
         let mut attempts = 0;
         loop {
-            let req = request
-                .try_clone()
-                .ok_or_else(|| praxis_shared::error::ProjectXError::Internal(
-                    "Request body exceeded maximum size for retry cloning".to_string()
-                ))?;
+            let req = request.try_clone().ok_or_else(|| {
+                praxis_shared::error::ProjectXError::Internal(
+                    "Request body exceeded maximum size for retry cloning".to_string(),
+                )
+            })?;
             match req.send().await {
                 Ok(resp) if resp.status().is_success() => return Ok(resp),
                 Ok(resp) if resp.status().as_u16() == 429 => {
@@ -86,33 +88,35 @@ impl OpenAIProvider {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     tracing::error!("HTTP {}: {}", status, body);
-                    return Err(praxis_shared::error::ProjectXError::ProviderError(
-                        format!("HTTP {}: {}", status, body),
-                    ));
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                        "HTTP {}: {}",
+                        status, body
+                    )));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     attempts += 1;
                     if attempts > self.max_retries {
-                        return Err(praxis_shared::error::ProjectXError::ProviderError(
-                            format!("Request failed after {} retries: {}", self.max_retries, e),
-                        ));
+                        return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                            "Request failed after {} retries: {}",
+                            self.max_retries, e
+                        )));
                     }
                     let backoff = std::time::Duration::from_millis(100 * 2u64.pow(attempts - 1));
                     tracing::warn!("Request failed: {}, retrying in {:?}", e, backoff);
                     tokio::time::sleep(backoff).await;
                 }
-                Err(e) => return Err(praxis_shared::error::ProjectXError::ProviderError(
-                    format!("Request error: {}", e),
-                )),
+                Err(e) => {
+                    return Err(praxis_shared::error::ProjectXError::ProviderError(format!(
+                        "Request error: {}",
+                        e
+                    )));
+                }
             }
         }
     }
 
     /// Parse the OpenAI chat completions response.
-    fn parse_chat_response(
-        &self,
-        value: serde_json::Value,
-    ) -> Result<ChatResponse, String> {
+    fn parse_chat_response(&self, value: serde_json::Value) -> Result<ChatResponse, String> {
         let content = value["choices"][0]["message"]["content"]
             .as_str()
             .unwrap_or("")
@@ -128,10 +132,7 @@ impl OpenAIProvider {
             value["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32,
         );
 
-        let model = value["model"]
-            .as_str()
-            .unwrap_or(&self.model)
-            .to_string();
+        let model = value["model"].as_str().unwrap_or(&self.model).to_string();
 
         Ok(ChatResponse {
             content,
@@ -181,12 +182,14 @@ impl LLMProvider for OpenAIProvider {
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("Failed to parse response: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "Failed to parse response: {}",
+                e
+            ))
         })?;
 
-        self.parse_chat_response(value).map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(e)
-        })
+        self.parse_chat_response(value)
+            .map_err(|e| praxis_shared::error::ProjectXError::ProviderError(e))
     }
 
     /// Send a streaming chat completion request.
@@ -219,7 +222,10 @@ impl LLMProvider for OpenAIProvider {
             .json(&body);
 
         let response = self.send_with_retry(request).await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("OpenAI stream error: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "OpenAI stream error: {}",
+                e
+            ))
         })?;
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(256);
@@ -251,7 +257,9 @@ impl LLMProvider for OpenAIProvider {
 
                                     if let Some(content) = delta["content"].as_str() {
                                         if !content.is_empty() {
-                                            let _ = tx.send(StreamChunk::Delta(content.to_string())).await;
+                                            let _ = tx
+                                                .send(StreamChunk::Delta(content.to_string()))
+                                                .await;
                                         }
                                     }
 
@@ -263,10 +271,13 @@ impl LLMProvider for OpenAIProvider {
                                         let _ = tx.send(StreamChunk::Done(tokens)).await;
                                     }
 
-                                    if let Some(finish) = value["choices"][0]["finish_reason"].as_str() {
+                                    if let Some(finish) =
+                                        value["choices"][0]["finish_reason"].as_str()
+                                    {
                                         if finish == "stop" {
                                             // Send empty delta to signal completion
-                                            let _ = tx.send(StreamChunk::Delta(String::new())).await;
+                                            let _ =
+                                                tx.send(StreamChunk::Delta(String::new())).await;
                                         }
                                     }
                                 }
@@ -274,7 +285,9 @@ impl LLMProvider for OpenAIProvider {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(StreamChunk::Error(format!("Stream error: {}", e))).await;
+                        let _ = tx
+                            .send(StreamChunk::Error(format!("Stream error: {}", e)))
+                            .await;
                         break;
                     }
                 }
@@ -303,7 +316,10 @@ impl LLMProvider for OpenAIProvider {
         })?;
 
         let value: serde_json::Value = response.json().await.map_err(|e| {
-            praxis_shared::error::ProjectXError::ProviderError(format!("Failed to parse embedding response: {}", e))
+            praxis_shared::error::ProjectXError::ProviderError(format!(
+                "Failed to parse embedding response: {}",
+                e
+            ))
         })?;
 
         let embeddings: Vec<Vec<f32>> = value["data"]
@@ -311,9 +327,11 @@ impl LLMProvider for OpenAIProvider {
             .unwrap_or(&vec![])
             .iter()
             .filter_map(|item| {
-                item["embedding"]
-                    .as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect())
+                item["embedding"].as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect()
+                })
             })
             .collect();
 
@@ -324,7 +342,9 @@ impl LLMProvider for OpenAIProvider {
     fn count_tokens(&self, text: &str) -> usize {
         match tiktoken_rs::cl100k_base() {
             Ok(encoding) => {
-                if let Ok((tokens, _size)) = encoding.encode(text, &std::collections::HashSet::new()) {
+                if let Ok((tokens, _size)) =
+                    encoding.encode(text, &std::collections::HashSet::new())
+                {
                     tokens.len()
                 } else {
                     text.len() / 4

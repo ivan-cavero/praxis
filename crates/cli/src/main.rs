@@ -48,7 +48,9 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
             _ => return None,
         };
 
-        total_secs = total_secs.saturating_mul(1).saturating_add(num.saturating_mul(multiplier));
+        total_secs = total_secs
+            .saturating_mul(1)
+            .saturating_add(num.saturating_mul(multiplier));
     }
 
     if total_secs == 0 {
@@ -91,15 +93,18 @@ fn create_worktree(session_id: &str) -> Option<PathBuf> {
     }
 
     let branch_name = format!("praxis-{}", &session_id[..8.min(session_id.len())]);
-    let worktree_path = std::env::current_dir().ok()?
-        .parent()?
-        .join(format!("praxis-worktree-{}", &session_id[..8.min(session_id.len())]));
+    let worktree_path = std::env::current_dir().ok()?.parent()?.join(format!(
+        "praxis-worktree-{}",
+        &session_id[..8.min(session_id.len())]
+    ));
 
     // Create the worktree with a new branch
     let output = std::process::Command::new("git")
         .args([
-            "worktree", "add",
-            "-b", &branch_name,
+            "worktree",
+            "add",
+            "-b",
+            &branch_name,
             worktree_path.to_str()?,
             "HEAD",
         ])
@@ -114,7 +119,11 @@ fn create_worktree(session_id: &str) -> Option<PathBuf> {
         return None;
     }
 
-    println!("  {} Created worktree: {}", "→".dimmed(), worktree_path.display());
+    println!(
+        "  {} Created worktree: {}",
+        "→".dimmed(),
+        worktree_path.display()
+    );
     println!("  {} Branch: {}", "→".dimmed(), branch_name);
     Some(worktree_path)
 }
@@ -140,16 +149,21 @@ fn remove_worktree(worktree_path: &std::path::Path) {
         .stderr(std::process::Stdio::null())
         .status();
 
-    println!("  {} Removed worktree: {}", "→".dimmed(), worktree_path.display());
+    println!(
+        "  {} Removed worktree: {}",
+        "→".dimmed(),
+        worktree_path.display()
+    );
 }
 
 /// Load vault service from .forge/credentials.vault.json if it exists.
 fn load_vault() -> Option<std::sync::Arc<praxis_vault::VaultService>> {
     let vault_path = get_data_dir().join("credentials.vault.json");
     if vault_path.exists() {
-        let vault = std::sync::Arc::new(
-            praxis_vault::VaultService::with_path(vault_path.clone(), None)
-        );
+        let vault = std::sync::Arc::new(praxis_vault::VaultService::with_path(
+            vault_path.clone(),
+            None,
+        ));
         if vault.init().is_ok() {
             tracing::info!("Vault loaded from {}", vault_path.display());
             return Some(vault);
@@ -200,9 +214,9 @@ fn resolve_config_path(project_name: Option<&str>) -> Option<PathBuf> {
     }
 
     let project = match project_name {
-        Some(name) => projects.iter().find(|p| {
-            p.get("name").and_then(|v| v.as_str()) == Some(name)
-        }),
+        Some(name) => projects
+            .iter()
+            .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name)),
         None => projects.last(),
     }?;
 
@@ -216,7 +230,10 @@ fn resolve_config_path(project_name: Option<&str>) -> Option<PathBuf> {
 
     // Legacy: write forge_toml to a temp file
     let forge_toml = project.get("forge_toml").and_then(|v| v.as_str())?;
-    let name = project.get("name").and_then(|v| v.as_str()).unwrap_or("default");
+    let name = project
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     let tmp = std::env::temp_dir().join(format!("praxis-{}.toml", name));
     std::fs::write(&tmp, forge_toml).ok()?;
     Some(tmp)
@@ -244,28 +261,33 @@ fn add_provider_to_project_config(
     let projects_path = data_dir.join("projects.json");
     let content = std::fs::read_to_string(&projects_path)
         .map_err(|e| format!("Cannot read projects.json: {}", e))?;
-    let projects: Vec<serde_json::Value> = serde_json::from_str(&content)
-        .map_err(|e| format!("Cannot parse projects.json: {}", e))?;
+    let projects: Vec<serde_json::Value> =
+        serde_json::from_str(&content).map_err(|e| format!("Cannot parse projects.json: {}", e))?;
 
     if projects.is_empty() {
         return Err("No projects found. Run `praxis init <name>` first.".to_string());
     }
 
     let project = match project_name {
-        Some(name) => projects.iter().find(|p| {
-            p.get("name").and_then(|v| v.as_str()) == Some(name)
-        }).ok_or_else(|| format!("Project '{}' not found", name))?,
+        Some(name) => projects
+            .iter()
+            .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
+            .ok_or_else(|| format!("Project '{}' not found", name))?,
         None => projects.last().unwrap(),
     };
 
-    let proj_name = project.get("name").and_then(|v| v.as_str()).unwrap_or("default");
-    let proj_path = project.get("path").and_then(|v| v.as_str())
+    let proj_name = project
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
+    let proj_path = project
+        .get("path")
+        .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| data_dir.join("projects").join(proj_name));
 
     let config_path = proj_path.join("config.toml");
-    let toml_content = std::fs::read_to_string(&config_path)
-        .unwrap_or_default();
+    let toml_content = std::fs::read_to_string(&config_path).unwrap_or_default();
 
     // Build the new provider section
     let mut section = format!(
@@ -284,7 +306,8 @@ fn add_provider_to_project_config(
         if let Some(start_idx) = start {
             // Find the end of the section (next [ section header or EOF)
             let after_header = &toml_content[start_idx..];
-            let end_idx = after_header[1..].find("\n[")
+            let end_idx = after_header[1..]
+                .find("\n[")
                 .map(|i| start_idx + 1 + i + 1)
                 .unwrap_or(toml_content.len());
             let mut result = String::new();
@@ -318,7 +341,10 @@ fn add_provider_to_project_config(
 
 #[derive(Parser)]
 #[command(name = "praxis")]
-#[command(about = "Autonomous Multi-Agent System", long_about = "praxis — Autonomous Multi-Agent System\n\nAn AI agent orchestration system that runs goals through a pipeline of\nspecialized agents (architect, coder, reviewer, security, tester).\n\nEXAMPLES:\n  praxis init my-project\n  praxis run --project my-project --goal \"Build a hello world CLI\"\n  praxis monitor\n  praxis dashboard\n")]
+#[command(
+    about = "Autonomous Multi-Agent System",
+    long_about = "praxis — Autonomous Multi-Agent System\n\nAn AI agent orchestration system that runs goals through a pipeline of\nspecialized agents (architect, coder, reviewer, security, tester).\n\nEXAMPLES:\n  praxis init my-project\n  praxis run --project my-project --goal \"Build a hello world CLI\"\n  praxis monitor\n  praxis dashboard\n"
+)]
 #[command(version = "0.5.0")]
 #[command(arg_required_else_help = true)]
 struct Cli {
@@ -757,10 +783,22 @@ enum AgentCommands {
 
 #[derive(Subcommand)]
 enum SessionCommands {
-    List { project: Option<String> },
-    Show { id: String },
-    Stop { id: String },
-    Logs { id: String, #[arg(long)] tail: bool, #[arg(long)] json: bool },
+    List {
+        project: Option<String>,
+    },
+    Show {
+        id: String,
+    },
+    Stop {
+        id: String,
+    },
+    Logs {
+        id: String,
+        #[arg(long)]
+        tail: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -807,9 +845,17 @@ enum ProviderCommands {
 #[derive(Subcommand)]
 enum McpCommands {
     List,
-    Add { name: String, command: String, args: Vec<String> },
-    Remove { name: String },
-    Test { name: String },
+    Add {
+        name: String,
+        command: String,
+        args: Vec<String>,
+    },
+    Remove {
+        name: String,
+    },
+    Test {
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -840,7 +886,10 @@ enum DeployCommands {
     /// Check VPS status
     Status,
     /// Stream logs from VPS
-    Logs { #[arg(long)] tail: bool },
+    Logs {
+        #[arg(long)]
+        tail: bool,
+    },
 }
 
 #[tokio::main]
@@ -855,8 +904,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(log_level.into()),
+            tracing_subscriber::EnvFilter::from_default_env().add_directive(log_level.into()),
         )
         .init();
 
@@ -866,11 +914,23 @@ async fn main() -> anyhow::Result<()> {
             println!("{} Initializing project...", "→".cyan());
             commands::init::init_project(&name)?;
             println!();
-            println!("{} Project '{}' created!", "✓".green().bold(), name.green().bold());
+            println!(
+                "{} Project '{}' created!",
+                "✓".green().bold(),
+                name.green().bold()
+            );
             println!();
             println!("  Next steps:");
-            println!("    {} --project {} --goal \"your goal here\"", "praxis run".yellow(), name);
-            println!("    {} --project {} --goal \"your goal\" --dry-run", "praxis run".yellow(), name);
+            println!(
+                "    {} --project {} --goal \"your goal here\"",
+                "praxis run".yellow(),
+                name
+            );
+            println!(
+                "    {} --project {} --goal \"your goal\" --dry-run",
+                "praxis run".yellow(),
+                name
+            );
             println!();
             println!("  Or start the dashboard:");
             println!("    {}", "praxis dashboard".yellow());
@@ -880,7 +940,24 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // ─── Run ───────────────────────────────────────────
-        Commands::Run { goal, file, project, resume, session: _, dry_run, headless, completion, agents, agent: agent_overrides, parallel_reviewers: _, max_tokens, max_cost, until, plan, worktree } => {
+        Commands::Run {
+            goal,
+            file,
+            project,
+            resume,
+            session: _,
+            dry_run,
+            headless,
+            completion,
+            agents,
+            agent: agent_overrides,
+            parallel_reviewers: _,
+            max_tokens,
+            max_cost,
+            until,
+            plan,
+            worktree,
+        } => {
             // If --plan is provided, load the plan file and use it as the goal
             let goal = if let Some(ref plan_path) = plan {
                 match std::fs::read_to_string(plan_path) {
@@ -908,10 +985,16 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or(false);
 
                 if !has_projects && project.is_none() {
-                    println!("{} No project found. You need to create one first:", "✗".red());
+                    println!(
+                        "{} No project found. You need to create one first:",
+                        "✗".red()
+                    );
                     println!();
                     println!("  {} my-project", "praxis init".yellow());
-                    println!("  {} --project my-project --goal \"your goal\"", "praxis run".yellow());
+                    println!(
+                        "  {} --project my-project --goal \"your goal\"",
+                        "praxis run".yellow()
+                    );
                     std::process::exit(1);
                 }
 
@@ -942,22 +1025,38 @@ async fn main() -> anyhow::Result<()> {
                     println!();
                     println!("  {} Agents that would be spawned:", "1.".cyan());
                     for (name, role) in &config.roles {
-                        println!("    {} {} ({})", "•".dimmed(), name.cyan(), role.model.dimmed());
+                        println!(
+                            "    {} {} ({})",
+                            "•".dimmed(),
+                            name.cyan(),
+                            role.model.dimmed()
+                        );
                     }
 
                     println!();
                     println!("  {} Pipeline phases:", "2.".cyan());
                     println!("    {} Planning → Designing → Implementing", "•".dimmed());
-                    println!("    {} Reviewing → Testing → SecurityScan → Finalizing", "•".dimmed());
+                    println!(
+                        "    {} Reviewing → Testing → SecurityScan → Finalizing",
+                        "•".dimmed()
+                    );
 
                     println!();
                     println!("  {} Context Budget:", "3.".cyan());
-                    println!("    {} Default: 128k context (70% hard limit)", "•".dimmed());
+                    println!(
+                        "    {} Default: 128k context (70% hard limit)",
+                        "•".dimmed()
+                    );
 
                     println!();
                     println!("  {} Estimated Cost:", "4.".cyan());
                     let estimated_tokens: u32 = config.roles.len() as u32 * 2000;
-                    println!("    {} ~{} tokens per agent ({} agents)", "•".dimmed(), estimated_tokens, config.roles.len());
+                    println!(
+                        "    {} ~{} tokens per agent ({} agents)",
+                        "•".dimmed(),
+                        estimated_tokens,
+                        config.roles.len()
+                    );
 
                     println!();
                     println!("  {} Hard Limits:", "5.".cyan());
@@ -976,7 +1075,6 @@ async fn main() -> anyhow::Result<()> {
 
                     println!();
                     println!("{} Run without --dry-run to execute", "→".cyan());
-
                 } else if headless {
                     // Headless: JSON output
                     println!("{} Running in headless mode", "→".cyan());
@@ -990,7 +1088,8 @@ async fn main() -> anyhow::Result<()> {
                     };
 
                     // Change to worktree directory if created
-    let mut runtime = praxis_core::CoreRuntime::new().await?
+                    let mut runtime = praxis_core::CoreRuntime::new()
+                        .await?
                         .with_default_memory()
                         .with_state_file()
                         .with_skills();
@@ -1006,7 +1105,9 @@ async fn main() -> anyhow::Result<()> {
                             praxis_core::CompletionCriterion::from_until_command(cmd.clone()),
                         );
                     } else if completion != "coding" {
-                        if let Some(criterion) = praxis_core::CompletionCriterion::from_string(&completion) {
+                        if let Some(criterion) =
+                            praxis_core::CompletionCriterion::from_string(&completion)
+                        {
                             runtime = runtime.with_completion(criterion);
                         }
                     }
@@ -1023,10 +1124,16 @@ async fn main() -> anyhow::Result<()> {
                     // Resolve project config path (temp file, cleaned up after)
                     let config_path = resolve_config_path(project.as_deref());
                     if let Some(ref path) = config_path {
-                        println!("  {} Using project config: {}", "→".dimmed(), path.display());
+                        println!(
+                            "  {} Using project config: {}",
+                            "→".dimmed(),
+                            path.display()
+                        );
                     }
 
-                    let result = runtime.run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v)).await?;
+                    let result = runtime
+                        .run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                        .await?;
 
                     // Clean up temp config file
                     if let Some(path) = config_path {
@@ -1049,7 +1156,6 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", serde_json::to_string_pretty(&json_result)?);
 
                     let _ = runtime.shutdown().await;
-
                 } else {
                     // Normal execution with live streaming output
                     println!("{} {}", "→ Running goal:".cyan(), g.white().bold());
@@ -1086,7 +1192,9 @@ async fn main() -> anyhow::Result<()> {
                         );
                         println!("  {} Until: {}", "→".dimmed(), cmd.cyan());
                     } else if completion != "coding" {
-                        if let Some(criterion) = praxis_core::CompletionCriterion::from_string(&completion) {
+                        if let Some(criterion) =
+                            praxis_core::CompletionCriterion::from_string(&completion)
+                        {
                             runtime = runtime.with_completion(criterion);
                             println!("  {} Completion: {}", "→".dimmed(), completion);
                         }
@@ -1111,7 +1219,10 @@ async fn main() -> anyhow::Result<()> {
                     let shutdown_flag = runtime.shutdown_handle();
                     tokio::spawn(async move {
                         let _ = tokio::signal::ctrl_c().await;
-                        println!("\n{} Ctrl+C received. Finishing current iteration and saving checkpoint...", "⚠".yellow());
+                        println!(
+                            "\n{} Ctrl+C received. Finishing current iteration and saving checkpoint...",
+                            "⚠".yellow()
+                        );
                         shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                     });
 
@@ -1124,8 +1235,17 @@ async fn main() -> anyhow::Result<()> {
                                 Ok(event) => {
                                     use praxis_shared::protocol::MessageKind;
                                     match &event.kind {
-                                        MessageKind::AgentStarted { agent, role: _, phase } => {
-                                            println!("  {} {} ({}) started", "→".cyan(), agent.cyan(), format!("{:?}", phase).dimmed());
+                                        MessageKind::AgentStarted {
+                                            agent,
+                                            role: _,
+                                            phase,
+                                        } => {
+                                            println!(
+                                                "  {} {} ({}) started",
+                                                "→".cyan(),
+                                                agent.cyan(),
+                                                format!("{:?}", phase).dimmed()
+                                            );
                                         }
                                         MessageKind::AgentOutput { agent: _, delta } => {
                                             // Print each line of the delta as it arrives
@@ -1135,26 +1255,61 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
-                                        MessageKind::AgentCompleted { agent, status, duration_ms, output_preview, .. } => {
+                                        MessageKind::AgentCompleted {
+                                            agent,
+                                            status,
+                                            duration_ms,
+                                            output_preview,
+                                            ..
+                                        } => {
                                             let preview = if output_preview.len() > 80 {
                                                 format!("{}...", &output_preview[..80])
                                             } else {
                                                 output_preview.clone()
                                             };
-                                            println!("  {} {} completed — {} ({}ms)", "✓".green(), agent.cyan(), status.dimmed(), duration_ms);
+                                            println!(
+                                                "  {} {} completed — {} ({}ms)",
+                                                "✓".green(),
+                                                agent.cyan(),
+                                                status.dimmed(),
+                                                duration_ms
+                                            );
                                             println!("    {}", preview.dimmed());
                                         }
                                         MessageKind::PhaseChanged(transition) => {
-                                            println!("  {} Phase: {:?} → {:?}", "▶".cyan(), transition.from, transition.to);
+                                            println!(
+                                                "  {} Phase: {:?} → {:?}",
+                                                "▶".cyan(),
+                                                transition.from,
+                                                transition.to
+                                            );
                                         }
                                         MessageKind::PathologyDetected(alert) => {
-                                            println!("  {} Pathology: {} ({})", "⚠".yellow(), alert.details.dimmed(), alert.severity);
+                                            println!(
+                                                "  {} Pathology: {} ({})",
+                                                "⚠".yellow(),
+                                                alert.details.dimmed(),
+                                                alert.severity
+                                            );
                                         }
                                         MessageKind::CheckpointSaved(info) => {
-                                            println!("  {} Checkpoint saved (iteration {})", "💾".dimmed(), info.iteration);
+                                            println!(
+                                                "  {} Checkpoint saved (iteration {})",
+                                                "💾".dimmed(),
+                                                info.iteration
+                                            );
                                         }
                                         MessageKind::GateResult(result) => {
-                                            println!("  {} Gate: {} — {}", "🔍".dimmed(), result.gate_name, if result.passed { "PASS".green() } else { "FAIL".red() });
+                                            println!(
+                                                "  {} Gate: {} — {}",
+                                                "🔍".dimmed(),
+                                                result.gate_name,
+                                                if result.passed {
+                                                    "PASS".green()
+                                                } else {
+                                                    "FAIL".red()
+                                                }
+                                            );
                                         }
                                         _ => {}
                                     }
@@ -1172,7 +1327,11 @@ async fn main() -> anyhow::Result<()> {
                     // Resolve project config path (temp file, cleaned up after)
                     let config_path = resolve_config_path(project.as_deref());
                     if let Some(ref path) = config_path {
-                        println!("  {} Using project config: {}", "→".dimmed(), path.display());
+                        println!(
+                            "  {} Using project config: {}",
+                            "→".dimmed(),
+                            path.display()
+                        );
                     }
 
                     // Set project name on runtime for checkpoint metadata
@@ -1181,7 +1340,9 @@ async fn main() -> anyhow::Result<()> {
                     }
 
                     // Run through the full agent pipeline
-                    let result = runtime.run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v)).await?;
+                    let result = runtime
+                        .run_goal(&g, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                        .await?;
 
                     // Clean up temp config file
                     if let Some(path) = config_path {
@@ -1198,11 +1359,23 @@ async fn main() -> anyhow::Result<()> {
 
                     println!();
                     println!("  {} Goal: {}", "→".cyan(), result.goal.white().bold());
-                    println!("  {} Status: {}", "→".cyan(),
-                        if result.passed { "✅ PASSED".green().bold() } else { "❌ FAILED".red().bold() });
-                    println!("  {} Agents executed: {}", "→".cyan(), result.agent_results.len());
+                    println!(
+                        "  {} Status: {}",
+                        "→".cyan(),
+                        if result.passed {
+                            "✅ PASSED".green().bold()
+                        } else {
+                            "❌ FAILED".red().bold()
+                        }
+                    );
+                    println!(
+                        "  {} Agents executed: {}",
+                        "→".cyan(),
+                        result.agent_results.len()
+                    );
                     for agent_result in &result.agent_results {
-                        println!("    {} {} ({}) — {:?} — {}ms",
+                        println!(
+                            "    {} {} ({}) — {:?} — {}ms",
                             "•".dimmed(),
                             agent_result.agent_id.cyan(),
                             agent_result.role,
@@ -1210,7 +1383,11 @@ async fn main() -> anyhow::Result<()> {
                             agent_result.duration_ms,
                         );
                     }
-                    println!("  {} Total duration: {}ms", "→".cyan(), result.total_duration_ms);
+                    println!(
+                        "  {} Total duration: {}ms",
+                        "→".cyan(),
+                        result.total_duration_ms
+                    );
 
                     if let Some(sid) = runtime.session_id {
                         println!("  {} Session: {}", "→".cyan(), sid);
@@ -1221,20 +1398,22 @@ async fn main() -> anyhow::Result<()> {
                     runtime.shutdown().await?;
                     println!("{} Done", "✓".green().bold());
                 }
-
             } else if let Some(f) = file {
                 let content = std::fs::read_to_string(&f)?;
                 println!("{} Reading goal from: {}", "→".cyan(), f.display());
                 println!("  {}", content.trim().dimmed());
                 println!("{}", "⚠ File-based goals not yet implemented".yellow());
-
             } else if resume {
                 println!("{} Resuming last session...", "→".cyan());
                 let data_dir = get_data_dir();
                 let db_path = data_dir.join("state.db");
 
                 if !db_path.exists() {
-                    println!("  {} No database found at {}. Run a session first.", "✗".red(), db_path.display());
+                    println!(
+                        "  {} No database found at {}. Run a session first.",
+                        "✗".red(),
+                        db_path.display()
+                    );
                     std::process::exit(1);
                 }
 
@@ -1270,7 +1449,10 @@ async fn main() -> anyhow::Result<()> {
                 let shutdown_flag = runtime.shutdown_handle();
                 tokio::spawn(async move {
                     let _ = tokio::signal::ctrl_c().await;
-                    println!("\n{} Ctrl+C received. Finishing current iteration and saving checkpoint...", "⚠".yellow());
+                    println!(
+                        "\n{} Ctrl+C received. Finishing current iteration and saving checkpoint...",
+                        "⚠".yellow()
+                    );
                     shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                 });
 
@@ -1282,13 +1464,32 @@ async fn main() -> anyhow::Result<()> {
                     Some(result) => {
                         println!();
                         println!("  {} Goal: {}", "→".cyan(), result.goal.white().bold());
-                        println!("  {} Status: {}", "→".cyan(),
-                            if result.passed { "✅ PASSED".green().bold() } else { "❌ FAILED".red().bold() });
-                        println!("  {} Agents executed: {}", "→".cyan(), result.agent_results.len());
-                        println!("  {} Total duration: {}ms", "→".cyan(), result.total_duration_ms);
+                        println!(
+                            "  {} Status: {}",
+                            "→".cyan(),
+                            if result.passed {
+                                "✅ PASSED".green().bold()
+                            } else {
+                                "❌ FAILED".red().bold()
+                            }
+                        );
+                        println!(
+                            "  {} Agents executed: {}",
+                            "→".cyan(),
+                            result.agent_results.len()
+                        );
+                        println!(
+                            "  {} Total duration: {}ms",
+                            "→".cyan(),
+                            result.total_duration_ms
+                        );
                     }
                     None => {
-                        println!("  {} No checkpoint found for session {}.", "✗".red(), session_id);
+                        println!(
+                            "  {} No checkpoint found for session {}.",
+                            "✗".red(),
+                            session_id
+                        );
                     }
                 }
 
@@ -1296,7 +1497,6 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", "🔌 Shutting down...".dimmed());
                 runtime.shutdown().await?;
                 println!("{} Done", "✓".green().bold());
-
             } else {
                 println!("{} Please provide --goal, --file, or --resume", "✗".red());
                 std::process::exit(1);
@@ -1330,7 +1530,9 @@ async fn main() -> anyhow::Result<()> {
 
             print!("  {} Echo messages... ", "4.".cyan());
             for i in 0..3 {
-                let response = runtime.echo_to(&format!("agent-{}", i), &format!("msg-{}", i)).await?;
+                let response = runtime
+                    .echo_to(&format!("agent-{}", i), &format!("msg-{}", i))
+                    .await?;
                 if !response.contains("echo") {
                     anyhow::bail!("Unexpected response: {}", response);
                 }
@@ -1386,8 +1588,7 @@ async fn main() -> anyhow::Result<()> {
             let mock: std::sync::Arc<dyn praxis_providers::LLMProvider> =
                 std::sync::Arc::new(praxis_providers::MockProvider::simple("test"));
             router.register("mock", mock, praxis_providers::ModelTier::Balanced);
-            let resolved = router.resolve("mock")
-                .map_err(|e| anyhow::anyhow!(e))?;
+            let resolved = router.resolve("mock").map_err(|e| anyhow::anyhow!(e))?;
             if resolved.provider_name() != "mock" {
                 anyhow::bail!("Router failed");
             }
@@ -1433,18 +1634,21 @@ async fn main() -> anyhow::Result<()> {
             print!("  {} DriftGuard... ", "11.".cyan());
             let mut drift = praxis_core::DriftGuard::new();
             for i in 0..12 {
-                drift.record_and_evaluate(praxis_core::drift::metrics::MetricSample {
-                    iteration: i,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    latency_ms: 100,
-                    output_tokens: 50,
-                    input_tokens: 100,
-                    tool_calls: 2,
-                    tool_errors: 0,
-                    output_length_chars: 200,
-                    gate_passed: true,
-                    context_pressure: 0.3,
-                }, None);
+                drift.record_and_evaluate(
+                    praxis_core::drift::metrics::MetricSample {
+                        iteration: i,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        latency_ms: 100,
+                        output_tokens: 50,
+                        input_tokens: 100,
+                        tool_calls: 2,
+                        tool_errors: 0,
+                        output_length_chars: 200,
+                        gate_passed: true,
+                        context_pressure: 0.3,
+                    },
+                    None,
+                );
             }
             println!("{} metrics ok", "✓".green());
 
@@ -1452,12 +1656,16 @@ async fn main() -> anyhow::Result<()> {
             let _mem = praxis_core::EventBus::new();
             let hot = praxis_memory::HotMemory::new();
             hot.create_session("test-s1", "test-p1", "test goal");
-            hot.push_interaction("test-s1", "coder", praxis_memory::Interaction {
-                role: "user".to_string(),
-                content: "test".to_string(),
-                token_count: 5,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            });
+            hot.push_interaction(
+                "test-s1",
+                "coder",
+                praxis_memory::Interaction {
+                    role: "user".to_string(),
+                    content: "test".to_string(),
+                    token_count: 5,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                },
+            );
             let ctx = hot.get_context("test-s1", "coder");
             if ctx.is_none() {
                 anyhow::bail!("HotMemory context failed");
@@ -1467,13 +1675,16 @@ async fn main() -> anyhow::Result<()> {
             print!("  {} LLMCache... ", "13.".cyan());
             let cache = praxis_memory::LLMCache::default_cache();
             let key = praxis_memory::LLMCache::key("gpt-5", &["test".to_string()], 0.3);
-            cache.insert(key, praxis_memory::CachedResponse {
-                content: "test".to_string(),
-                model: "gpt-5".to_string(),
-                input_tokens: 5,
-                output_tokens: 3,
-                cached_at: std::time::Instant::now(),
-            });
+            cache.insert(
+                key,
+                praxis_memory::CachedResponse {
+                    content: "test".to_string(),
+                    model: "gpt-5".to_string(),
+                    input_tokens: 5,
+                    output_tokens: 3,
+                    cached_at: std::time::Instant::now(),
+                },
+            );
             let cached = cache.get(&key);
             if cached.is_none() {
                 anyhow::bail!("LLMCache failed");
@@ -1481,10 +1692,8 @@ async fn main() -> anyhow::Result<()> {
             println!("{} insert+get ok", "✓".green());
 
             print!("  {} ContextManager... ", "14.".cyan());
-            let mut ctx_mgr = praxis_memory::ContextManager::new(
-                128_000,
-                praxis_memory::BudgetProfile::Balanced,
-            );
+            let mut ctx_mgr =
+                praxis_memory::ContextManager::new(128_000, praxis_memory::BudgetProfile::Balanced);
             let mut ctx_window = praxis_memory::ContextWindow::new();
             ctx_window.push(praxis_memory::Message {
                 role: "user".to_string(),
@@ -1516,16 +1725,24 @@ async fn main() -> anyhow::Result<()> {
                 let projects_path = data_dir.join("projects.json");
                 match std::fs::read_to_string(&projects_path) {
                     Ok(content) => {
-                        let projects: Vec<serde_json::Value> = serde_json::from_str(&content).unwrap_or_default();
+                        let projects: Vec<serde_json::Value> =
+                            serde_json::from_str(&content).unwrap_or_default();
                         if projects.is_empty() {
                             println!("{} No projects found", "→".cyan());
                         } else {
                             println!("{} Projects ({})", "→".cyan(), projects.len());
                             for project in &projects {
-                                let name = project.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                                let name =
+                                    project.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                                 let id = project.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-                                let created = project.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
-                                let desc = project.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                                let created = project
+                                    .get("created_at")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                let desc = project
+                                    .get("description")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
                                 println!("  {} {} ({})", "•".dimmed(), name.cyan(), id.dimmed());
                                 if !desc.is_empty() {
                                     println!("    {}", desc.dimmed());
@@ -1536,7 +1753,11 @@ async fn main() -> anyhow::Result<()> {
                     }
                     Err(_) => {
                         println!("{} No projects found (no projects.json)", "→".cyan());
-                        println!("  {} Run {} to create one", "→".dimmed(), "praxis init <name>".yellow());
+                        println!(
+                            "  {} Run {} to create one",
+                            "→".dimmed(),
+                            "praxis init <name>".yellow()
+                        );
                     }
                 }
             }
@@ -1547,19 +1768,45 @@ async fn main() -> anyhow::Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to read projects.json: {}", e))?;
                 let projects: Vec<serde_json::Value> = serde_json::from_str(&content)
                     .map_err(|e| anyhow::anyhow!("Failed to parse projects.json: {}", e))?;
-                let project = projects.iter().find(|p| {
-                    p.get("id").and_then(|v| v.as_str()) == Some(&id)
-                        || p.get("name").and_then(|v| v.as_str()) == Some(&id)
-                }).ok_or_else(|| anyhow::anyhow!("Project '{}' not found", id))?;
+                let project = projects
+                    .iter()
+                    .find(|p| {
+                        p.get("id").and_then(|v| v.as_str()) == Some(&id)
+                            || p.get("name").and_then(|v| v.as_str()) == Some(&id)
+                    })
+                    .ok_or_else(|| anyhow::anyhow!("Project '{}' not found", id))?;
 
-                println!("  {} Name: {}", "→".cyan(), project.get("name").and_then(|v| v.as_str()).unwrap_or("?").cyan());
-                println!("  {} ID: {}", "→".cyan(), project.get("id").and_then(|v| v.as_str()).unwrap_or("?").dimmed());
+                println!(
+                    "  {} Name: {}",
+                    "→".cyan(),
+                    project
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                        .cyan()
+                );
+                println!(
+                    "  {} ID: {}",
+                    "→".cyan(),
+                    project
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                        .dimmed()
+                );
                 if let Some(desc) = project.get("description").and_then(|v| v.as_str()) {
                     if !desc.is_empty() {
                         println!("  {} Description: {}", "→".cyan(), desc);
                     }
                 }
-                println!("  {} Created: {}", "→".cyan(), project.get("created_at").and_then(|v| v.as_str()).unwrap_or("?"));
+                println!(
+                    "  {} Created: {}",
+                    "→".cyan(),
+                    project
+                        .get("created_at")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                );
                 if let Some(toml) = project.get("forge_toml").and_then(|v| v.as_str()) {
                     println!();
                     println!("  {} forge.toml:", "→".cyan());
@@ -1569,7 +1816,10 @@ async fn main() -> anyhow::Result<()> {
             }
             ProjectCommands::Archive { id } => {
                 println!("{} Archiving project: {}", "→".cyan(), id);
-                println!("  {} (archive not yet implemented — use dashboard to delete)", "→".dimmed());
+                println!(
+                    "  {} (archive not yet implemented — use dashboard to delete)",
+                    "→".dimmed()
+                );
             }
         },
 
@@ -1592,12 +1842,28 @@ async fn main() -> anyhow::Result<()> {
                         println!("{} Sessions ({})", "→".cyan(), session_ids.len());
                         for sid in &session_ids {
                             // Load snapshot for metadata
-                            let snapshot = store.get_snapshot(*sid).await.map_err(|e| anyhow::anyhow!(e))?;
+                            let snapshot = store
+                                .get_snapshot(*sid)
+                                .await
+                                .map_err(|e| anyhow::anyhow!(e))?;
                             if let Some(snap) = snapshot {
-                                let goal = snap.state.get("goal").and_then(|v| v.as_str()).unwrap_or("?");
-                                let phase = snap.state.get("phase").and_then(|v| v.as_str()).unwrap_or("?");
-                                let iteration = snap.state.get("iteration").and_then(|v| v.as_u64()).unwrap_or(0);
-                                println!("  {} {} — {} (iter {}) — {}",
+                                let goal = snap
+                                    .state
+                                    .get("goal")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                let phase = snap
+                                    .state
+                                    .get("phase")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                let iteration = snap
+                                    .state
+                                    .get("iteration")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                println!(
+                                    "  {} {} — {} (iter {}) — {}",
                                     "•".dimmed(),
                                     sid.to_string().dimmed(),
                                     goal.cyan(),
@@ -1621,7 +1887,10 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
-                    let snapshot = store.get_snapshot(sid).await.map_err(|e| anyhow::anyhow!(e))?;
+                    let snapshot = store
+                        .get_snapshot(sid)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))?;
                     match snapshot {
                         Some(snap) => {
                             println!("  {} Session: {}", "→".cyan(), sid);
@@ -1634,7 +1903,9 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
                                 println!("  {} Phase: {}", "→".cyan(), phase);
                             }
-                            if let Some(iteration) = snap.state.get("iteration").and_then(|v| v.as_u64()) {
+                            if let Some(iteration) =
+                                snap.state.get("iteration").and_then(|v| v.as_u64())
+                            {
                                 println!("  {} Iteration: {}", "→".cyan(), iteration);
                             }
                         }
@@ -1661,16 +1932,25 @@ async fn main() -> anyhow::Result<()> {
                     }
                     Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
                         println!("{} Session {} not found on the API server.", "✗".red(), id);
-                        println!("  Is the API server running? Start it with: {}", "praxis server".cyan());
+                        println!(
+                            "  Is the API server running? Start it with: {}",
+                            "praxis server".cyan()
+                        );
                     }
                     Ok(resp) => {
-                        println!("{} API server returned status {}", "⚠".yellow(), resp.status());
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
                     }
                     Err(e) if e.is_connect() => {
                         println!("{} Cannot reach API server at {}", "✗".red(), api_url);
                         println!("  Start it with: {}", "praxis server".cyan());
                         println!();
-                        println!("  If the session is running in this terminal, press Ctrl+C to stop it.");
+                        println!(
+                            "  If the session is running in this terminal, press Ctrl+C to stop it."
+                        );
                     }
                     Err(e) => {
                         println!("{} Error stopping session: {}", "✗".red(), e);
@@ -1690,7 +1970,9 @@ async fn main() -> anyhow::Result<()> {
                     .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
                 let store = praxis_persistence::SqliteEventStore::new(&db_path)
                     .map_err(|e| anyhow::anyhow!(e))?;
-                let events = store.read_events(sid, None).await
+                let events = store
+                    .read_events(sid, None)
+                    .await
                     .map_err(|e| anyhow::anyhow!(e))?;
 
                 if events.is_empty() {
@@ -1699,13 +1981,18 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 if json {
-                    let json_events: Vec<_> = events.iter().map(|e| serde_json::json!({
-                        "id": e.id,
-                        "type": e.event_type,
-                        "version": e.version,
-                        "created_at": e.created_at,
-                        "payload": e.payload,
-                    })).collect();
+                    let json_events: Vec<_> = events
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "id": e.id,
+                                "type": e.event_type,
+                                "version": e.version,
+                                "created_at": e.created_at,
+                                "payload": e.payload,
+                            })
+                        })
+                        .collect();
                     println!("{}", serde_json::to_string_pretty(&json_events)?);
                 } else {
                     let mut display_events: Vec<_> = if tail {
@@ -1717,11 +2004,21 @@ async fn main() -> anyhow::Result<()> {
                         display_events.reverse();
                     }
 
-                    println!("{} Logs for session {} ({} events)", "→".cyan(), id, events.len());
+                    println!(
+                        "{} Logs for session {} ({} events)",
+                        "→".cyan(),
+                        id,
+                        events.len()
+                    );
                     println!("{}", "─".repeat(80));
                     for event in &display_events {
                         let time: String = event.created_at.chars().skip(11).take(8).collect();
-                        println!("  {} {} {}", time.dimmed(), event.event_type.cyan(), event.version);
+                        println!(
+                            "  {} {} {}",
+                            time.dimmed(),
+                            event.event_type.cyan(),
+                            event.version
+                        );
                         if let Some(pretty) = serde_json::to_string_pretty(&event.payload).ok() {
                             for line in pretty.lines().take(3) {
                                 println!("    {}", line.dimmed());
@@ -1738,20 +2035,39 @@ async fn main() -> anyhow::Result<()> {
                 let config = load_project_config(None);
                 if config.providers.is_empty() {
                     println!("{} No providers configured", "→".cyan());
-                    println!("  {} Use {} to add one", "→".dimmed(), "praxis provider add <name> <base_url> --api-key-stdin".yellow());
+                    println!(
+                        "  {} Use {} to add one",
+                        "→".dimmed(),
+                        "praxis provider add <name> <base_url> --api-key-stdin".yellow()
+                    );
                 } else {
-                    println!("{} Configured providers ({})", "→".cyan(), config.providers.len());
+                    println!(
+                        "{} Configured providers ({})",
+                        "→".cyan(),
+                        config.providers.len()
+                    );
                     for (name, provider) in &config.providers {
                         let key_status = if provider.api_key_ref.starts_with("env:") {
-                            format!("env:{}", provider.api_key_ref.strip_prefix("env:").unwrap_or("?"))
-                        } else if provider.api_key_ref.starts_with("keyring:") || provider.api_key_ref.starts_with("vault:") {
+                            format!(
+                                "env:{}",
+                                provider.api_key_ref.strip_prefix("env:").unwrap_or("?")
+                            )
+                        } else if provider.api_key_ref.starts_with("keyring:")
+                            || provider.api_key_ref.starts_with("vault:")
+                        {
                             "vault".to_string()
                         } else if provider.api_key_ref.is_empty() {
                             "none".to_string()
                         } else {
                             "literal".to_string()
                         };
-                        println!("  {} {} — {} ({})", "•".dimmed(), name.cyan(), provider.default_model.dimmed(), key_status.yellow());
+                        println!(
+                            "  {} {} — {} ({})",
+                            "•".dimmed(),
+                            name.cyan(),
+                            provider.default_model.dimmed(),
+                            key_status.yellow()
+                        );
                         println!("    Base URL: {}", provider.base_url.dimmed());
                     }
                 }
@@ -1759,8 +2075,14 @@ async fn main() -> anyhow::Result<()> {
                 println!("  Supported APIs:");
                 println!("    {} OpenAI (api.openai.com)", "•".dimmed());
                 println!("    {} Anthropic (api.anthropic.com)", "•".dimmed());
-                println!("    {} Google AI (generativelanguage.googleapis.com)", "•".dimmed());
-                println!("    {} Any OpenAI-compatible API (custom base_url)", "•".dimmed());
+                println!(
+                    "    {} Google AI (generativelanguage.googleapis.com)",
+                    "•".dimmed()
+                );
+                println!(
+                    "    {} Any OpenAI-compatible API (custom base_url)",
+                    "•".dimmed()
+                );
             }
             ProviderCommands::Test { name } => {
                 println!("{} Testing provider: {}...", "→".cyan(), name);
@@ -1789,118 +2111,121 @@ async fn main() -> anyhow::Result<()> {
                     let result: Result<String, anyhow::Error> = match provider_cfg.name.as_str() {
                         "nan" | "openai" | "openai_compat" => {
                             let p = praxis_providers::OpenAIProvider::new(
-                                                            api_key,
-                                                            provider_cfg.default_model.clone(),
-                                                            Some(provider_cfg.base_url.clone()),
-                                                            None,
-                                                            None,
-                                                        )
-                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
-                                                        let resp = p
-                                                            .chat(
-                                                                &[ChatMessage {
-                                                                    role: ChatRole::User,
-                                                                    content: "ping".to_string(),
-                                                                    tool_calls: None,
-                                                                    tool_call_id: None,
-                                                                }],
-                                                                &ChatConfig {
-                                                                    max_tokens: 5,
-                                                                    temperature: 0.0,
-                                                                    ..Default::default()
-                                                                },
-                                                            )
-                                                            .await;
-                                                        match resp {
-                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
-                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
-                                                        }
+                                api_key,
+                                provider_cfg.default_model.clone(),
+                                Some(provider_cfg.base_url.clone()),
+                                None,
+                                None,
+                            )
+                            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
+                            let resp = p
+                                .chat(
+                                    &[ChatMessage {
+                                        role: ChatRole::User,
+                                        content: "ping".to_string(),
+                                        tool_calls: None,
+                                        tool_call_id: None,
+                                    }],
+                                    &ChatConfig {
+                                        max_tokens: 5,
+                                        temperature: 0.0,
+                                        ..Default::default()
+                                    },
+                                )
+                                .await;
+                            match resp {
+                                Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                            }
                         }
                         "anthropic" => {
                             let p = praxis_providers::AnthropicProvider::new(
-                                                            api_key,
-                                                            provider_cfg.default_model.clone(),
-                                                            Some(provider_cfg.base_url.clone()),
-                                                            None,
-                                                            None,
-                                                        )
-                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
-                                                        let resp = p
-                                                            .chat(
-                                                                &[ChatMessage {
-                                                                    role: ChatRole::User,
-                                                                    content: "ping".to_string(),
-                                                                    tool_calls: None,
-                                                                    tool_call_id: None,
-                                                                }],
-                                                                &ChatConfig {
-                                                                    max_tokens: 5,
-                                                                    temperature: 0.0,
-                                                                    ..Default::default()
-                                                                },
-                                                            )
-                                                            .await;
-                                                        match resp {
-                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
-                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
-                                                        }
+                                api_key,
+                                provider_cfg.default_model.clone(),
+                                Some(provider_cfg.base_url.clone()),
+                                None,
+                                None,
+                            )
+                            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
+                            let resp = p
+                                .chat(
+                                    &[ChatMessage {
+                                        role: ChatRole::User,
+                                        content: "ping".to_string(),
+                                        tool_calls: None,
+                                        tool_call_id: None,
+                                    }],
+                                    &ChatConfig {
+                                        max_tokens: 5,
+                                        temperature: 0.0,
+                                        ..Default::default()
+                                    },
+                                )
+                                .await;
+                            match resp {
+                                Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                            }
                         }
                         "gemini" => {
                             let p = praxis_providers::GeminiProvider::new(
-                                                            api_key,
-                                                            provider_cfg.default_model.clone(),
-                                                            Some(provider_cfg.base_url.clone()),
-                                                            None,
-                                                            None,
-                                                        )
-                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
-                                                        let resp = p
-                                                            .chat(
-                                                                &[ChatMessage {
-                                                                    role: ChatRole::User,
-                                                                    content: "ping".to_string(),
-                                                                    tool_calls: None,
-                                                                    tool_call_id: None,
-                                                                }],
-                                                                &ChatConfig {
-                                                                    max_tokens: 5,
-                                                                    temperature: 0.0,
-                                                                    ..Default::default()
-                                                                },
-                                                            )
-                                                            .await;
-                                                        match resp {
-                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
-                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
-                                                        }
+                                api_key,
+                                provider_cfg.default_model.clone(),
+                                Some(provider_cfg.base_url.clone()),
+                                None,
+                                None,
+                            )
+                            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
+                            let resp = p
+                                .chat(
+                                    &[ChatMessage {
+                                        role: ChatRole::User,
+                                        content: "ping".to_string(),
+                                        tool_calls: None,
+                                        tool_call_id: None,
+                                    }],
+                                    &ChatConfig {
+                                        max_tokens: 5,
+                                        temperature: 0.0,
+                                        ..Default::default()
+                                    },
+                                )
+                                .await;
+                            match resp {
+                                Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                            }
                         }
                         "ollama" => {
                             let p = praxis_providers::OllamaProvider::new(
-                                                            provider_cfg.default_model.clone(),
-                                                            Some(provider_cfg.base_url.clone()),
-                                                        )
-                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
-                                                        let resp = p
-                                                            .chat(
-                                                                &[ChatMessage {
-                                                                    role: ChatRole::User,
-                                                                    content: "ping".to_string(),
-                                                                    tool_calls: None,
-                                                                    tool_call_id: None,
-                                                                }],
-                                                                &ChatConfig {
-                                                                    max_tokens: 5,
-                                                                    temperature: 0.0,
-                                                                    ..Default::default()
-                                                                },
-                                                            )
-                                                            .await;
-                                                        match resp {
-                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
-                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
-                                                        }
+                                provider_cfg.default_model.clone(),
+                                Some(provider_cfg.base_url.clone()),
+                            )
+                            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
+                            let resp = p
+                                .chat(
+                                    &[ChatMessage {
+                                        role: ChatRole::User,
+                                        content: "ping".to_string(),
+                                        tool_calls: None,
+                                        tool_call_id: None,
+                                    }],
+                                    &ChatConfig {
+                                        max_tokens: 5,
+                                        temperature: 0.0,
+                                        ..Default::default()
+                                    },
+                                )
+                                .await;
+                            match resp {
+                                Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                            }
                         }
-                        _ => Err(anyhow::anyhow!("Unknown provider type: {}", provider_cfg.name)),
+                        _ => Err(anyhow::anyhow!(
+                            "Unknown provider type: {}",
+                            provider_cfg.name
+                        )),
                     };
 
                     match result {
@@ -1911,7 +2236,14 @@ async fn main() -> anyhow::Result<()> {
                     println!("  {} Provider '{}' not found in config", "✗".red(), name);
                 }
             }
-            ProviderCommands::Add { name, base_url, api_key, api_key_stdin, model, project } => {
+            ProviderCommands::Add {
+                name,
+                base_url,
+                api_key,
+                api_key_stdin,
+                model,
+                project,
+            } => {
                 println!("{} Adding provider: {}", "→".cyan(), name);
 
                 // Get the API key securely
@@ -1925,10 +2257,17 @@ async fn main() -> anyhow::Result<()> {
                     }
                     buf.trim().to_string()
                 } else if let Some(k) = api_key {
-                    println!("  {} {} --api-key leaks to shell history. Use --api-key-stdin next time.", "⚠".yellow(), "Tip:".dimmed());
+                    println!(
+                        "  {} {} --api-key leaks to shell history. Use --api-key-stdin next time.",
+                        "⚠".yellow(),
+                        "Tip:".dimmed()
+                    );
                     k
                 } else {
-                    println!("{} No API key provided. Use --api-key <key> or --api-key-stdin", "✗".red());
+                    println!(
+                        "{} No API key provided. Use --api-key <key> or --api-key-stdin",
+                        "✗".red()
+                    );
                     std::process::exit(1);
                 };
 
@@ -1955,7 +2294,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 let masked = if key.len() > 8 {
-                    format!("{}***{}", &key[..4], &key[key.len()-4..])
+                    format!("{}***{}", &key[..4], &key[key.len() - 4..])
                 } else {
                     "****".to_string()
                 };
@@ -1972,15 +2311,26 @@ async fn main() -> anyhow::Result<()> {
                     model.as_deref(),
                 ) {
                     Ok(proj_name) => {
-                        println!("{} Provider '{}' saved to vault and wired to project '{}'", "✓".green(), name.cyan(), proj_name.cyan());
+                        println!(
+                            "{} Provider '{}' saved to vault and wired to project '{}'",
+                            "✓".green(),
+                            name.cyan(),
+                            proj_name.cyan()
+                        );
                         if let Some(m) = &model {
                             println!("  Default model: {}", m);
                         }
                     }
                     Err(e) => {
-                        println!("{} API key saved to vault, but could not wire to project config:", "⚠".yellow());
+                        println!(
+                            "{} API key saved to vault, but could not wire to project config:",
+                            "⚠".yellow()
+                        );
                         println!("  {}", e);
-                        println!("  The key is in the vault. Create a project with {} to use it.", "praxis init".yellow());
+                        println!(
+                            "  The key is in the vault. Create a project with {} to use it.",
+                            "praxis init".yellow()
+                        );
                     }
                 }
             }
@@ -1994,26 +2344,55 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     println!("{} MCP servers ({})", "→".cyan(), config.mcp_servers.len());
                     for server in &config.mcp_servers {
-                        println!("  {} {} — {} {:?}", "•".dimmed(), server.name.cyan(), server.command.dimmed(), server.args);
+                        println!(
+                            "  {} {} — {} {:?}",
+                            "•".dimmed(),
+                            server.name.cyan(),
+                            server.command.dimmed(),
+                            server.args
+                        );
                     }
                 }
             }
-            McpCommands::Add { name, command, args } => {
+            McpCommands::Add {
+                name,
+                command,
+                args,
+            } => {
                 println!("{} Adding MCP server: {}", "→".cyan(), name);
                 println!("  Command: {} {:?}", command.dimmed(), args);
-                println!("  {} MCP servers are managed via the dashboard Settings.", "→".cyan());
-                println!("  {} Open with: {}", "→".dimmed(), "praxis dashboard".yellow());
+                println!(
+                    "  {} MCP servers are managed via the dashboard Settings.",
+                    "→".cyan()
+                );
+                println!(
+                    "  {} Open with: {}",
+                    "→".dimmed(),
+                    "praxis dashboard".yellow()
+                );
             }
             McpCommands::Remove { name } => {
                 println!("{} Removing MCP server: {}", "→".cyan(), name);
-                println!("  {} MCP servers are managed via the dashboard Settings.", "→".cyan());
-                println!("  {} Open with: {}", "→".dimmed(), "praxis dashboard".yellow());
+                println!(
+                    "  {} MCP servers are managed via the dashboard Settings.",
+                    "→".cyan()
+                );
+                println!(
+                    "  {} Open with: {}",
+                    "→".dimmed(),
+                    "praxis dashboard".yellow()
+                );
             }
             McpCommands::Test { name } => {
                 println!("{} Testing MCP server: {}", "→".cyan(), name);
                 let config = load_project_config(None);
                 if let Some(server) = config.mcp_servers.iter().find(|s| s.name == name) {
-                    println!("  {} Command: {} {:?}", "→".dimmed(), server.command, server.args);
+                    println!(
+                        "  {} Command: {} {:?}",
+                        "→".dimmed(),
+                        server.command,
+                        server.args
+                    );
                     println!("  {} (would spawn and list tools)", "→".dimmed());
                 } else {
                     println!("  {} MCP server '{}' not found in config", "✗".red(), name);
@@ -2035,7 +2414,9 @@ async fn main() -> anyhow::Result<()> {
                     if let Some(sid) = sid {
                         let store = praxis_persistence::SqliteEventStore::new(&db_path)
                             .map_err(|e| anyhow::anyhow!(e))?;
-                        store.get_snapshot(sid).await
+                        store
+                            .get_snapshot(sid)
+                            .await
                             .map_err(|e| anyhow::anyhow!(e))?
                             .map(|s| s.state)
                     } else {
@@ -2048,17 +2429,28 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(ref state) = session_data {
                     let phase = state.get("phase").and_then(|v| v.as_str()).unwrap_or("?");
                     let iteration = state.get("iteration").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let pressure = state.get("context_pressure").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let pressure = state
+                        .get("context_pressure")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
                     let goal = state.get("goal").and_then(|v| v.as_str()).unwrap_or("?");
 
                     println!("  {} Session: {}", "→".cyan(), session);
                     println!("  {} Goal: {}", "→".cyan(), goal);
                     println!("  {} Phase: {}", "→".cyan(), phase);
                     println!("  {} Iteration: {}", "→".cyan(), iteration);
-                    println!("  {} Context pressure: {:.1}%", "→".cyan(), pressure * 100.0);
+                    println!(
+                        "  {} Context pressure: {:.1}%",
+                        "→".cyan(),
+                        pressure * 100.0
+                    );
                     println!();
                 } else {
-                    println!("  {} No checkpoint found for session {}", "⚠".yellow(), session);
+                    println!(
+                        "  {} No checkpoint found for session {}",
+                        "⚠".yellow(),
+                        session
+                    );
                     println!("  Showing default context budget breakdown:");
                     println!();
                 }
@@ -2070,7 +2462,11 @@ async fn main() -> anyhow::Result<()> {
                 );
 
                 println!("  {} Model: gpt-5 (128k max)", "→".cyan());
-                println!("  {} Hard limit: {} tokens (70%)", "→".cyan(), ctx_mgr.budget.hard_limit);
+                println!(
+                    "  {} Hard limit: {} tokens (70%)",
+                    "→".cyan(),
+                    ctx_mgr.budget.hard_limit
+                );
                 println!("  {} Profile: balanced", "→".cyan());
                 println!();
 
@@ -2087,7 +2483,8 @@ async fn main() -> anyhow::Result<()> {
 
                 for (name, section) in sections {
                     let budget = ctx_mgr.budget.section_budget(section);
-                    let bar_len = (budget as f32 / ctx_mgr.budget.hard_limit as f32 * 30.0) as usize;
+                    let bar_len =
+                        (budget as f32 / ctx_mgr.budget.hard_limit as f32 * 30.0) as usize;
                     let bar: String = "█".repeat(bar_len) + &"░".repeat(30 - bar_len);
                     println!("    {:<20} {} {} tokens", name.dimmed(), bar, budget);
                 }
@@ -2104,7 +2501,11 @@ async fn main() -> anyhow::Result<()> {
                 println!("  {} Health: {:?}", "→".cyan(), ctx_mgr.health_status());
             }
             ContextCommands::History { session } => {
-                println!("{} Compression history for session: {}", "→".cyan(), session);
+                println!(
+                    "{} Compression history for session: {}",
+                    "→".cyan(),
+                    session
+                );
 
                 let data_dir = get_data_dir();
                 let db_path = data_dir.join("state.db");
@@ -2116,40 +2517,58 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                let conn = store.conn().map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+                let conn = store
+                    .conn()
+                    .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
                 let mut stmt = conn.prepare(
                     "SELECT id, session_id, iteration, pressure_before, pressure_after, created_at \
                      FROM context_snapshots WHERE session_id = ?1 ORDER BY created_at DESC LIMIT 50"
                 ).map_err(|e| anyhow::anyhow!("Query error: {}", e))?;
 
-                let rows = stmt.query_map(rusqlite_params![session], |row| {
-                    Ok((
-                        row.get::<_, String>("id")?,
-                        row.get::<_, i64>("iteration")?,
-                        row.get::<_, f64>("pressure_before").ok(),
-                        row.get::<_, f64>("pressure_after").ok(),
-                        row.get::<_, String>("created_at")?,
-                    ))
-                }).map_err(|e| anyhow::anyhow!("Query error: {}", e))?;
+                let rows = stmt
+                    .query_map(rusqlite_params![session], |row| {
+                        Ok((
+                            row.get::<_, String>("id")?,
+                            row.get::<_, i64>("iteration")?,
+                            row.get::<_, f64>("pressure_before").ok(),
+                            row.get::<_, f64>("pressure_after").ok(),
+                            row.get::<_, String>("created_at")?,
+                        ))
+                    })
+                    .map_err(|e| anyhow::anyhow!("Query error: {}", e))?;
 
                 let mut entries: Vec<_> = rows.filter_map(|r| r.ok()).collect();
                 entries.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)); // sort by iteration desc
 
                 if entries.is_empty() {
-                    println!("  {} No compression history found for this session", "→".dimmed());
+                    println!(
+                        "  {} No compression history found for this session",
+                        "→".dimmed()
+                    );
                 } else {
-                    println!("  {:<6} {:<12} {:<14} {}", "Iteration", "Pressure In", "Pressure Out", "Time");
+                    println!(
+                        "  {:<6} {:<12} {:<14} {}",
+                        "Iteration", "Pressure In", "Pressure Out", "Time"
+                    );
                     println!("  {}", "─".repeat(50));
-                    for (_id, iteration, pressure_before, pressure_after, created_at) in entries.iter() {
-                        let pb = pressure_before.map_or("N/A".to_string(), |v| format!("{:.1}%", v * 100.0));
-                        let pa = pressure_after.map_or("N/A".to_string(), |v| format!("{:.1}%", v * 100.0));
+                    for (_id, iteration, pressure_before, pressure_after, created_at) in
+                        entries.iter()
+                    {
+                        let pb = pressure_before
+                            .map_or("N/A".to_string(), |v| format!("{:.1}%", v * 100.0));
+                        let pa = pressure_after
+                            .map_or("N/A".to_string(), |v| format!("{:.1}%", v * 100.0));
                         println!("  {:<6} {:<12} {:<14} {}", iteration, pb, pa, created_at);
                     }
                     println!("\n  {} {} snapshots", "→".dimmed(), entries.len());
                 }
             }
             ContextCommands::ForceCompress { session } => {
-                println!("{} Forcing compression for session: {}", "→".cyan(), session);
+                println!(
+                    "{} Forcing compression for session: {}",
+                    "→".cyan(),
+                    session
+                );
 
                 let mut ctx_mgr = praxis_memory::ContextManager::new(
                     128_000,
@@ -2194,7 +2613,9 @@ async fn main() -> anyhow::Result<()> {
                 if db_path.exists() {
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
-                    let session_ids = store.list_aggregates("session").await
+                    let session_ids = store
+                        .list_aggregates("session")
+                        .await
                         .map_err(|e| anyhow::anyhow!(e))?;
                     println!("  {} Sessions: {}", "→".cyan(), session_ids.len());
 
@@ -2205,13 +2626,21 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     println!("  {} Checkpoints: {}", "→".cyan(), snapshots);
-                    println!("  {} Database: {}", "→".cyan(), db_path.display().to_string().dimmed());
+                    println!(
+                        "  {} Database: {}",
+                        "→".cyan(),
+                        db_path.display().to_string().dimmed()
+                    );
                 } else {
                     println!("  {} No database found. Run a session first.", "→".cyan());
                 }
 
                 // Data directory
-                println!("  {} Data dir: {}", "→".cyan(), data_dir.display().to_string().dimmed());
+                println!(
+                    "  {} Data dir: {}",
+                    "→".cyan(),
+                    data_dir.display().to_string().dimmed()
+                );
 
                 // Injections
                 let injections_dir = data_dir.join("injections");
@@ -2230,7 +2659,9 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
-                    let session_ids = store.list_aggregates("session").await
+                    let session_ids = store
+                        .list_aggregates("session")
+                        .await
                         .map_err(|e| anyhow::anyhow!(e))?;
                     if session_ids.is_empty() {
                         println!("{} No sessions found", "→".cyan());
@@ -2239,12 +2670,33 @@ async fn main() -> anyhow::Result<()> {
                         println!("{}", "─".repeat(80).dimmed());
                         for sid in &session_ids {
                             if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
-                                let goal = snap.state.get("goal").and_then(|v| v.as_str()).unwrap_or("?");
-                                let project = snap.state.get("project").and_then(|v| v.as_str()).unwrap_or("default");
-                                let phase = snap.state.get("phase").and_then(|v| v.as_str()).unwrap_or("?");
-                                let iteration = snap.state.get("iteration").and_then(|v| v.as_u64()).unwrap_or(0);
-                                let pressure = snap.state.get("context_pressure").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                println!("  {} {} — {} (iter {}) — {} — pressure {:.1}%",
+                                let goal = snap
+                                    .state
+                                    .get("goal")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                let project = snap
+                                    .state
+                                    .get("project")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("default");
+                                let phase = snap
+                                    .state
+                                    .get("phase")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("?");
+                                let iteration = snap
+                                    .state
+                                    .get("iteration")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let pressure = snap
+                                    .state
+                                    .get("context_pressure")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0);
+                                println!(
+                                    "  {} {} — {} (iter {}) — {} — pressure {:.1}%",
                                     "•".dimmed(),
                                     sid.to_string().dimmed(),
                                     goal.cyan(),
@@ -2268,21 +2720,30 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
-                    let events = store.read_events(sid, None).await
+                    let events = store
+                        .read_events(sid, None)
+                        .await
                         .map_err(|e| anyhow::anyhow!(e))?;
                     if events.is_empty() {
                         println!("{} No events found for session {}", "→".cyan(), id);
                     } else {
-                        println!("{} Events for session {} ({})", "→".cyan(), id, events.len());
+                        println!(
+                            "{} Events for session {} ({})",
+                            "→".cyan(),
+                            id,
+                            events.len()
+                        );
                         println!("{}", "─".repeat(80).dimmed());
                         for event in &events {
-                            println!("  {} [{}] {} (v{})",
+                            println!(
+                                "  {} [{}] {} (v{})",
                                 "•".dimmed(),
                                 event.created_at.dimmed(),
                                 event.event_type.cyan(),
                                 event.version,
                             );
-                            if let Some(pretty) = serde_json::to_string_pretty(&event.payload).ok() {
+                            if let Some(pretty) = serde_json::to_string_pretty(&event.payload).ok()
+                            {
                                 for line in pretty.lines().take(5) {
                                     println!("    {}", line.dimmed());
                                 }
@@ -2301,7 +2762,11 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
-                    match store.get_snapshot(sid).await.map_err(|e| anyhow::anyhow!(e))? {
+                    match store
+                        .get_snapshot(sid)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))?
+                    {
                         Some(snap) => {
                             println!("{} Checkpoint for session {}", "→".cyan(), id);
                             println!("{}", "─".repeat(50).dimmed());
@@ -2322,7 +2787,12 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
-        Commands::Inject { session: _, agent, message_type, message } => {
+        Commands::Inject {
+            session: _,
+            agent,
+            message_type,
+            message,
+        } => {
             let data_dir = get_data_dir();
             let injections_dir = data_dir.join("injections");
             match std::fs::create_dir_all(&injections_dir) {
@@ -2341,12 +2811,19 @@ async fn main() -> anyhow::Result<()> {
                     let path = injections_dir.join(&filename);
                     match std::fs::write(&path, serde_json::to_string_pretty(&injection).unwrap()) {
                         Ok(()) => {
-                            println!("{} Injection written for agent '{}'", "✓".green(), agent.cyan());
+                            println!(
+                                "{} Injection written for agent '{}'",
+                                "✓".green(),
+                                agent.cyan()
+                            );
                             println!("  File: {}", path.display());
                             println!("  Type: {}", message_type.dimmed());
                             println!("  Message: {}", message.dimmed());
                             println!();
-                            println!("  {} The running session will pick it up on the next iteration.", "→".cyan());
+                            println!(
+                                "  {} The running session will pick it up on the next iteration.",
+                                "→".cyan()
+                            );
                         }
                         Err(e) => {
                             println!("{} Failed to write injection: {}", "✗".red(), e);
@@ -2358,11 +2835,23 @@ async fn main() -> anyhow::Result<()> {
                     println!("  Tried: {}", injections_dir.display());
                 }
             }
-        },
+        }
 
-        Commands::Schedule { goal, project, every, until, max_runs, max_tokens, max_cost } => {
+        Commands::Schedule {
+            goal,
+            project,
+            every,
+            until,
+            max_runs,
+            max_tokens,
+            max_cost,
+        } => {
             let interval = parse_duration(&every).unwrap_or_else(|| {
-                eprintln!("{} Invalid duration '{}'. Use formats like: 30s, 5min, 1h, 2h30min", "✗".red(), every);
+                eprintln!(
+                    "{} Invalid duration '{}'. Use formats like: 30s, 5min, 1h, 2h30min",
+                    "✗".red(),
+                    every
+                );
                 std::process::exit(1);
             });
 
@@ -2383,14 +2872,22 @@ async fn main() -> anyhow::Result<()> {
                 // Check if the until-command already passes before running
                 if check_until_command(&until) {
                     println!("{} Goal condition met: '{}' exits 0", "✓".green(), until);
-                    println!("{} Schedule complete after {} run(s)", "✓".green().bold(), run_num - 1);
+                    println!(
+                        "{} Schedule complete after {} run(s)",
+                        "✓".green().bold(),
+                        run_num - 1
+                    );
                     break;
                 }
 
                 // Resolve project config path
                 let config_path = resolve_config_path(project.as_deref());
                 if let Some(ref path) = config_path {
-                    println!("  {} Using project config: {}", "→".dimmed(), path.display());
+                    println!(
+                        "  {} Using project config: {}",
+                        "→".dimmed(),
+                        path.display()
+                    );
                 }
 
                 let mut runtime = praxis_core::CoreRuntime::new()
@@ -2416,7 +2913,9 @@ async fn main() -> anyhow::Result<()> {
                     runtime.loop_controller.limits.max_cost_usd = remaining_cost;
                 }
 
-                let result = runtime.run_goal(&goal, config_path.as_deref(), vault.as_ref().map(|v| &**v)).await?;
+                let result = runtime
+                    .run_goal(&goal, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                    .await?;
 
                 // Clean up temp config file
                 if let Some(path) = config_path {
@@ -2426,9 +2925,22 @@ async fn main() -> anyhow::Result<()> {
                 total_tokens += runtime.loop_controller.tokens_used;
                 total_cost += runtime.loop_controller.cost_usd;
 
-                println!("  {} Run {} result: {}", "→".dimmed(), run_num,
-                    if result.passed { "✅ PASSED".green() } else { "❌ FAILED".red() });
-                println!("  {} Tokens: {} | Cost: ${:.4}", "→".dimmed(), total_tokens, total_cost);
+                println!(
+                    "  {} Run {} result: {}",
+                    "→".dimmed(),
+                    run_num,
+                    if result.passed {
+                        "✅ PASSED".green()
+                    } else {
+                        "❌ FAILED".red()
+                    }
+                );
+                println!(
+                    "  {} Tokens: {} | Cost: ${:.4}",
+                    "→".dimmed(),
+                    total_tokens,
+                    total_cost
+                );
 
                 runtime.shutdown().await?;
 
@@ -2436,20 +2948,34 @@ async fn main() -> anyhow::Result<()> {
                 if check_until_command(&until) {
                     println!();
                     println!("{} Goal condition met: '{}' exits 0", "✓".green(), until);
-                    println!("{} Schedule complete after {} run(s)", "✓".green().bold(), run_num);
+                    println!(
+                        "{} Schedule complete after {} run(s)",
+                        "✓".green().bold(),
+                        run_num
+                    );
                     break;
                 }
 
                 // Check cumulative budget
                 if let Some(mt) = max_tokens {
                     if total_tokens >= mt {
-                        println!("{} Token budget exhausted: {}/{}", "⚠".yellow(), total_tokens, mt);
+                        println!(
+                            "{} Token budget exhausted: {}/{}",
+                            "⚠".yellow(),
+                            total_tokens,
+                            mt
+                        );
                         break;
                     }
                 }
                 if let Some(mc) = max_cost {
                     if total_cost >= mc {
-                        println!("{} Cost budget exhausted: ${:.4}/${:.4}", "⚠".yellow(), total_cost, mc);
+                        println!(
+                            "{} Cost budget exhausted: ${:.4}/${:.4}",
+                            "⚠".yellow(),
+                            total_cost,
+                            mc
+                        );
                         break;
                     }
                 }
@@ -2461,16 +2987,29 @@ async fn main() -> anyhow::Result<()> {
             }
 
             println!();
-            println!("{} Schedule ended. Total tokens: {} | Cost: ${:.4}", "→".cyan(), total_tokens, total_cost);
+            println!(
+                "{} Schedule ended. Total tokens: {} | Cost: ${:.4}",
+                "→".cyan(),
+                total_tokens,
+                total_cost
+            );
         }
 
-        Commands::Plan { goal, project, output } => {
+        Commands::Plan {
+            goal,
+            project,
+            output,
+        } => {
             println!("{} Planning goal: {}", "→".cyan(), goal.white().bold());
 
             let vault = load_vault();
             let config_path = resolve_config_path(project.as_deref());
             if let Some(ref path) = config_path {
-                println!("  {} Using project config: {}", "→".dimmed(), path.display());
+                println!(
+                    "  {} Using project config: {}",
+                    "→".dimmed(),
+                    path.display()
+                );
             }
 
             // Determine output path
@@ -2496,13 +3035,14 @@ async fn main() -> anyhow::Result<()> {
 
             // For plan mode, we run the goal but with a manual completion criterion
             // so it stops after the first Planning + Designing iteration.
-            runtime = runtime.with_completion(
-                praxis_core::CompletionCriterion::from_string("manual").unwrap(),
-            );
+            runtime = runtime
+                .with_completion(praxis_core::CompletionCriterion::from_string("manual").unwrap());
 
             println!("  {} Running Planning + Designing phases...", "→".dimmed());
 
-            let result = runtime.run_goal(&goal, config_path.as_deref(), vault.as_ref().map(|v| &**v)).await?;
+            let result = runtime
+                .run_goal(&goal, config_path.as_deref(), vault.as_ref().map(|v| &**v))
+                .await?;
 
             // Clean up temp config
             if let Some(path) = config_path {
@@ -2515,29 +3055,39 @@ async fn main() -> anyhow::Result<()> {
                  ## Goal\n{}\n\n\
                  ## Status\n{}\n\n\
                  ## Agent Outputs\n\n",
-                goal, goal,
-                if result.passed { "Planning complete" } else { "Planning incomplete (review outputs)" },
+                goal,
+                goal,
+                if result.passed {
+                    "Planning complete"
+                } else {
+                    "Planning incomplete (review outputs)"
+                },
             );
 
             for agent_result in &result.agent_results {
                 plan_content.push_str(&format!(
                     "### {} ({})\n\n{}\n\n",
-                    agent_result.agent_id,
-                    agent_result.role,
-                    agent_result.content,
+                    agent_result.agent_id, agent_result.role, agent_result.content,
                 ));
             }
 
             plan_content.push_str("## Next Steps\n\n");
             plan_content.push_str("Review the plan above. When ready, execute with:\n\n");
-            plan_content.push_str(&format!("```bash\npraxis run --plan \"{}\"\n```\n", output_path.display()));
+            plan_content.push_str(&format!(
+                "```bash\npraxis run --plan \"{}\"\n```\n",
+                output_path.display()
+            ));
 
             std::fs::write(&output_path, &plan_content)?;
 
             println!();
             println!("{} Plan saved to: {}", "✓".green(), output_path.display());
             println!("  {} Review the plan, then execute with:", "→".cyan());
-            println!("  {} praxis run --plan \"{}\"", "→".cyan(), output_path.display());
+            println!(
+                "  {} praxis run --plan \"{}\"",
+                "→".cyan(),
+                output_path.display()
+            );
 
             runtime.shutdown().await?;
         }
@@ -2561,26 +3111,41 @@ async fn main() -> anyhow::Result<()> {
 
             match tauri_result {
                 Ok(mut child) => {
-                    let status = child.wait().map_err(|e| anyhow::anyhow!("Desktop process error: {}", e))?;
+                    let status = child
+                        .wait()
+                        .map_err(|e| anyhow::anyhow!("Desktop process error: {}", e))?;
                     if !status.success() {
-                        eprintln!("{} Desktop exited with code: {}", "⚠".yellow(), status.code().unwrap_or(-1));
+                        eprintln!(
+                            "{} Desktop exited with code: {}",
+                            "⚠".yellow(),
+                            status.code().unwrap_or(-1)
+                        );
                     }
                 }
                 Err(_) => {
                     // tauri-cli not installed, fall back to `cargo run -p desktop`
-                    println!("{} (tauri-cli not found, using cargo run -p desktop)", "ℹ".dimmed());
+                    println!(
+                        "{} (tauri-cli not found, using cargo run -p desktop)",
+                        "ℹ".dimmed()
+                    );
                     let mut child = std::process::Command::new("cargo")
                         .args(["run", "-p", "desktop"])
                         .spawn()
                         .map_err(|e| anyhow::anyhow!("Failed to launch desktop: {}", e))?;
 
-                    let status = child.wait().map_err(|e| anyhow::anyhow!("Desktop process error: {}", e))?;
+                    let status = child
+                        .wait()
+                        .map_err(|e| anyhow::anyhow!("Desktop process error: {}", e))?;
                     if !status.success() {
-                        eprintln!("{} Desktop exited with code: {}", "⚠".yellow(), status.code().unwrap_or(-1));
+                        eprintln!(
+                            "{} Desktop exited with code: {}",
+                            "⚠".yellow(),
+                            status.code().unwrap_or(-1)
+                        );
                     }
                 }
             }
-        },
+        }
         Commands::Dashboard => {
             println!("{} Starting dashboard...", "→".cyan());
 
@@ -2589,15 +3154,13 @@ async fn main() -> anyhow::Result<()> {
 
             // Start the API server in the background
             let vault_password = std::env::var("VAULT_PASSWORD").ok();
-            let server = praxis_core::api::ApiServer::new(
-                praxis_core::api::ApiServerConfig {
-                    port: 8080,
-                    cors_origins: vec!["*".to_string()],
-                    vault_password,
-                    data_dir: data_dir.clone(),
-                    enable_pairing: false,
-                }
-            );
+            let server = praxis_core::api::ApiServer::new(praxis_core::api::ApiServerConfig {
+                port: 8080,
+                cors_origins: vec!["*".to_string()],
+                vault_password,
+                data_dir: data_dir.clone(),
+                enable_pairing: false,
+            });
 
             println!("{} API server: http://localhost:8080", "✓".green());
             println!("{} WebSocket:  ws://localhost:8080/ws", "✓".green());
@@ -2611,7 +3174,11 @@ async fn main() -> anyhow::Result<()> {
 
             // Try to open the dashboard in the browser
             let dashboard_url = "http://localhost:8080";
-            println!("{} Opening dashboard in browser: {}", "→".cyan(), dashboard_url);
+            println!(
+                "{} Opening dashboard in browser: {}",
+                "→".cyan(),
+                dashboard_url
+            );
 
             #[cfg(target_os = "windows")]
             let open_result = std::process::Command::new("cmd")
@@ -2631,7 +3198,11 @@ async fn main() -> anyhow::Result<()> {
             match open_result {
                 Ok(_) => println!("{} Browser opened", "✓".green()),
                 Err(_) => {
-                    println!("{} Could not auto-open browser. Visit: {}", "⚠".yellow(), dashboard_url);
+                    println!(
+                        "{} Could not auto-open browser. Visit: {}",
+                        "⚠".yellow(),
+                        dashboard_url
+                    );
                 }
             }
 
@@ -2656,20 +3227,26 @@ async fn main() -> anyhow::Result<()> {
             // Ensure data directory exists
             std::fs::create_dir_all(&data_dir)?;
 
-            let server = praxis_core::api::ApiServer::new(
-                praxis_core::api::ApiServerConfig {
-                    port: 8080,
-                    cors_origins: vec!["*".to_string()],
-                    vault_password,
-                    data_dir: data_dir.clone(),
-                    enable_pairing: pair,
-                }
-            );
+            let server = praxis_core::api::ApiServer::new(praxis_core::api::ApiServerConfig {
+                port: 8080,
+                cors_origins: vec!["*".to_string()],
+                vault_password,
+                data_dir: data_dir.clone(),
+                enable_pairing: pair,
+            });
 
             println!("{} REST: http://localhost:8080", "✓".green());
             println!("{} WebSocket: ws://localhost:8080/ws", "✓".green());
-            println!("{} Vault: {}/credentials.vault.json", "✓".green(), data_dir.display());
-            println!("{} Projects: {}/projects.json", "✓".green(), data_dir.display());
+            println!(
+                "{} Vault: {}/credentials.vault.json",
+                "✓".green(),
+                data_dir.display()
+            );
+            println!(
+                "{} Projects: {}/projects.json",
+                "✓".green(),
+                data_dir.display()
+            );
             println!("{0}\n{} Press Ctrl+C to stop\n{0}", "─".repeat(50).dimmed());
 
             tokio::spawn(async move {
@@ -2688,7 +3265,10 @@ async fn main() -> anyhow::Result<()> {
 
             if !db_path.exists() {
                 println!("{} No sessions found. Run a goal first:", "→".cyan());
-                println!("  {} --project <name> --goal \"your goal\"", "praxis run".yellow());
+                println!(
+                    "  {} --project <name> --goal \"your goal\"",
+                    "praxis run".yellow()
+                );
                 std::process::exit(0);
             }
 
@@ -2701,13 +3281,19 @@ async fn main() -> anyhow::Result<()> {
 
             if session_ids.is_empty() {
                 println!("{} No sessions found. Run a goal first:", "→".cyan());
-                println!("  {} --project <name> --goal \"your goal\"", "praxis run".yellow());
+                println!(
+                    "  {} --project <name> --goal \"your goal\"",
+                    "praxis run".yellow()
+                );
                 std::process::exit(0);
             }
 
             println!("{} Sessions:", "→".cyan());
             for (i, sid) in session_ids.iter().enumerate() {
-                let snapshot = store.get_snapshot(*sid).await.map_err(|e| anyhow::anyhow!(e))?;
+                let snapshot = store
+                    .get_snapshot(*sid)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 let goal = snapshot
                     .as_ref()
                     .and_then(|s| s.state.get("goal").and_then(|v| v.as_str()))
@@ -2716,13 +3302,23 @@ async fn main() -> anyhow::Result<()> {
                     .as_ref()
                     .and_then(|s| s.state.get("phase").and_then(|v| v.as_str()))
                     .unwrap_or("?");
-                println!("  [{}] {} — {} ({})", i + 1, sid, goal.cyan(), phase.dimmed());
+                println!(
+                    "  [{}] {} — {} ({})",
+                    i + 1,
+                    sid,
+                    goal.cyan(),
+                    phase.dimmed()
+                );
             }
             println!();
 
             // Pick the most recent session (last in list)
             let session_id = session_ids.last().unwrap();
-            println!("{} Watching most recent session: {}", "→".cyan(), session_id);
+            println!(
+                "{} Watching most recent session: {}",
+                "→".cyan(),
+                session_id
+            );
             println!();
 
             // Check if the API server is running, if not start it
@@ -2740,15 +3336,13 @@ async fn main() -> anyhow::Result<()> {
             if !server_reachable {
                 println!("{} API server not running. Starting it...", "→".cyan());
                 let vault_password = std::env::var("VAULT_PASSWORD").ok();
-                let server = praxis_core::api::ApiServer::new(
-                    praxis_core::api::ApiServerConfig {
-                        port: 8080,
-                        cors_origins: vec!["*".to_string()],
-                        vault_password,
-                        data_dir: data_dir.clone(),
-                        enable_pairing: false,
-                    }
-                );
+                let server = praxis_core::api::ApiServer::new(praxis_core::api::ApiServerConfig {
+                    port: 8080,
+                    cors_origins: vec!["*".to_string()],
+                    vault_password,
+                    data_dir: data_dir.clone(),
+                    enable_pairing: false,
+                });
                 tokio::spawn(async move {
                     let _ = server.start().await;
                 });
@@ -2759,13 +3353,21 @@ async fn main() -> anyhow::Result<()> {
             commands::watch::run(&session_id.to_string(), api_url, 2).await;
         }
 
-        Commands::Watch { session_id, api, interval } => {
+        Commands::Watch {
+            session_id,
+            api,
+            interval,
+        } => {
             commands::watch::run(&session_id, &api, interval).await;
         }
 
         Commands::Update { channel } => {
             let current_version = env!("CARGO_PKG_VERSION");
-            println!("{} Checking for updates (channel: {})...", "→".cyan(), channel);
+            println!(
+                "{} Checking for updates (channel: {})...",
+                "→".cyan(),
+                channel
+            );
             println!("  Current version: v{}", current_version);
 
             // Check GitHub releases for the latest version
@@ -2786,8 +3388,11 @@ async fn main() -> anyhow::Result<()> {
                 None => None,
             };
 
-            let latest = latest
-                .and_then(|v| v.get("tag_name").and_then(|t| t.as_str()).map(|s| s.trim_start_matches('v').to_string()));
+            let latest = latest.and_then(|v| {
+                v.get("tag_name")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.trim_start_matches('v').to_string())
+            });
 
             match latest {
                 Some(latest_version) => {
@@ -2795,15 +3400,26 @@ async fn main() -> anyhow::Result<()> {
                     if latest_version == current_version {
                         println!("{} Already up to date", "✓".green());
                     } else {
-                        println!("{} Update available: v{} → v{}", "↑".yellow(), current_version, latest_version);
+                        println!(
+                            "{} Update available: v{} → v{}",
+                            "↑".yellow(),
+                            current_version,
+                            latest_version
+                        );
                         println!();
                         println!("  To update:");
                         println!("    {} install praxis-ai/praxis", "cargo binstall".yellow());
-                        println!("    or: {} clone https://github.com/praxis-ai/praxis && cd praxis && cargo install --path crates/cli", "git".yellow());
+                        println!(
+                            "    or: {} clone https://github.com/praxis-ai/praxis && cd praxis && cargo install --path crates/cli",
+                            "git".yellow()
+                        );
                     }
                 }
                 None => {
-                    println!("{} Could not check for updates (network error or rate limited)", "⚠".yellow());
+                    println!(
+                        "{} Could not check for updates (network error or rate limited)",
+                        "⚠".yellow()
+                    );
                     println!("  Check manually: https://github.com/praxis-ai/praxis/releases");
                 }
             }
@@ -2812,20 +3428,28 @@ async fn main() -> anyhow::Result<()> {
         Commands::Deploy(cmd) => match cmd {
             DeployCommands::Setup { host } => {
                 println!("{} Setting up VPS deployment...", "→".cyan());
-                commands::deploy::setup(&host).await.map_err(|e| anyhow::anyhow!(e))?;
+                commands::deploy::setup(&host)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 println!("{} Deployment configured", "✓".green());
             }
             DeployCommands::Push => {
                 println!("{} Pushing to VPS...", "→".cyan());
-                commands::deploy::push().await.map_err(|e| anyhow::anyhow!(e))?;
+                commands::deploy::push()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 println!("{} Push complete", "✓".green());
             }
             DeployCommands::Status => {
                 println!("{} Checking VPS status...", "→".cyan());
-                commands::deploy::status().await.map_err(|e| anyhow::anyhow!(e))?;
+                commands::deploy::status()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
             }
             DeployCommands::Logs { tail } => {
-                commands::deploy::logs(tail).await.map_err(|e| anyhow::anyhow!(e))?;
+                commands::deploy::logs(tail)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
             }
         },
 
@@ -2853,7 +3477,8 @@ async fn main() -> anyhow::Result<()> {
             let projects_path = data_dir.join("projects.json");
             match std::fs::read_to_string(&projects_path) {
                 Ok(content) => {
-                    let projects: Vec<serde_json::Value> = serde_json::from_str(&content).unwrap_or_default();
+                    let projects: Vec<serde_json::Value> =
+                        serde_json::from_str(&content).unwrap_or_default();
                     if projects.is_empty() {
                         println!("{} no projects found", "⚠".yellow());
                         println!("    Run {} to create one", "praxis init <name>".yellow());
@@ -2878,7 +3503,10 @@ async fn main() -> anyhow::Result<()> {
                         Ok(keys) => {
                             if keys.is_empty() {
                                 println!("{} empty (no API keys stored)", "⚠".yellow());
-                                println!("    Run: {} openai https://api.openai.com/v1 --api-key-stdin", "praxis provider add".yellow());
+                                println!(
+                                    "    Run: {} openai https://api.openai.com/v1 --api-key-stdin",
+                                    "praxis provider add".yellow()
+                                );
                             } else {
                                 println!("{} {} credential(s) stored", "✓".green(), keys.len());
                             }
@@ -2893,7 +3521,10 @@ async fn main() -> anyhow::Result<()> {
                 }
             } else {
                 println!("{} no vault file", "⚠".yellow());
-                println!("    Run: {} <name> <base_url> --api-key-stdin", "praxis provider add".yellow());
+                println!(
+                    "    Run: {} <name> <base_url> --api-key-stdin",
+                    "praxis provider add".yellow()
+                );
             }
 
             // 4. Database
@@ -2901,17 +3532,15 @@ async fn main() -> anyhow::Result<()> {
             let db_path = data_dir.join("state.db");
             if db_path.exists() {
                 match praxis_persistence::SqliteEventStore::new(&db_path) {
-                    Ok(store) => {
-                        match store.list_aggregates("session").await {
-                            Ok(sessions) => {
-                                println!("{} {} session(s) recorded", "✓".green(), sessions.len());
-                            }
-                            Err(e) => {
-                                println!("{} could not read sessions: {}", "✗".red(), e);
-                                all_ok = false;
-                            }
+                    Ok(store) => match store.list_aggregates("session").await {
+                        Ok(sessions) => {
+                            println!("{} {} session(s) recorded", "✓".green(), sessions.len());
                         }
-                    }
+                        Err(e) => {
+                            println!("{} could not read sessions: {}", "✗".red(), e);
+                            all_ok = false;
+                        }
+                    },
                     Err(e) => {
                         println!("{} could not open: {}", "✗".red(), e);
                         all_ok = false;
@@ -2940,15 +3569,17 @@ async fn main() -> anyhow::Result<()> {
             // 6. Agents
             print!("  {} Agents...         ", "6.".cyan());
             let global_dir = praxis_core::agents::AgentRegistry::global_dir();
-            let registry = praxis_core::agents::AgentRegistry::load(
-                Some(&global_dir),
-                None,
-            );
-            println!("{} {} agent(s) ({} builtin, {} global)",
+            let registry = praxis_core::agents::AgentRegistry::load(Some(&global_dir), None);
+            println!(
+                "{} {} agent(s) ({} builtin, {} global)",
                 "✓".green(),
                 registry.list().len(),
-                registry.list_by_scope(praxis_core::agents::AgentScope::Builtin).len(),
-                registry.list_by_scope(praxis_core::agents::AgentScope::Global).len(),
+                registry
+                    .list_by_scope(praxis_core::agents::AgentScope::Builtin)
+                    .len(),
+                registry
+                    .list_by_scope(praxis_core::agents::AgentScope::Global)
+                    .len(),
             );
 
             println!();
@@ -2956,7 +3587,10 @@ async fn main() -> anyhow::Result<()> {
             if all_ok {
                 println!("{} All checks passed!", "✓".green().bold());
             } else {
-                println!("{} Some checks need attention (see above)", "⚠".yellow().bold());
+                println!(
+                    "{} Some checks need attention (see above)",
+                    "⚠".yellow().bold()
+                );
             }
         }
 
@@ -2979,11 +3613,17 @@ async fn main() -> anyhow::Result<()> {
                 println!();
                 println!("  {} my-app", "praxis init".yellow());
                 println!();
-                println!("  This creates a project at: {}/projects/my-app/", data_dir.display());
+                println!(
+                    "  This creates a project at: {}/projects/my-app/",
+                    data_dir.display()
+                );
                 println!();
                 println!("{} Step 2: Add an LLM provider", "→".cyan().bold());
                 println!();
-                println!("  {} openai https://api.openai.com/v1 --api-key-stdin", "praxis provider add".yellow());
+                println!(
+                    "  {} openai https://api.openai.com/v1 --api-key-stdin",
+                    "praxis provider add".yellow()
+                );
                 println!("  (then paste your API key and press Enter)");
                 println!();
                 println!("  Or use an environment variable in config.toml:");
@@ -2993,7 +3633,10 @@ async fn main() -> anyhow::Result<()> {
                 println!();
                 println!("{} Step 3: Run your first goal", "→".cyan().bold());
                 println!();
-                println!("  {} --project my-app --goal \"Build a hello world CLI\"", "praxis run".yellow());
+                println!(
+                    "  {} --project my-app --goal \"Build a hello world CLI\"",
+                    "praxis run".yellow()
+                );
                 println!();
                 println!("{} Step 4: Watch it run in real-time", "→".cyan().bold());
                 println!();
@@ -3025,12 +3668,18 @@ async fn main() -> anyhow::Result<()> {
                 let has_vault = vault_path.exists();
                 if !has_vault {
                     println!("  {} No API keys in vault. Add one:", "⚠".yellow());
-                    println!("    {} openai https://api.openai.com/v1 --api-key-stdin", "praxis provider add".yellow());
+                    println!(
+                        "    {} openai https://api.openai.com/v1 --api-key-stdin",
+                        "praxis provider add".yellow()
+                    );
                     println!();
                 }
 
                 println!("  {} Next steps:", "→".cyan());
-                println!("    {} --project <name> --goal \"your goal\"", "praxis run".yellow());
+                println!(
+                    "    {} --project <name> --goal \"your goal\"",
+                    "praxis run".yellow()
+                );
                 println!("    {} (watch in real-time)", "praxis monitor".yellow());
                 println!("    {} (web dashboard)", "praxis dashboard".yellow());
             }
@@ -3050,27 +3699,54 @@ mod tests {
 
     #[test]
     fn test_parse_duration_seconds() {
-        assert_eq!(parse_duration("30s"), Some(std::time::Duration::from_secs(30)));
-        assert_eq!(parse_duration("90s"), Some(std::time::Duration::from_secs(90)));
-        assert_eq!(parse_duration("5sec"), Some(std::time::Duration::from_secs(5)));
+        assert_eq!(
+            parse_duration("30s"),
+            Some(std::time::Duration::from_secs(30))
+        );
+        assert_eq!(
+            parse_duration("90s"),
+            Some(std::time::Duration::from_secs(90))
+        );
+        assert_eq!(
+            parse_duration("5sec"),
+            Some(std::time::Duration::from_secs(5))
+        );
     }
 
     #[test]
     fn test_parse_duration_minutes() {
-        assert_eq!(parse_duration("5min"), Some(std::time::Duration::from_secs(300)));
-        assert_eq!(parse_duration("1minute"), Some(std::time::Duration::from_secs(60)));
+        assert_eq!(
+            parse_duration("5min"),
+            Some(std::time::Duration::from_secs(300))
+        );
+        assert_eq!(
+            parse_duration("1minute"),
+            Some(std::time::Duration::from_secs(60))
+        );
     }
 
     #[test]
     fn test_parse_duration_hours() {
-        assert_eq!(parse_duration("1h"), Some(std::time::Duration::from_secs(3600)));
-        assert_eq!(parse_duration("2h"), Some(std::time::Duration::from_secs(7200)));
+        assert_eq!(
+            parse_duration("1h"),
+            Some(std::time::Duration::from_secs(3600))
+        );
+        assert_eq!(
+            parse_duration("2h"),
+            Some(std::time::Duration::from_secs(7200))
+        );
     }
 
     #[test]
     fn test_parse_duration_compound() {
-        assert_eq!(parse_duration("2h30min"), Some(std::time::Duration::from_secs(9000)));
-        assert_eq!(parse_duration("1h30min30s"), Some(std::time::Duration::from_secs(5430)));
+        assert_eq!(
+            parse_duration("2h30min"),
+            Some(std::time::Duration::from_secs(9000))
+        );
+        assert_eq!(
+            parse_duration("1h30min30s"),
+            Some(std::time::Duration::from_secs(5430))
+        );
     }
 
     #[test]
@@ -3094,4 +3770,3 @@ mod tests {
         assert!(!check_until_command(cmd));
     }
 }
-

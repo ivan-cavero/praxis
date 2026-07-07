@@ -11,7 +11,9 @@ static TOKENIZER: OnceLock<Option<tiktoken_rs::CoreBPE>> = OnceLock::new();
 
 /// Get the global tokenizer, if available.
 fn global_tokenizer() -> Option<&'static tiktoken_rs::CoreBPE> {
-    TOKENIZER.get_or_init(|| tiktoken_rs::cl100k_base().ok()).as_ref()
+    TOKENIZER
+        .get_or_init(|| tiktoken_rs::cl100k_base().ok())
+        .as_ref()
 }
 
 // ─── Token Counter ────────────────────────────────────────────
@@ -41,7 +43,9 @@ impl TokenCounter {
 
     /// Create a token counter with the default approximation (4 chars/token).
     pub fn default_token_counter() -> Self {
-        Self { chars_per_token: 4.0 }
+        Self {
+            chars_per_token: 4.0,
+        }
     }
 
     /// Count tokens for a string.
@@ -58,11 +62,14 @@ impl TokenCounter {
 
     /// Count tokens for a list of messages.
     pub fn count_messages(&self, messages: &[Message]) -> u32 {
-        messages.iter().map(|m| {
-            let role_tokens = 4; // ~4 tokens for role prefix
-            let content_tokens = self.count_tokens(&m.content);
-            role_tokens + content_tokens
-        }).sum()
+        messages
+            .iter()
+            .map(|m| {
+                let role_tokens = 4; // ~4 tokens for role prefix
+                let content_tokens = self.count_tokens(&m.content);
+                role_tokens + content_tokens
+            })
+            .sum()
     }
 }
 
@@ -234,7 +241,10 @@ pub struct CompressionPipeline;
 impl CompressionPipeline {
     /// Compress context to fit within budget.
     /// Returns compression results for logging.
-    pub fn compress(context: &mut ContextWindow, budget: &mut ContextBudget) -> Vec<CompressionResult> {
+    pub fn compress(
+        context: &mut ContextWindow,
+        budget: &mut ContextBudget,
+    ) -> Vec<CompressionResult> {
         let mut results = Vec::new();
 
         while budget.is_over_limit() && !context.is_empty() {
@@ -276,15 +286,21 @@ impl CompressionPipeline {
     }
 
     /// Step 1: Truncate tool results to summaries.
-    fn truncate_tool_results(context: &mut ContextWindow, budget: &mut ContextBudget) -> Option<CompressionResult> {
+    fn truncate_tool_results(
+        context: &mut ContextWindow,
+        budget: &mut ContextBudget,
+    ) -> Option<CompressionResult> {
         let before = budget.allocated;
 
         // Find and truncate long tool results
         for msg in &mut context.messages {
             if msg.role == "tool" && msg.content.len() > 500 {
                 let original_len = msg.content.len();
-                msg.content = format!("{}... [truncated, {} chars total]",
-                    &msg.content[..200], original_len);
+                msg.content = format!(
+                    "{}... [truncated, {} chars total]",
+                    &msg.content[..200],
+                    original_len
+                );
                 let saved = (original_len - msg.content.len()) as u32 / 4; // ~4 chars per token
                 budget.allocated = budget.allocated.saturating_sub(saved as usize);
             }
@@ -310,7 +326,10 @@ impl CompressionPipeline {
     /// matches or exceeds LLM summarization quality at half the cost — and is far
     /// better than the previous approach of truncating each message to 50 chars,
     /// which destroyed ~95% of content while still consuming tokens.
-    fn compress_history(context: &mut ContextWindow, budget: &mut ContextBudget) -> Option<CompressionResult> {
+    fn compress_history(
+        context: &mut ContextWindow,
+        budget: &mut ContextBudget,
+    ) -> Option<CompressionResult> {
         if context.messages.len() <= 5 {
             return None;
         }
@@ -341,8 +360,13 @@ impl CompressionPipeline {
     }
 
     /// Step 3: Reduce RAG chunks (keep top 3).
-    fn reduce_rag(context: &mut ContextWindow, budget: &mut ContextBudget) -> Option<CompressionResult> {
-        let rag_count = context.messages.iter()
+    fn reduce_rag(
+        context: &mut ContextWindow,
+        budget: &mut ContextBudget,
+    ) -> Option<CompressionResult> {
+        let rag_count = context
+            .messages
+            .iter()
             .filter(|m| m.role == "rag_context")
             .count();
 
@@ -374,7 +398,10 @@ impl CompressionPipeline {
     }
 
     /// Step 4: Prune low-relevance project context.
-    fn prune_project_context(context: &mut ContextWindow, budget: &mut ContextBudget) -> Option<CompressionResult> {
+    fn prune_project_context(
+        context: &mut ContextWindow,
+        budget: &mut ContextBudget,
+    ) -> Option<CompressionResult> {
         let before = budget.allocated;
 
         // Remove project context messages (keep first one as summary)
@@ -403,22 +430,29 @@ impl CompressionPipeline {
     }
 
     /// Step 5: Emergency consolidation — summarize everything.
-    fn emergency_consolidation(context: &mut ContextWindow, budget: &mut ContextBudget) -> Option<CompressionResult> {
+    fn emergency_consolidation(
+        context: &mut ContextWindow,
+        budget: &mut ContextBudget,
+    ) -> Option<CompressionResult> {
         let before = budget.allocated;
 
         // Create a single summary of everything
-        let summary: String = context.messages.iter()
+        let summary: String = context
+            .messages
+            .iter()
             .take(20) // First 20 messages
             .map(|m| format!("{}: {}", m.role, &m.content[..m.content.len().min(100)]))
             .collect::<Vec<_>>()
             .join("\n");
 
-        context.messages = vec![
-            Message {
-                role: "system".to_string(),
-                content: format!("[Full context consolidated: {} messages summary]\n{}", context.messages.len(), summary),
-            }
-        ];
+        context.messages = vec![Message {
+            role: "system".to_string(),
+            content: format!(
+                "[Full context consolidated: {} messages summary]\n{}",
+                context.messages.len(),
+                summary
+            ),
+        }];
 
         budget.allocated = Self::estimate_tokens(&context.messages);
 
@@ -446,7 +480,9 @@ pub struct ContextWindow {
 
 impl ContextWindow {
     pub fn new() -> Self {
-        Self { messages: Vec::new() }
+        Self {
+            messages: Vec::new(),
+        }
     }
 
     pub fn push(&mut self, msg: Message) {
@@ -481,15 +517,29 @@ pub struct ContextHealth {
 
 impl ContextHealth {
     /// Evaluate context health from metrics.
-    pub fn evaluate(pressure: f32, compressions: u32, messages: usize, tokens: usize, budget: usize) -> Self {
-        let ratio = if budget > 0 { tokens as f32 / budget as f32 } else { 0.0 };
+    pub fn evaluate(
+        pressure: f32,
+        compressions: u32,
+        messages: usize,
+        tokens: usize,
+        budget: usize,
+    ) -> Self {
+        let ratio = if budget > 0 {
+            tokens as f32 / budget as f32
+        } else {
+            0.0
+        };
         Self {
             pressure,
             compression_ratio: ratio,
             compression_frequency: compressions,
             message_count: messages,
             total_tokens: tokens,
-            budget_utilization: if budget > 0 { tokens as f32 / budget as f32 } else { 0.0 },
+            budget_utilization: if budget > 0 {
+                tokens as f32 / budget as f32
+            } else {
+                0.0
+            },
         }
     }
 
@@ -603,8 +653,13 @@ mod tests {
     fn test_budget_profile() {
         let profile = BudgetProfile::Balanced;
         let alloc = profile.allocations();
-        let total = alloc.system_prompt + alloc.goal_definition + alloc.active_task
-            + alloc.tool_results + alloc.recent_history + alloc.memory_rag + alloc.project_context;
+        let total = alloc.system_prompt
+            + alloc.goal_definition
+            + alloc.active_task
+            + alloc.tool_results
+            + alloc.recent_history
+            + alloc.memory_rag
+            + alloc.project_context;
         assert!((total - 1.0).abs() < 0.01); // Should sum to ~1.0
     }
 
@@ -642,7 +697,10 @@ mod tests {
         for i in 0..50 {
             context.push(Message {
                 role: "user".to_string(),
-                content: format!("Long message number {} with detailed content for testing", i),
+                content: format!(
+                    "Long message number {} with detailed content for testing",
+                    i
+                ),
             });
         }
 

@@ -7,18 +7,18 @@
 //! 4. Collects and consolidates results
 //! 5. Monitors agent health
 
+pub mod injection;
 pub mod roles;
 pub mod task;
 pub mod verification;
-pub mod injection;
 
-pub use roles::{RoleConfig, RoleOverride, GoalConfig, ResolvedRole};
+pub use injection::{
+    Injection, InjectionChannel, InjectionError, InjectionPriority, InjectionSource,
+    InjectionStats, InjectionType,
+};
+pub use roles::{GoalConfig, ResolvedRole, RoleConfig, RoleOverride};
 pub use task::{Task, TaskResult, TaskStatus};
 pub use verification::{
-    ParallelExecutor, ConsensusConsolidator, ConsensusStrategy, ConsensusVerdict,
-    CrossModelFeedbackLoop, PerAgentContextTracker, AgentContextInfo,
-};
-pub use injection::{
-    Injection, InjectionType, InjectionPriority, InjectionSource,
-    InjectionChannel, InjectionError, InjectionStats,
+    AgentContextInfo, ConsensusConsolidator, ConsensusStrategy, ConsensusVerdict,
+    CrossModelFeedbackLoop, ParallelExecutor, PerAgentContextTracker,
 };

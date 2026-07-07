@@ -58,7 +58,9 @@ impl TauriStoreVault {
 
     /// Store a credential.
     pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
-        let mut store = self.store.lock()
+        let mut store = self
+            .store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         store.insert(key.to_string(), value.to_string());
         self.persist(&store)?;
@@ -67,14 +69,18 @@ impl TauriStoreVault {
 
     /// Retrieve a credential.
     pub fn get(&self, key: &str) -> Result<Option<String>, String> {
-        let store = self.store.lock()
+        let store = self
+            .store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         Ok(store.get(key).cloned())
     }
 
     /// Delete a credential.
     pub fn delete(&self, key: &str) -> Result<(), String> {
-        let mut store = self.store.lock()
+        let mut store = self
+            .store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         store.remove(key);
         self.persist(&store)?;
@@ -83,14 +89,18 @@ impl TauriStoreVault {
 
     /// List all stored keys.
     pub fn list_keys(&self) -> Result<Vec<String>, String> {
-        let store = self.store.lock()
+        let store = self
+            .store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         Ok(store.keys().cloned().collect())
     }
 
     /// Clear all credentials.
     pub fn clear(&self) -> Result<(), String> {
-        let mut store = self.store.lock()
+        let mut store = self
+            .store
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         store.clear();
         self.persist(&store)?;
@@ -100,15 +110,13 @@ impl TauriStoreVault {
     /// Persist to file.
     fn persist(&self, store: &HashMap<String, String>) -> Result<(), String> {
         if let Some(parent) = self.file_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir: {}", e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
         }
 
-        let json = serde_json::to_string_pretty(store)
-            .map_err(|e| format!("Serialize error: {}", e))?;
+        let json =
+            serde_json::to_string_pretty(store).map_err(|e| format!("Serialize error: {}", e))?;
 
-        std::fs::write(&self.file_path, json)
-            .map_err(|e| format!("Write error: {}", e))?;
+        std::fs::write(&self.file_path, json).map_err(|e| format!("Write error: {}", e))?;
 
         tracing::debug!("Tauri store saved to {}", self.file_path.display());
         Ok(())
@@ -128,7 +136,7 @@ mod tests {
     #[test]
     fn test_tauri_store_set_and_get() {
         let vault = TauriStoreVault::with_path(
-            std::env::temp_dir().join(format!("test-tauri-{}.json", uuid::Uuid::new_v4()))
+            std::env::temp_dir().join(format!("test-tauri-{}.json", uuid::Uuid::new_v4())),
         );
         vault.set("test-key", "test-value").unwrap();
         let value = vault.get("test-key").unwrap();
@@ -138,7 +146,7 @@ mod tests {
     #[test]
     fn test_tauri_store_delete() {
         let vault = TauriStoreVault::with_path(
-            std::env::temp_dir().join(format!("test-tauri-del-{}.json", uuid::Uuid::new_v4()))
+            std::env::temp_dir().join(format!("test-tauri-del-{}.json", uuid::Uuid::new_v4())),
         );
         vault.set("key", "value").unwrap();
         vault.delete("key").unwrap();
@@ -148,7 +156,7 @@ mod tests {
     #[test]
     fn test_tauri_store_clear() {
         let vault = TauriStoreVault::with_path(
-            std::env::temp_dir().join(format!("test-tauri-clear-{}.json", uuid::Uuid::new_v4()))
+            std::env::temp_dir().join(format!("test-tauri-clear-{}.json", uuid::Uuid::new_v4())),
         );
         vault.set("a", "1").unwrap();
         vault.set("b", "2").unwrap();

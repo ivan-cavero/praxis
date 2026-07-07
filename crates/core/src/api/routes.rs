@@ -6,11 +6,16 @@
 //!   ├── jwt.secret                ← Global
 //!   └── credentials.vault.json    ← Global (API keys del usuario)
 
-use axum::{Router, routing::{get, post, delete, put}, Json, extract::State, http::StatusCode};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::collections::HashMap;
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    routing::{delete, get, post, put},
+};
 use praxis_agent_traits::persistence::EventStore;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Shared state for the API server.
 #[derive(Clone)]
@@ -29,7 +34,8 @@ pub struct AppState {
     /// Session registry (shared with CoreRuntime).
     pub session_registry: std::sync::Arc<std::sync::RwLock<Vec<SessionEntry>>>,
     /// Active goal runs: session_id → shutdown handle + live token/cost counters.
-    pub active_runs: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, ActiveRun>>>,
+    pub active_runs:
+        std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, ActiveRun>>>,
     /// Persistent event store (SQLite) shared with `praxis run --goal`.
     /// Used to read persisted sessions from other processes.
     pub event_store: Option<std::sync::Arc<praxis_persistence::SqliteEventStore>>,
@@ -130,7 +136,10 @@ impl ApiServer {
             .route("/api/sessions/{id}", get(sessions::get_one))
             .route("/api/sessions/{id}/stop", post(sessions::stop))
             .route("/api/sessions/{id}/events", get(sessions::list_events))
-            .route("/api/sessions/{id}/checkpoint", get(sessions::get_checkpoint))
+            .route(
+                "/api/sessions/{id}/checkpoint",
+                get(sessions::get_checkpoint),
+            )
             .route("/api/sessions/{id}/state", get(sessions::get_state))
             .route("/api/agents", get(agent_crud::list_agents))
             .route("/api/agents", post(agent_crud::create_agent))
@@ -141,7 +150,10 @@ impl ApiServer {
             .route("/api/memory/stats", get(debug::memory_stats))
             .route("/api/debug/sessions", get(debug::debug_sessions))
             .route("/api/devices", get(super::pairing::list_devices))
-            .route("/api/devices/{device_id}", delete(super::pairing::revoke_device))
+            .route(
+                "/api/devices/{device_id}",
+                delete(super::pairing::revoke_device),
+            )
             .with_state(Arc::new(state.clone()))
             .layer(axum::middleware::from_fn_with_state(
                 auth_state,
@@ -153,9 +165,18 @@ impl ApiServer {
             // Pairing endpoints — no auth (they ARE the auth mechanism)
             .route("/api/pair", post(super::pairing::create_pairing))
             .route("/api/pair/{code}", get(super::pairing::pairing_page))
-            .route("/api/pair/{code}/confirm", post(super::pairing::confirm_pairing))
-            .route("/api/pair/{code}/status", get(super::pairing::get_pairing_status))
-            .route("/api/pair/{code}/token", post(super::pairing::get_pairing_token))
+            .route(
+                "/api/pair/{code}/confirm",
+                post(super::pairing::confirm_pairing),
+            )
+            .route(
+                "/api/pair/{code}/status",
+                get(super::pairing::get_pairing_status),
+            )
+            .route(
+                "/api/pair/{code}/token",
+                post(super::pairing::get_pairing_token),
+            )
             // Existing public routes
             .route("/api/health", get(routes::health))
             .route("/api/metrics/tokens", get(routes::token_metrics))
@@ -183,22 +204,22 @@ impl ApiServer {
 
         // Initialize JWT auth
         let secret_path = data_dir.join("jwt.secret");
-        let auth = std::sync::Arc::new(
-            super::auth::AuthState::from_file_or_create(&secret_path)
-        );
+        let auth = std::sync::Arc::new(super::auth::AuthState::from_file_or_create(&secret_path));
 
         // Initialize vault
         let vault_path = data_dir.join("credentials.vault.json");
-        let vault = std::sync::Arc::new(
-            praxis_vault::VaultService::with_path(vault_path, self.config.vault_password.clone())
-        );
+        let vault = std::sync::Arc::new(praxis_vault::VaultService::with_path(
+            vault_path,
+            self.config.vault_password.clone(),
+        ));
         vault.init()?;
 
         // Initialize token counters from event store or start fresh
         let token_counters = std::sync::Arc::new(std::sync::RwLock::new(TokenCounters::default()));
         let session_registry = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
-        let active_runs: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, ActiveRun>>> =
-            std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
+        let active_runs: std::sync::Arc<
+            std::sync::RwLock<std::collections::HashMap<String, ActiveRun>>,
+        > = std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
 
         // Open shared event store for reading sessions from other processes
         let db_path = data_dir.join("state.db");
@@ -208,7 +229,10 @@ impl ApiServer {
                 .ok()
                 .map(std::sync::Arc::new)
         } else {
-            tracing::info!("No shared event store found ({}), sessions from other processes won't appear", db_path.display());
+            tracing::info!(
+                "No shared event store found ({}), sessions from other processes won't appear",
+                db_path.display()
+            );
             None
         };
 
@@ -220,11 +244,18 @@ impl ApiServer {
             loop {
                 match bus_rx.recv().await {
                     Ok(event) => {
-                        if let praxis_shared::protocol::MessageKind::TokenUsed { provider, model, input, output } = event.kind {
+                        if let praxis_shared::protocol::MessageKind::TokenUsed {
+                            provider,
+                            model,
+                            input,
+                            output,
+                        } = event.kind
+                        {
                             let mut counters = token_counters_listener.write().unwrap();
                             counters.total_input += input as u64;
                             counters.total_output += output as u64;
-                            *counters.by_provider.entry(provider).or_insert(0) += (input + output) as u64;
+                            *counters.by_provider.entry(provider).or_insert(0) +=
+                                (input + output) as u64;
                             *counters.by_model.entry(model).or_insert(0) += (input + output) as u64;
                         }
                     }
@@ -242,9 +273,7 @@ impl ApiServer {
         });
 
         // Determine hostname
-        let hostname = gethostname::gethostname()
-            .to_string_lossy()
-            .to_string();
+        let hostname = gethostname::gethostname().to_string_lossy().to_string();
 
         // If pairing is enabled, generate and display the QR immediately
         if let Some(ref pairing_state) = pairing {
@@ -253,11 +282,7 @@ impl ApiServer {
 
             // Generate ASCII QR and print it
             if let Ok(qr_code) = qrcode::QrCode::new(&qr_url) {
-                let qr_string = qr_code
-                    .render()
-                    .light_color(' ')
-                    .dark_color('█')
-                    .build();
+                let qr_string = qr_code.render().light_color(' ').dark_color('█').build();
                 println!();
                 println!("╔══════════════════════════════════╗");
                 println!("║     🔗 PAIR YOUR DEVICE          ║");
@@ -275,8 +300,7 @@ impl ApiServer {
         }
 
         // Generate and display first-run admin token
-        let first_run_token = super::auth::generate_first_run_token(&auth)
-            .ok();
+        let first_run_token = super::auth::generate_first_run_token(&auth).ok();
         if let Some(ref token) = first_run_token {
             println!();
             println!("╔══════════════════════════════════════════════════════════╗");
@@ -340,9 +364,7 @@ fn write_projects(data_dir: &std::path::Path, projects: &[ProjectEntry]) -> Resu
     let path = projects_path(data_dir);
     serde_json::to_string_pretty(projects)
         .map_err(|e| e.to_string())
-        .and_then(|content| {
-            std::fs::write(&path, &content).map_err(|e| e.to_string())
-        })
+        .and_then(|content| std::fs::write(&path, &content).map_err(|e| e.to_string()))
 }
 
 /// Write a project's forge.toml content to a temp file for `load_forge_config`.
@@ -373,14 +395,17 @@ fn create_worktree_blocking(session_id: &str) -> Option<std::path::PathBuf> {
 
     let short_id = &session_id[..8.min(session_id.len())];
     let branch_name = format!("praxis-{}", short_id);
-    let worktree_path = std::env::current_dir().ok()?
+    let worktree_path = std::env::current_dir()
+        .ok()?
         .parent()?
         .join(format!("praxis-worktree-{}", short_id));
 
     let output = std::process::Command::new("git")
         .args([
-            "worktree", "add",
-            "-b", &branch_name,
+            "worktree",
+            "add",
+            "-b",
+            &branch_name,
             worktree_path.to_str()?,
             "HEAD",
         ])
@@ -395,7 +420,11 @@ fn create_worktree_blocking(session_id: &str) -> Option<std::path::PathBuf> {
         return None;
     }
 
-    tracing::info!("Created worktree: {} (branch: {})", worktree_path.display(), branch_name);
+    tracing::info!(
+        "Created worktree: {} (branch: {})",
+        worktree_path.display(),
+        branch_name
+    );
     Some(worktree_path)
 }
 
@@ -615,40 +644,79 @@ pub mod vault {
 
     pub async fn list_keys(State(state): State<Arc<AppState>>) -> Json<ListKeysResponse> {
         let keys = state.vault.list_keys().unwrap_or_default();
-        let providers: Vec<ProviderKeyResponse> = keys.into_iter().map(|provider| {
-            let has_key = state.vault.get(&provider).unwrap_or_default().is_some();
-            let key_masked = if has_key {
-                let key = state.vault.get(&provider).unwrap().unwrap();
-                if key.len() > 8 {
-                    format!("{}...{}", &key[..4], &key[key.len()-4..])
-                } else { "****".to_string() }
-            } else { String::new() };
-            ProviderKeyResponse { provider, key_masked, has_key }
-        }).collect();
-        Json(ListKeysResponse { total: providers.len(), providers })
+        let providers: Vec<ProviderKeyResponse> = keys
+            .into_iter()
+            .map(|provider| {
+                let has_key = state.vault.get(&provider).unwrap_or_default().is_some();
+                let key_masked = if has_key {
+                    let key = state.vault.get(&provider).unwrap().unwrap();
+                    if key.len() > 8 {
+                        format!("{}...{}", &key[..4], &key[key.len() - 4..])
+                    } else {
+                        "****".to_string()
+                    }
+                } else {
+                    String::new()
+                };
+                ProviderKeyResponse {
+                    provider,
+                    key_masked,
+                    has_key,
+                }
+            })
+            .collect();
+        Json(ListKeysResponse {
+            total: providers.len(),
+            providers,
+        })
     }
 
     pub async fn set_key(
         State(state): State<Arc<AppState>>,
         Json(request): Json<SetKeyRequest>,
     ) -> (StatusCode, Json<ProviderKeyResponse>) {
-        if !request.provider.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return (StatusCode::BAD_REQUEST, Json(ProviderKeyResponse {
-                provider: request.provider, key_masked: String::new(), has_key: false,
-            }));
+        if !request
+            .provider
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_')
+        {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ProviderKeyResponse {
+                    provider: request.provider,
+                    key_masked: String::new(),
+                    has_key: false,
+                }),
+            );
         }
         if let Err(e) = state.vault.set(&request.provider, &request.api_key) {
             tracing::error!("Failed to store API key: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ProviderKeyResponse {
-                provider: request.provider, key_masked: String::new(), has_key: false,
-            }));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ProviderKeyResponse {
+                    provider: request.provider,
+                    key_masked: String::new(),
+                    has_key: false,
+                }),
+            );
         }
         let masked = if request.api_key.len() > 8 {
-            format!("{}...{}", &request.api_key[..4], &request.api_key[request.api_key.len()-4..])
-        } else { "****".to_string() };
-        (StatusCode::OK, Json(ProviderKeyResponse {
-            provider: request.provider, key_masked: masked, has_key: true,
-        }))
+            format!(
+                "{}...{}",
+                &request.api_key[..4],
+                &request.api_key[request.api_key.len() - 4..]
+            )
+        } else {
+            "****".to_string()
+        };
+        (
+            StatusCode::OK,
+            Json(ProviderKeyResponse {
+                provider: request.provider,
+                key_masked: masked,
+                has_key: true,
+            }),
+        )
     }
 
     pub async fn delete_key(
@@ -657,13 +725,23 @@ pub mod vault {
     ) -> (StatusCode, Json<ProviderKeyResponse>) {
         if let Err(e) = state.vault.delete(&provider) {
             tracing::error!("Failed to delete key: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ProviderKeyResponse {
-                provider, key_masked: String::new(), has_key: false,
-            }));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ProviderKeyResponse {
+                    provider,
+                    key_masked: String::new(),
+                    has_key: false,
+                }),
+            );
         }
-        (StatusCode::OK, Json(ProviderKeyResponse {
-            provider, key_masked: String::new(), has_key: false,
-        }))
+        (
+            StatusCode::OK,
+            Json(ProviderKeyResponse {
+                provider,
+                key_masked: String::new(),
+                has_key: false,
+            }),
+        )
     }
 }
 
@@ -682,7 +760,9 @@ pub mod projects {
         axum::extract::Path(id): axum::extract::Path<String>,
     ) -> Result<Json<ProjectEntry>, StatusCode> {
         let projects = read_projects(&state.data_dir);
-        projects.into_iter().find(|p| p.id == id)
+        projects
+            .into_iter()
+            .find(|p| p.id == id)
             .map(Json)
             .ok_or(StatusCode::NOT_FOUND)
     }
@@ -749,13 +829,21 @@ pub mod projects {
         Json(request): Json<UpdateProjectRequest>,
     ) -> Result<Json<ProjectEntry>, StatusCode> {
         let mut projects = read_projects(&state.data_dir);
-        let idx = projects.iter().position(|p| p.id == id)
+        let idx = projects
+            .iter()
+            .position(|p| p.id == id)
             .ok_or(StatusCode::NOT_FOUND)?;
 
         let entry = &mut projects[idx];
-        if let Some(name) = request.name { entry.name = name; }
-        if let Some(desc) = request.description { entry.description = desc; }
-        if let Some(toml) = request.forge_toml { entry.forge_toml = toml; }
+        if let Some(name) = request.name {
+            entry.name = name;
+        }
+        if let Some(desc) = request.description {
+            entry.description = desc;
+        }
+        if let Some(toml) = request.forge_toml {
+            entry.forge_toml = toml;
+        }
         entry.last_active = chrono::Utc::now().to_rfc3339();
 
         let cloned = entry.clone();
@@ -787,7 +875,9 @@ pub mod projects {
         axum::extract::Path(id): axum::extract::Path<String>,
     ) -> Result<Json<ProjectConfigResponse>, StatusCode> {
         let projects = read_projects(&state.data_dir);
-        let entry = projects.into_iter().find(|p| p.id == id)
+        let entry = projects
+            .into_iter()
+            .find(|p| p.id == id)
             .ok_or(StatusCode::NOT_FOUND)?;
 
         let parsed = parse_forge_toml(&entry.forge_toml);
@@ -811,7 +901,9 @@ pub mod projects {
         Json(request): Json<UpdateConfigRequest>,
     ) -> Result<Json<ProjectConfigResponse>, StatusCode> {
         let mut projects = read_projects(&state.data_dir);
-        let idx = projects.iter().position(|p| p.id == id)
+        let idx = projects
+            .iter()
+            .position(|p| p.id == id)
             .ok_or(StatusCode::NOT_FOUND)?;
 
         let entry = &mut projects[idx];
@@ -848,57 +940,167 @@ fn parse_forge_toml(raw: &str) -> ParsedConfig {
     };
 
     let roles: HashMap<String, RoleDetail> = parsed
-        .get("roles").and_then(|v| v.as_table())
-        .map(|table| table.iter().map(|(name, value)| {
-            let detail = RoleDetail {
-                model: value.get("model").and_then(|v| v.as_str()).unwrap_or("gpt-4o").to_string(),
-                temperature: value.get("temperature").and_then(|v| v.as_float()).unwrap_or(0.3),
-                max_tokens: value.get("max_tokens").and_then(|v| v.as_integer()).unwrap_or(4096) as u32,
-                system_prompt: value.get("system_prompt").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                tools: value.get("tools").and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default(),
-                description: value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            };
-            (name.clone(), detail)
-        }).collect()).unwrap_or_default();
+        .get("roles")
+        .and_then(|v| v.as_table())
+        .map(|table| {
+            table
+                .iter()
+                .map(|(name, value)| {
+                    let detail = RoleDetail {
+                        model: value
+                            .get("model")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("gpt-4o")
+                            .to_string(),
+                        temperature: value
+                            .get("temperature")
+                            .and_then(|v| v.as_float())
+                            .unwrap_or(0.3),
+                        max_tokens: value
+                            .get("max_tokens")
+                            .and_then(|v| v.as_integer())
+                            .unwrap_or(4096) as u32,
+                        system_prompt: value
+                            .get("system_prompt")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        tools: value
+                            .get("tools")
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(String::from))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                        description: value
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    };
+                    (name.clone(), detail)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let providers: HashMap<String, ProviderDetail> = parsed
-        .get("providers").and_then(|v| v.as_table())
-        .map(|table| table.iter().map(|(name, value)| {
-            let detail = ProviderDetail {
-                base_url: value.get("base_url").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                api_key_ref: value.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                default_model: value.get("default_model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            };
-            (name.clone(), detail)
-        }).collect()).unwrap_or_default();
+        .get("providers")
+        .and_then(|v| v.as_table())
+        .map(|table| {
+            table
+                .iter()
+                .map(|(name, value)| {
+                    let detail = ProviderDetail {
+                        base_url: value
+                            .get("base_url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        api_key_ref: value
+                            .get("api_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        default_model: value
+                            .get("default_model")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    };
+                    (name.clone(), detail)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let goals: Vec<GoalDetail> = parsed
-        .get("goals").and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_table()).map(|table| GoalDetail {
-            name: table.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            agents: table.get("agents").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                .unwrap_or_default(),
-            max_iterations: table.get("max_iterations").and_then(|v| v.as_integer()).unwrap_or(10) as u32,
-            gates: table.get("gates").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                .unwrap_or_default(),
-        }).collect()).unwrap_or_default();
+        .get("goals")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_table())
+                .map(|table| GoalDetail {
+                    name: table
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    agents: table
+                        .get("agents")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    max_iterations: table
+                        .get("max_iterations")
+                        .and_then(|v| v.as_integer())
+                        .unwrap_or(10) as u32,
+                    gates: table
+                        .get("gates")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let limits = LimitsDetail {
-        max_iterations_per_goal: parsed.get("limits").and_then(|l| l.get("max_iterations_per_goal")).and_then(|v| v.as_integer()).unwrap_or(50) as u32,
-        max_iterations_per_phase: parsed.get("limits").and_then(|l| l.get("max_iterations_per_phase")).and_then(|v| v.as_integer()).unwrap_or(5) as u32,
-        session_ttl_seconds: parsed.get("limits").and_then(|l| l.get("session_ttl_seconds")).and_then(|v| v.as_integer()).unwrap_or(3600) as u32,
-        phase_timeout_seconds: parsed.get("limits").and_then(|l| l.get("phase_timeout_seconds")).and_then(|v| v.as_integer()).unwrap_or(300) as u32,
-        max_tokens: parsed.get("limits").and_then(|l| l.get("max_tokens")).and_then(|v| v.as_integer()).map(|n| n as u64),
-        max_cost_usd: parsed.get("limits").and_then(|l| l.get("max_cost_usd")).and_then(|v| v.as_float()),
+        max_iterations_per_goal: parsed
+            .get("limits")
+            .and_then(|l| l.get("max_iterations_per_goal"))
+            .and_then(|v| v.as_integer())
+            .unwrap_or(50) as u32,
+        max_iterations_per_phase: parsed
+            .get("limits")
+            .and_then(|l| l.get("max_iterations_per_phase"))
+            .and_then(|v| v.as_integer())
+            .unwrap_or(5) as u32,
+        session_ttl_seconds: parsed
+            .get("limits")
+            .and_then(|l| l.get("session_ttl_seconds"))
+            .and_then(|v| v.as_integer())
+            .unwrap_or(3600) as u32,
+        phase_timeout_seconds: parsed
+            .get("limits")
+            .and_then(|l| l.get("phase_timeout_seconds"))
+            .and_then(|v| v.as_integer())
+            .unwrap_or(300) as u32,
+        max_tokens: parsed
+            .get("limits")
+            .and_then(|l| l.get("max_tokens"))
+            .and_then(|v| v.as_integer())
+            .map(|n| n as u64),
+        max_cost_usd: parsed
+            .get("limits")
+            .and_then(|l| l.get("max_cost_usd"))
+            .and_then(|v| v.as_float()),
     };
 
-    let project_version = parsed.get("project").and_then(|p| p.get("version")).and_then(|v| v.as_str()).unwrap_or("0.1.0").to_string();
+    let project_version = parsed
+        .get("project")
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.1.0")
+        .to_string();
 
-    ParsedConfig { roles, providers, goals, limits, project_version }
+    ParsedConfig {
+        roles,
+        providers,
+        goals,
+        limits,
+        project_version,
+    }
 }
 
 // ─── Config response types ────────────────────────────────────
@@ -1040,14 +1242,18 @@ pub mod sessions {
                     }
                     if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
                         let phase = snap.state["phase"].as_str().unwrap_or("unknown");
-                        let status = if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
-                            phase.to_lowercase()
-                        } else {
-                            "running".to_string()
-                        };
+                        let status =
+                            if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
+                                phase.to_lowercase()
+                            } else {
+                                "running".to_string()
+                            };
                         all.push(SessionEntry {
                             id: sid_str,
-                            project: snap.state["project"].as_str().unwrap_or("default").to_string(),
+                            project: snap.state["project"]
+                                .as_str()
+                                .unwrap_or("default")
+                                .to_string(),
                             goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
                             phase: phase.to_string(),
                             iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
@@ -1082,14 +1288,18 @@ pub mod sessions {
             if let Ok(sid) = id.parse::<uuid::Uuid>() {
                 if let Ok(Some(snap)) = store.get_snapshot(sid).await {
                     let phase = snap.state["phase"].as_str().unwrap_or("unknown");
-                    let status = if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
-                        phase.to_lowercase()
-                    } else {
-                        "running".to_string()
-                    };
+                    let status =
+                        if phase == "Completed" || phase == "Failed" || phase == "Cancelled" {
+                            phase.to_lowercase()
+                        } else {
+                            "running".to_string()
+                        };
                     return Ok(Json(SessionEntry {
                         id,
-                        project: snap.state["project"].as_str().unwrap_or("default").to_string(),
+                        project: snap.state["project"]
+                            .as_str()
+                            .unwrap_or("default")
+                            .to_string(),
                         goal: snap.state["goal"].as_str().unwrap_or("unknown").to_string(),
                         phase: phase.to_string(),
                         iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
@@ -1118,20 +1328,31 @@ pub mod sessions {
     ) -> Result<Json<RunGoalResponse>, (StatusCode, String)> {
         // Find the project to get its config path
         let projects = read_projects(&state.data_dir);
-        let project = projects.iter().find(|p| p.id == project_id)
+        let project = projects
+            .iter()
+            .find(|p| p.id == project_id)
             .ok_or((StatusCode::NOT_FOUND, "Project not found".to_string()))?;
 
         let project_name = project.name.clone();
 
         // Write the project's forge.toml to a temp file for load_forge_config
-        let config_path = write_temp_config(&project.forge_toml, &project_name)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write config: {}", e)))?;
+        let config_path = write_temp_config(&project.forge_toml, &project_name).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to write config: {}", e),
+            )
+        })?;
 
         // Create the runtime — use built-in skills if requested, otherwise load custom skills
         let skill_ids: Vec<&str> = req.skills.iter().map(|s| s.as_str()).collect();
         let mut runtime = crate::CoreRuntime::new()
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create runtime: {}", e)))?
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create runtime: {}", e),
+                )
+            })?
             .with_default_memory()
             .with_state_file()
             .with_project_name(project_name.clone());
@@ -1148,9 +1369,8 @@ pub mod sessions {
 
         // Apply completion criterion
         if let Some(ref cmd) = req.until {
-            runtime = runtime.with_completion(
-                crate::CompletionCriterion::from_until_command(cmd.clone()),
-            );
+            runtime = runtime
+                .with_completion(crate::CompletionCriterion::from_until_command(cmd.clone()));
         } else if let Some(ref comp) = req.completion {
             if let Some(criterion) = crate::CompletionCriterion::from_string(comp) {
                 runtime = runtime.with_completion(criterion);
@@ -1175,13 +1395,16 @@ pub mod sessions {
         // Register the active run
         {
             let mut runs = state.active_runs.write().unwrap();
-            runs.insert(session_id_str.clone(), ActiveRun {
-                shutdown: shutdown_handle.clone(),
-                tokens_used: tokens_used.clone(),
-                cost_usd: cost_usd.clone(),
-                project_id: project_id.clone(),
-                goal: req.goal.clone(),
-            });
+            runs.insert(
+                session_id_str.clone(),
+                ActiveRun {
+                    shutdown: shutdown_handle.clone(),
+                    tokens_used: tokens_used.clone(),
+                    cost_usd: cost_usd.clone(),
+                    project_id: project_id.clone(),
+                    goal: req.goal.clone(),
+                },
+            );
         }
 
         // Register in the session registry
@@ -1217,7 +1440,9 @@ pub mod sessions {
                             let runs = active_runs_for_listener.read().unwrap();
                             runs.contains_key(&sid_for_listener)
                         };
-                        if !still_active { break; }
+                        if !still_active {
+                            break;
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -1245,7 +1470,9 @@ pub mod sessions {
             };
 
             let vault_ref: Option<&praxis_vault::VaultService> = Some(&vault);
-            let result = runtime.run_goal(&goal, Some(&config_path_for_task), vault_ref).await;
+            let result = runtime
+                .run_goal(&goal, Some(&config_path_for_task), vault_ref)
+                .await;
 
             // Clean up temp config
             let _ = std::fs::remove_file(&config_path_for_task);
@@ -1307,7 +1534,9 @@ pub mod sessions {
         // which is a larger change. This endpoint marks the intent and returns
         // a plan placeholder that the frontend can display.
         let projects = read_projects(&state.data_dir);
-        let project = projects.iter().find(|p| p.id == project_id)
+        let project = projects
+            .iter()
+            .find(|p| p.id == project_id)
             .ok_or((StatusCode::NOT_FOUND, "Project not found".to_string()))?;
 
         let plan_id = uuid::Uuid::new_v4().to_string();
@@ -1320,7 +1549,11 @@ pub mod sessions {
         );
 
         // Save the plan to the project's plans directory
-        let plans_dir = state.data_dir.join("projects").join(&project.name).join("plans");
+        let plans_dir = state
+            .data_dir
+            .join("projects")
+            .join(&project.name)
+            .join("plans");
         let _ = std::fs::create_dir_all(&plans_dir);
         let plan_path = plans_dir.join(format!("{}.md", plan_id));
         let _ = std::fs::write(&plan_path, &plan_content);
@@ -1392,7 +1625,8 @@ pub mod sessions {
         let was_active = {
             let runs = state.active_runs.read().unwrap();
             if let Some(run) = runs.get(&id) {
-                run.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+                run.shutdown
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 true
             } else {
                 false
@@ -1410,7 +1644,11 @@ pub mod sessions {
             "created_at": chrono::Utc::now().to_rfc3339(),
         });
 
-        let filename = format!("{}_stop_{}.json", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0), id);
+        let filename = format!(
+            "{}_stop_{}.json",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+            id
+        );
         let path = injections_dir.join(&filename);
         let content = serde_json::to_string_pretty(&msg).unwrap_or_default();
         let _ = std::fs::write(&path, &content);
@@ -1447,18 +1685,20 @@ pub mod sessions {
             return Vec::new();
         };
         let parsed = parse_forge_toml(&latest.forge_toml);
-        parsed.roles.iter().map(|(name, detail)| AgentSummary {
-            name: name.clone(),
-            role: name.clone(),
-            model: detail.model.clone(),
-            tools: detail.tools.clone(),
-            status: "idle".into(),
-        }).collect()
+        parsed
+            .roles
+            .iter()
+            .map(|(name, detail)| AgentSummary {
+                name: name.clone(),
+                role: name.clone(),
+                model: detail.model.clone(),
+                tools: detail.tools.clone(),
+                status: "idle".into(),
+            })
+            .collect()
     }
 
-    pub async fn list_agents(
-        State(state): State<Arc<AppState>>,
-    ) -> Json<Vec<AgentSummary>> {
+    pub async fn list_agents(State(state): State<Arc<AppState>>) -> Json<Vec<AgentSummary>> {
         let agents = agents_from_projects(&state.data_dir);
         Json(agents)
     }
@@ -1476,13 +1716,18 @@ pub mod sessions {
         };
         match store.read_events(sid, None).await {
             Ok(events) => {
-                let values: Vec<serde_json::Value> = events.iter().map(|e| serde_json::json!({
-                    "id": e.id,
-                    "event_type": e.event_type,
-                    "payload": e.payload,
-                    "version": e.version,
-                    "created_at": e.created_at,
-                })).collect();
+                let values: Vec<serde_json::Value> = events
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "id": e.id,
+                            "event_type": e.event_type,
+                            "payload": e.payload,
+                            "version": e.version,
+                            "created_at": e.created_at,
+                        })
+                    })
+                    .collect();
                 Ok(Json(values))
             }
             Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -1549,9 +1794,10 @@ pub mod debug {
             (0, 0)
         };
 
-        let event_store_path = state.event_store.as_ref().map(|_| {
-            state.data_dir.join("state.db").display().to_string()
-        });
+        let event_store_path = state
+            .event_store
+            .as_ref()
+            .map(|_| state.data_dir.join("state.db").display().to_string());
 
         Ok(Json(MemoryStats {
             total_sessions,
@@ -1624,7 +1870,9 @@ pub mod routes {
         })
     }
 
-    pub async fn context_metrics(State(state): State<Arc<AppState>>) -> Json<ContextMetricsResponse> {
+    pub async fn context_metrics(
+        State(state): State<Arc<AppState>>,
+    ) -> Json<ContextMetricsResponse> {
         let session_count = state.session_registry.read().unwrap().len() as u32;
 
         // Read context pressure from the most recent checkpoint
@@ -1633,7 +1881,8 @@ pub mod routes {
                 let mut pressures: Vec<f64> = Vec::new();
                 for sid in &session_ids {
                     if let Ok(Some(snap)) = store.get_snapshot(*sid).await {
-                        if let Some(p) = snap.state.get("context_pressure").and_then(|v| v.as_f64()) {
+                        if let Some(p) = snap.state.get("context_pressure").and_then(|v| v.as_f64())
+                        {
                             pressures.push(p);
                         }
                     }
@@ -1680,8 +1929,12 @@ pub mod routes {
     ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
         // Write injection to {data_dir}/injections/ as a JSON file
         let injections_dir = state.data_dir.join("injections");
-        std::fs::create_dir_all(&injections_dir)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create injections dir: {}", e)))?;
+        std::fs::create_dir_all(&injections_dir).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create injections dir: {}", e),
+            )
+        })?;
 
         let msg = serde_json::json!({
             "target_agent": req.target_agent,
@@ -1696,10 +1949,18 @@ pub mod routes {
             req.target_agent
         );
         let path = injections_dir.join(&filename);
-        let content = serde_json::to_string_pretty(&msg)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize: {}", e)))?;
-        std::fs::write(&path, &content)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write injection: {}", e)))?;
+        let content = serde_json::to_string_pretty(&msg).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to serialize: {}", e),
+            )
+        })?;
+        std::fs::write(&path, &content).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to write injection: {}", e),
+            )
+        })?;
 
         tracing::info!("Injection written to: {:?}", path);
 
@@ -1711,7 +1972,9 @@ pub mod routes {
         })))
     }
 
-    pub async fn metrics_summary(State(state): State<Arc<AppState>>) -> Json<MetricsSummaryResponse> {
+    pub async fn metrics_summary(
+        State(state): State<Arc<AppState>>,
+    ) -> Json<MetricsSummaryResponse> {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
@@ -1766,7 +2029,9 @@ pub struct CreateAgentRequest {
     pub scope: String,
 }
 
-fn default_scope() -> String { "project".to_string() }
+fn default_scope() -> String {
+    "project".to_string()
+}
 
 /// Resolve the project agents directory from the latest project's path.
 /// Falls back to `data_dir/agents/` if no project has a path.
@@ -1795,11 +2060,10 @@ fn build_registry(state: &AppState) -> crate::agents::AgentRegistry {
 fn serialize_agent_md(def: &crate::agents::AgentDefinition) -> String {
     // serde_yaml_neo::to_string produces a YAML document with a leading "---\n"
     // document marker and ends with "\n". We use it directly for the frontmatter.
-    let yaml = serde_yaml_neo::to_string(&def.frontmatter)
-        .unwrap_or_else(|e| {
-            tracing::error!("Failed to serialize agent frontmatter: {}", e);
-            String::new()
-        });
+    let yaml = serde_yaml_neo::to_string(&def.frontmatter).unwrap_or_else(|e| {
+        tracing::error!("Failed to serialize agent frontmatter: {}", e);
+        String::new()
+    });
 
     // serde_yaml_neo outputs "---\n<fields>\n" — we need to add the closing "---"
     // and then the Markdown body.
@@ -1869,16 +2133,23 @@ pub mod agent_crud {
     ) -> Result<(StatusCode, Json<AgentDefinitionResponse>), (StatusCode, String)> {
         // Validate name
         if req.name.is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "Agent name is required".to_string()));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Agent name is required".to_string(),
+            ));
         }
         if req.system_prompt.is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "System prompt is required".to_string()));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "System prompt is required".to_string(),
+            ));
         }
         // Validate scope
         if req.scope != "project" && req.scope != "global" {
-            return Err((StatusCode::BAD_REQUEST, format!(
-                "Scope must be 'project' or 'global', got '{}'", req.scope
-            )));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Scope must be 'project' or 'global', got '{}'", req.scope),
+            ));
         }
 
         // Determine target directory
@@ -1889,8 +2160,12 @@ pub mod agent_crud {
         };
 
         // Create directory if needed
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create agents dir: {}", e)))?;
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create agents dir: {}", e),
+            )
+        })?;
 
         // Atomically create the file — fails if it already exists (prevents TOCTOU race)
         let file_path = dir.join(format!("{}.md", req.name));
@@ -1901,9 +2176,15 @@ pub mod agent_crud {
             .open(&file_path)
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    (StatusCode::CONFLICT, format!("Agent '{}' already exists in {} scope", req.name, req.scope))
+                    (
+                        StatusCode::CONFLICT,
+                        format!("Agent '{}' already exists in {} scope", req.name, req.scope),
+                    )
                 } else {
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create agent file: {}", e))
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to create agent file: {}", e),
+                    )
                 }
             })?;
 
@@ -1926,10 +2207,19 @@ pub mod agent_crud {
         // Serialize and write
         let content = serialize_agent_md(&definition);
         let mut file = file;
-        file.write_all(content.as_bytes())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write agent file: {}", e)))?;
+        file.write_all(content.as_bytes()).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to write agent file: {}", e),
+            )
+        })?;
 
-        tracing::info!("Created agent '{}' in {} scope ({})", req.name, req.scope, file_path.display());
+        tracing::info!(
+            "Created agent '{}' in {} scope ({})",
+            req.name,
+            req.scope,
+            file_path.display()
+        );
 
         Ok((
             StatusCode::CREATED,
@@ -1957,9 +2247,10 @@ pub mod agent_crud {
     ) -> Result<Json<AgentDefinitionResponse>, (StatusCode, String)> {
         // Validate scope
         if req.scope != "project" && req.scope != "global" {
-            return Err((StatusCode::BAD_REQUEST, format!(
-                "Scope must be 'project' or 'global', got '{}'", req.scope
-            )));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Scope must be 'project' or 'global', got '{}'", req.scope),
+            ));
         }
 
         // Determine target directory
@@ -1973,8 +2264,12 @@ pub mod agent_crud {
 
         // If the agent is built-in only (no file in project/global), we need to
         // create the file (override). If it exists, we overwrite.
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create agents dir: {}", e)))?;
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create agents dir: {}", e),
+            )
+        })?;
 
         // Build the updated definition
         let definition = crate::agents::AgentDefinition {
@@ -1993,10 +2288,19 @@ pub mod agent_crud {
         };
 
         let content = serialize_agent_md(&definition);
-        std::fs::write(&file_path, &content)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write agent file: {}", e)))?;
+        std::fs::write(&file_path, &content).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to write agent file: {}", e),
+            )
+        })?;
 
-        tracing::info!("Updated agent '{}' in {} scope ({})", name, req.scope, file_path.display());
+        tracing::info!(
+            "Updated agent '{}' in {} scope ({})",
+            name,
+            req.scope,
+            file_path.display()
+        );
 
         Ok(Json(AgentDefinitionResponse {
             name: definition.name().to_string(),
@@ -2026,21 +2330,37 @@ pub mod agent_crud {
         let global_path = global_dir.join(format!("{}.md", name));
 
         let (deleted_path, scope) = if project_path.exists() {
-            std::fs::remove_file(&project_path)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete: {}", e)))?;
+            std::fs::remove_file(&project_path).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to delete: {}", e),
+                )
+            })?;
             (project_path, "project")
         } else if global_path.exists() {
-            std::fs::remove_file(&global_path)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete: {}", e)))?;
+            std::fs::remove_file(&global_path).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to delete: {}", e),
+                )
+            })?;
             (global_path, "global")
         } else {
-            return Err((StatusCode::NOT_FOUND, format!(
-                "Agent '{}' not found in project or global scope (built-in agents cannot be deleted)",
-                name
-            )));
+            return Err((
+                StatusCode::NOT_FOUND,
+                format!(
+                    "Agent '{}' not found in project or global scope (built-in agents cannot be deleted)",
+                    name
+                ),
+            ));
         };
 
-        tracing::info!("Deleted agent '{}' from {} scope ({})", name, scope, deleted_path.display());
+        tracing::info!(
+            "Deleted agent '{}' from {} scope ({})",
+            name,
+            scope,
+            deleted_path.display()
+        );
 
         Ok(Json(serde_json::json!({
             "deleted": name,
@@ -2159,7 +2479,10 @@ mod tests {
         };
         let json = serde_json::to_string(&entry).unwrap();
         let back: ProjectEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.path.as_deref(), Some("/home/user/.config/praxis/projects/proj"));
+        assert_eq!(
+            back.path.as_deref(),
+            Some("/home/user/.config/praxis/projects/proj")
+        );
     }
 
     #[test]

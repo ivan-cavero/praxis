@@ -496,7 +496,11 @@ mod tests {
         for i in 0..10 {
             let output = format!("Unique output number {}", i);
             let alert = detector.record_iteration(i, &output, "Implementing", None);
-            assert!(alert.is_none(), "should not alert on unique outputs: {:?}", alert);
+            assert!(
+                alert.is_none(),
+                "should not alert on unique outputs: {:?}",
+                alert
+            );
         }
 
         assert!(detector.alerts().is_empty());
@@ -596,7 +600,11 @@ mod tests {
         for i in 0..10 {
             let output = format!("Unique output number {}", i);
             let alert = detector.record_iteration(i, &output, "Implementing", None);
-            assert!(alert.is_none(), "should not alert on unique outputs: {:?}", alert);
+            assert!(
+                alert.is_none(),
+                "should not alert on unique outputs: {:?}",
+                alert
+            );
         }
     }
 

@@ -56,11 +56,10 @@ fn serialize_agent_md(
         can_spawn: can_spawn.to_vec(),
     };
 
-    let yaml = serde_yaml_neo::to_string(&frontmatter)
-        .unwrap_or_else(|e| {
-            eprintln!("{}: failed to serialize frontmatter: {}", "error".red(), e);
-            String::new()
-        });
+    let yaml = serde_yaml_neo::to_string(&frontmatter).unwrap_or_else(|e| {
+        eprintln!("{}: failed to serialize frontmatter: {}", "error".red(), e);
+        String::new()
+    });
 
     let yaml_body = yaml.strip_prefix("---\n").unwrap_or(&yaml);
     format!("---\n{yaml_body}---\n\n{system_prompt}")
@@ -68,8 +67,13 @@ fn serialize_agent_md(
 
 /// Parse a comma-separated string into a Vec<String>.
 fn parse_csv(s: Option<String>) -> Vec<String> {
-    s.map(|v| v.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
-        .unwrap_or_default()
+    s.map(|v| {
+        v.split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 pub fn handle(cmd: AgentCommands) {
@@ -77,11 +81,31 @@ pub fn handle(cmd: AgentCommands) {
         AgentCommands::List { scope } => list(&scope),
         AgentCommands::Show { name } => show(&name),
         AgentCommands::Add {
-            name, model, temperature, max_tokens, max_turns, max_depth,
-            tools, can_spawn, prompt, prompt_file, scope, description,
+            name,
+            model,
+            temperature,
+            max_tokens,
+            max_turns,
+            max_depth,
+            tools,
+            can_spawn,
+            prompt,
+            prompt_file,
+            scope,
+            description,
         } => add(
-            &name, &description, &model, temperature, max_tokens, max_turns, max_depth,
-            &parse_csv(tools), &parse_csv(can_spawn), prompt, prompt_file, &scope,
+            &name,
+            &description,
+            &model,
+            temperature,
+            max_tokens,
+            max_turns,
+            max_depth,
+            &parse_csv(tools),
+            &parse_csv(can_spawn),
+            prompt,
+            prompt_file,
+            &scope,
         ),
         AgentCommands::Edit { name, scope } => edit(&name, &scope),
         AgentCommands::Remove { name, scope } => remove(&name, scope),
@@ -98,7 +122,11 @@ fn list(scope_filter: &str) {
             "global" => AgentScope::Global,
             "project" => AgentScope::Project,
             _ => {
-                eprintln!("{}: unknown scope '{}'. Use: all, builtin, global, project", "error".red(), scope_filter);
+                eprintln!(
+                    "{}: unknown scope '{}'. Use: all, builtin, global, project",
+                    "error".red(),
+                    scope_filter
+                );
                 return;
             }
         };
@@ -112,7 +140,10 @@ fn list(scope_filter: &str) {
 
     println!("{} ({})", "Agents".bold(), scope_filter);
     println!("{}", "─".repeat(80));
-    println!("{:<20} {:<10} {:<10} {:<6} {:<10} {}", "NAME", "SCOPE", "MODEL", "DEPTH", "TOOLS", "CAN_SPAWN");
+    println!(
+        "{:<20} {:<10} {:<10} {:<6} {:<10} {}",
+        "NAME", "SCOPE", "MODEL", "DEPTH", "TOOLS", "CAN_SPAWN"
+    );
     println!("{}", "─".repeat(80));
     for a in &agents {
         let tools = if a.definition.tools().is_empty() {
@@ -149,12 +180,32 @@ fn show(name: &str) {
     println!("{}", "─".repeat(60));
     println!("Scope:          {}", agent.scope.as_str());
     println!("Model:          {}", agent.definition.model());
-    println!("Temperature:    {}", agent.definition.frontmatter.temperature);
-    println!("Max tokens:     {}", agent.definition.frontmatter.max_tokens);
+    println!(
+        "Temperature:    {}",
+        agent.definition.frontmatter.temperature
+    );
+    println!(
+        "Max tokens:     {}",
+        agent.definition.frontmatter.max_tokens
+    );
     println!("Max turns:      {}", agent.definition.max_turns());
     println!("Max depth:      {}", agent.definition.max_depth());
-    println!("Tools:          {}", if agent.definition.tools().is_empty() { "—".into() } else { agent.definition.tools().join(", ") });
-    println!("Can spawn:      {}", if agent.definition.can_spawn().is_empty() { "—".into() } else { agent.definition.can_spawn().join(", ") });
+    println!(
+        "Tools:          {}",
+        if agent.definition.tools().is_empty() {
+            "—".into()
+        } else {
+            agent.definition.tools().join(", ")
+        }
+    );
+    println!(
+        "Can spawn:      {}",
+        if agent.definition.can_spawn().is_empty() {
+            "—".into()
+        } else {
+            agent.definition.can_spawn().join(", ")
+        }
+    );
     if let Some(path) = &agent.path {
         println!("File:           {}", path.display());
     }
@@ -183,7 +234,12 @@ fn add(
         match std::fs::read_to_string(&file) {
             Ok(content) => content,
             Err(e) => {
-                eprintln!("{}: failed to read prompt file {}: {}", "error".red(), file.display(), e);
+                eprintln!(
+                    "{}: failed to read prompt file {}: {}",
+                    "error".red(),
+                    file.display(),
+                    e
+                );
                 return;
             }
         }
@@ -205,30 +261,62 @@ fn add(
     } else if scope == "project" {
         project_agents_dir()
     } else {
-        eprintln!("{}: scope must be 'project' or 'global', got '{}'.", "error".red(), scope);
+        eprintln!(
+            "{}: scope must be 'project' or 'global', got '{}'.",
+            "error".red(),
+            scope
+        );
         return;
     };
 
     // Create directory
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("{}: failed to create agents dir {}: {}", "error".red(), dir.display(), e);
+        eprintln!(
+            "{}: failed to create agents dir {}: {}",
+            "error".red(),
+            dir.display(),
+            e
+        );
         return;
     }
 
     let file_path = dir.join(format!("{name}.md"));
     if file_path.exists() {
-        eprintln!("{}: agent '{}' already exists in {} scope ({}).", "error".red(), name, scope, file_path.display());
+        eprintln!(
+            "{}: agent '{}' already exists in {} scope ({}).",
+            "error".red(),
+            name,
+            scope,
+            file_path.display()
+        );
         eprintln!("Use {} to modify it.", "praxis agent edit".cyan());
         return;
     }
 
-    let content = serialize_agent_md(name, description, model, temperature, max_tokens, max_turns, max_depth, tools, can_spawn, &system_prompt);
+    let content = serialize_agent_md(
+        name,
+        description,
+        model,
+        temperature,
+        max_tokens,
+        max_turns,
+        max_depth,
+        tools,
+        can_spawn,
+        &system_prompt,
+    );
     if let Err(e) = std::fs::write(&file_path, &content) {
         eprintln!("{}: failed to write agent file: {}", "error".red(), e);
         return;
     }
 
-    println!("{}: agent '{}' created in {} scope ({}).", "done".green(), name, scope, file_path.display());
+    println!(
+        "{}: agent '{}' created in {} scope ({}).",
+        "done".green(),
+        name,
+        scope,
+        file_path.display()
+    );
 }
 
 fn edit(name: &str, scope: &str) {
@@ -268,8 +356,13 @@ fn edit(name: &str, scope: &str) {
                 }
                 println!("Cloned built-in '{}' to {} scope for editing.", name, scope);
             } else {
-                eprintln!("{}: agent '{}' found in {} scope but file is at {}.",
-                    "error".red(), name, agent.scope.as_str(), file_path.display());
+                eprintln!(
+                    "{}: agent '{}' found in {} scope but file is at {}.",
+                    "error".red(),
+                    name,
+                    agent.scope.as_str(),
+                    file_path.display()
+                );
                 return;
             }
         } else {
@@ -280,14 +373,16 @@ fn edit(name: &str, scope: &str) {
 
     // Open in $EDITOR
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| {
-        if cfg!(windows) { "notepad".to_string() } else { "nano".to_string() }
+        if cfg!(windows) {
+            "notepad".to_string()
+        } else {
+            "nano".to_string()
+        }
     });
 
     println!("Opening {} in {}...", file_path.display(), editor);
 
-    let status = std::process::Command::new(&editor)
-        .arg(&file_path)
-        .status();
+    let status = std::process::Command::new(&editor).arg(&file_path).status();
 
     match status {
         Ok(s) if s.success() => {
@@ -297,7 +392,12 @@ fn edit(name: &str, scope: &str) {
             eprintln!("{}: editor exited with error.", "error".red());
         }
         Err(e) => {
-            eprintln!("{}: failed to launch editor '{}': {}", "error".red(), editor, e);
+            eprintln!(
+                "{}: failed to launch editor '{}': {}",
+                "error".red(),
+                editor,
+                e
+            );
         }
     }
 }
@@ -308,10 +408,19 @@ fn remove(name: &str, scope: Option<String>) {
     let global_dir = AgentRegistry::global_dir();
 
     let (path, scope_name) = if let Some(s) = scope {
-        let dir = if s == "global" { global_dir } else { project_dir };
+        let dir = if s == "global" {
+            global_dir
+        } else {
+            project_dir
+        };
         let path = dir.join(format!("{name}.md"));
         if !path.exists() {
-            eprintln!("{}: agent '{}' not found in {} scope.", "error".red(), name, s);
+            eprintln!(
+                "{}: agent '{}' not found in {} scope.",
+                "error".red(),
+                name,
+                s
+            );
             return;
         }
         (path, s)
@@ -324,7 +433,11 @@ fn remove(name: &str, scope: Option<String>) {
             if global_path.exists() {
                 (global_path, "global".to_string())
             } else {
-                eprintln!("{}: agent '{}' not found in project or global scope.", "error".red(), name);
+                eprintln!(
+                    "{}: agent '{}' not found in project or global scope.",
+                    "error".red(),
+                    name
+                );
                 eprintln!("Built-in agents cannot be removed.");
                 return;
             }
@@ -333,7 +446,13 @@ fn remove(name: &str, scope: Option<String>) {
 
     match std::fs::remove_file(&path) {
         Ok(_) => {
-            println!("{}: agent '{}' removed from {} scope ({}).", "done".green(), name, scope_name, path.display());
+            println!(
+                "{}: agent '{}' removed from {} scope ({}).",
+                "done".green(),
+                name,
+                scope_name,
+                path.display()
+            );
         }
         Err(e) => {
             eprintln!("{}: failed to remove agent: {}", "error".red(), e);

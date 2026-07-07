@@ -52,7 +52,9 @@ pub async fn setup(host: &str) -> Result<(), String> {
 pub async fn push() -> Result<(), String> {
     println!("  VPS push is not yet available.");
     println!("  To sync a project manually:");
-    println!("    rsync -avz ~/.config/praxis/projects/<name> user@host:~/.config/praxis/projects/");
+    println!(
+        "    rsync -avz ~/.config/praxis/projects/<name> user@host:~/.config/praxis/projects/"
+    );
 
     Ok(())
 }

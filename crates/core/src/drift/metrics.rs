@@ -136,11 +136,24 @@ impl MetricsCollector {
 
         let latencies: Vec<f64> = samples.iter().map(|s| s.latency_ms as f64).collect();
         let output_tokens: Vec<f64> = samples.iter().map(|s| s.output_tokens as f64).collect();
-        let output_lengths: Vec<f64> = samples.iter().map(|s| s.output_length_chars as f64).collect();
-        let error_rates: Vec<f64> = samples.iter().map(|s| {
-            if s.tool_calls > 0 { s.tool_errors as f64 / s.tool_calls as f64 } else { 0.0 }
-        }).collect();
-        let gate_rates: Vec<f64> = samples.iter().map(|s| if s.gate_passed { 1.0 } else { 0.0 }).collect();
+        let output_lengths: Vec<f64> = samples
+            .iter()
+            .map(|s| s.output_length_chars as f64)
+            .collect();
+        let error_rates: Vec<f64> = samples
+            .iter()
+            .map(|s| {
+                if s.tool_calls > 0 {
+                    s.tool_errors as f64 / s.tool_calls as f64
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let gate_rates: Vec<f64> = samples
+            .iter()
+            .map(|s| if s.gate_passed { 1.0 } else { 0.0 })
+            .collect();
         let tool_usages: Vec<f64> = samples.iter().map(|s| s.tool_calls as f64).collect();
 
         self.baseline = Some(BaselineStats {
@@ -179,46 +192,112 @@ impl MetricsCollector {
         // Calculate current values
         let latencies: Vec<f64> = recent.iter().map(|s| s.latency_ms as f64).collect();
         let output_tokens: Vec<f64> = recent.iter().map(|s| s.output_tokens as f64).collect();
-        let output_lengths: Vec<f64> = recent.iter().map(|s| s.output_length_chars as f64).collect();
-        let error_rates: Vec<f64> = recent.iter().map(|s| {
-            if s.tool_calls > 0 { s.tool_errors as f64 / s.tool_calls as f64 } else { 0.0 }
-        }).collect();
-        let gate_rates: Vec<f64> = recent.iter().map(|s| if s.gate_passed { 1.0 } else { 0.0 }).collect();
+        let output_lengths: Vec<f64> = recent
+            .iter()
+            .map(|s| s.output_length_chars as f64)
+            .collect();
+        let error_rates: Vec<f64> = recent
+            .iter()
+            .map(|s| {
+                if s.tool_calls > 0 {
+                    s.tool_errors as f64 / s.tool_calls as f64
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let gate_rates: Vec<f64> = recent
+            .iter()
+            .map(|s| if s.gate_passed { 1.0 } else { 0.0 })
+            .collect();
         let tool_usages: Vec<f64> = recent.iter().map(|s| s.tool_calls as f64).collect();
-        let context_pressures: Vec<f64> = recent.iter().map(|s| s.context_pressure as f64).collect();
+        let context_pressures: Vec<f64> =
+            recent.iter().map(|s| s.context_pressure as f64).collect();
 
         vec![
             // Latency drift
             DimensionScore {
                 name: "latency".to_string(),
-                value: z_score(mean(&latencies), baseline.mean_latency, baseline.std_latency).abs() as f32,
+                value: z_score(
+                    mean(&latencies),
+                    baseline.mean_latency,
+                    baseline.std_latency,
+                )
+                .abs() as f32,
                 weight: 0.10,
-                z_score: z_score(mean(&latencies), baseline.mean_latency, baseline.std_latency) as f32,
-                status: classify_z_score(z_score(mean(&latencies), baseline.mean_latency, baseline.std_latency)),
+                z_score: z_score(
+                    mean(&latencies),
+                    baseline.mean_latency,
+                    baseline.std_latency,
+                ) as f32,
+                status: classify_z_score(z_score(
+                    mean(&latencies),
+                    baseline.mean_latency,
+                    baseline.std_latency,
+                )),
             },
             // Output token drift
             DimensionScore {
                 name: "output_tokens".to_string(),
-                value: z_score(mean(&output_tokens), baseline.mean_output_tokens, baseline.std_output_tokens).abs() as f32,
+                value: z_score(
+                    mean(&output_tokens),
+                    baseline.mean_output_tokens,
+                    baseline.std_output_tokens,
+                )
+                .abs() as f32,
                 weight: 0.10,
-                z_score: z_score(mean(&output_tokens), baseline.mean_output_tokens, baseline.std_output_tokens) as f32,
-                status: classify_z_score(z_score(mean(&output_tokens), baseline.mean_output_tokens, baseline.std_output_tokens)),
+                z_score: z_score(
+                    mean(&output_tokens),
+                    baseline.mean_output_tokens,
+                    baseline.std_output_tokens,
+                ) as f32,
+                status: classify_z_score(z_score(
+                    mean(&output_tokens),
+                    baseline.mean_output_tokens,
+                    baseline.std_output_tokens,
+                )),
             },
             // Output length drift
             DimensionScore {
                 name: "output_length".to_string(),
-                value: z_score(mean(&output_lengths), baseline.mean_output_length, baseline.std_output_length).abs() as f32,
+                value: z_score(
+                    mean(&output_lengths),
+                    baseline.mean_output_length,
+                    baseline.std_output_length,
+                )
+                .abs() as f32,
                 weight: 0.10,
-                z_score: z_score(mean(&output_lengths), baseline.mean_output_length, baseline.std_output_length) as f32,
-                status: classify_z_score(z_score(mean(&output_lengths), baseline.mean_output_length, baseline.std_output_length)),
+                z_score: z_score(
+                    mean(&output_lengths),
+                    baseline.mean_output_length,
+                    baseline.std_output_length,
+                ) as f32,
+                status: classify_z_score(z_score(
+                    mean(&output_lengths),
+                    baseline.mean_output_length,
+                    baseline.std_output_length,
+                )),
             },
             // Error rate drift
             DimensionScore {
                 name: "error_rate".to_string(),
-                value: z_score(mean(&error_rates), baseline.mean_error_rate, baseline.std_error_rate).abs() as f32,
+                value: z_score(
+                    mean(&error_rates),
+                    baseline.mean_error_rate,
+                    baseline.std_error_rate,
+                )
+                .abs() as f32,
                 weight: 0.15,
-                z_score: z_score(mean(&error_rates), baseline.mean_error_rate, baseline.std_error_rate) as f32,
-                status: classify_z_score(z_score(mean(&error_rates), baseline.mean_error_rate, baseline.std_error_rate)),
+                z_score: z_score(
+                    mean(&error_rates),
+                    baseline.mean_error_rate,
+                    baseline.std_error_rate,
+                ) as f32,
+                status: classify_z_score(z_score(
+                    mean(&error_rates),
+                    baseline.mean_error_rate,
+                    baseline.std_error_rate,
+                )),
             },
             // Gate pass rate drift
             DimensionScore {
@@ -226,15 +305,32 @@ impl MetricsCollector {
                 value: (1.0 - mean(&gate_rates)) as f32, // Invert: lower pass rate = higher drift
                 weight: 0.15,
                 z_score: -z_score(mean(&gate_rates), baseline.mean_gate_pass_rate, 0.5) as f32,
-                status: classify_z_score(-z_score(mean(&gate_rates), baseline.mean_gate_pass_rate, 0.5)),
+                status: classify_z_score(-z_score(
+                    mean(&gate_rates),
+                    baseline.mean_gate_pass_rate,
+                    0.5,
+                )),
             },
             // Tool usage consistency
             DimensionScore {
                 name: "tool_usage".to_string(),
-                value: z_score(mean(&tool_usages), baseline.mean_tool_usage, baseline.std_tool_usage).abs() as f32,
+                value: z_score(
+                    mean(&tool_usages),
+                    baseline.mean_tool_usage,
+                    baseline.std_tool_usage,
+                )
+                .abs() as f32,
                 weight: 0.10,
-                z_score: z_score(mean(&tool_usages), baseline.mean_tool_usage, baseline.std_tool_usage) as f32,
-                status: classify_z_score(z_score(mean(&tool_usages), baseline.mean_tool_usage, baseline.std_tool_usage)),
+                z_score: z_score(
+                    mean(&tool_usages),
+                    baseline.mean_tool_usage,
+                    baseline.std_tool_usage,
+                ) as f32,
+                status: classify_z_score(z_score(
+                    mean(&tool_usages),
+                    baseline.mean_tool_usage,
+                    baseline.std_tool_usage,
+                )),
             },
             // Context pressure
             DimensionScore {
@@ -362,19 +458,25 @@ impl SampleBuilder {
 // ─── Statistical Helpers ──────────────────────────────────────
 
 fn mean(values: &[f64]) -> f64 {
-    if values.is_empty() { return 0.0; }
+    if values.is_empty() {
+        return 0.0;
+    }
     values.iter().sum::<f64>() / values.len() as f64
 }
 
 fn std_dev(values: &[f64]) -> f64 {
-    if values.len() < 2 { return 0.0; }
+    if values.len() < 2 {
+        return 0.0;
+    }
     let m = mean(values);
     let variance = values.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
     variance.sqrt()
 }
 
 fn z_score(value: f64, mean: f64, std: f64) -> f64 {
-    if std == 0.0 { return 0.0; }
+    if std == 0.0 {
+        return 0.0;
+    }
     (value - mean) / std
 }
 
@@ -469,7 +571,12 @@ mod tests {
 
         // All dimensions should be healthy or close
         for score in &scores {
-            assert!(score.value < 2.0, "Dimension {} has high drift: {}", score.name, score.value);
+            assert!(
+                score.value < 2.0,
+                "Dimension {} has high drift: {}",
+                score.name,
+                score.value
+            );
         }
     }
 
@@ -514,13 +621,18 @@ mod tests {
 
         // Latency should have very high drift (1000 vs 100 mean)
         let latency_score = scores.iter().find(|s| s.name == "latency").unwrap();
-        assert!(latency_score.value > 1.5, "Expected high latency drift, got {}", latency_score.value);
+        assert!(
+            latency_score.value > 1.5,
+            "Expected high latency drift, got {}",
+            latency_score.value
+        );
     }
 
     #[test]
     fn test_sample_builder() {
         let collector = MetricsCollector::new();
-        let sample = collector.start_sample()
+        let sample = collector
+            .start_sample()
             .tokens(100, 50)
             .tool_result(true)
             .tool_result(false)

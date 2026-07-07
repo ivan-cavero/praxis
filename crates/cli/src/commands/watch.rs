@@ -55,7 +55,13 @@ pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
     let mut last_event_count: usize = 0;
     let mut consecutive_errors: u32 = 0;
 
-    println!("{} Watching session {} (refresh: {}s, API: {})", "→".cyan(), session_id.yellow(), interval_secs, api_url.dimmed());
+    println!(
+        "{} Watching session {} (refresh: {}s, API: {})",
+        "→".cyan(),
+        session_id.yellow(),
+        interval_secs,
+        api_url.dimmed()
+    );
     println!("{} Press Ctrl+C to stop.\n", "→".cyan());
 
     loop {
@@ -86,7 +92,11 @@ pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
 
         // Handle 404 — session not found, exit
         if is_404 {
-            println!("{}: session '{}' not found. Is the API server running?", "error".red(), session_id);
+            println!(
+                "{}: session '{}' not found. Is the API server running?",
+                "error".red(),
+                session_id
+            );
             println!("Start it with: {}", "praxis server".cyan());
             return;
         }
@@ -95,11 +105,24 @@ pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
         if is_connection_error {
             consecutive_errors += 1;
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                println!("{}: cannot reach API server at {} after {} attempts.", "error".red(), api_url, consecutive_errors);
-                println!("Make sure the API server is running: {}", "praxis server".cyan());
+                println!(
+                    "{}: cannot reach API server at {} after {} attempts.",
+                    "error".red(),
+                    api_url,
+                    consecutive_errors
+                );
+                println!(
+                    "Make sure the API server is running: {}",
+                    "praxis server".cyan()
+                );
                 return;
             }
-            println!("{}: cannot reach API server (attempt {}/{}), retrying...", "warn".yellow(), consecutive_errors, MAX_CONSECUTIVE_ERRORS);
+            println!(
+                "{}: cannot reach API server (attempt {}/{}), retrying...",
+                "warn".yellow(),
+                consecutive_errors,
+                MAX_CONSECUTIVE_ERRORS
+            );
             tokio::time::sleep(interval).await;
             continue;
         }
@@ -125,7 +148,11 @@ pub async fn run(session_id: &str, api_url: &str, interval_secs: u64) {
         // Stop if session is no longer running
         if let Some(s) = &state {
             if s.status != "running" {
-                println!("\n{} Session ended with status: {}", "→".cyan(), s.status.yellow());
+                println!(
+                    "\n{} Session ended with status: {}",
+                    "→".cyan(),
+                    s.status.yellow()
+                );
                 return;
             }
         }
@@ -143,7 +170,11 @@ fn render(
 ) {
     // Header
     println!("{} {}", "●".bright_cyan(), "PRAXIS WATCH".bold());
-    println!("Session: {} | {}", session_id.yellow(), chrono::Local::now().format("%H:%M:%S"));
+    println!(
+        "Session: {} | {}",
+        session_id.yellow(),
+        chrono::Local::now().format("%H:%M:%S")
+    );
     println!("{}", "─".repeat(80));
 
     match (state, session) {
@@ -210,16 +241,30 @@ fn render(
             }
         }
         _ => {
-            println!("{}: cannot reach API server or session not found.", "error".red());
-            println!("Make sure the API server is running: {}", "praxis server".cyan());
+            println!(
+                "{}: cannot reach API server or session not found.",
+                "error".red()
+            );
+            println!(
+                "Make sure the API server is running: {}",
+                "praxis server".cyan()
+            );
         }
     }
 
-    println!("\n{} Refreshing every few seconds... (Ctrl+C to stop)", "→".dimmed());
+    println!(
+        "\n{} Refreshing every few seconds... (Ctrl+C to stop)",
+        "→".dimmed()
+    );
 }
 
 fn render_event(event: &EventEntry) {
-    let time = event.created_at.chars().skip(11).take(8).collect::<String>();
+    let time = event
+        .created_at
+        .chars()
+        .skip(11)
+        .take(8)
+        .collect::<String>();
     let event_type = &event.event_type;
 
     let icon = match event_type.as_str() {
@@ -255,8 +300,14 @@ fn extract_event_summary(event_type: &str, payload: &serde_json::Value) -> Strin
         }
         "AgentCompleted" => {
             let agent = payload.get("agent").and_then(|v| v.as_str()).unwrap_or("?");
-            let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("?");
-            let duration = payload.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            let status = payload
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let duration = payload
+                .get("duration_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             format!("agent={} status={} ({}ms)", agent, status, duration)
         }
         "AgentOutput" => {
@@ -267,8 +318,14 @@ fn extract_event_summary(event_type: &str, payload: &serde_json::Value) -> Strin
         }
         "ToolCalled" => {
             let tool = payload.get("tool").and_then(|v| v.as_str()).unwrap_or("?");
-            let success = payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let duration = payload.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            let success = payload
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let duration = payload
+                .get("duration_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             format!("tool={} success={} ({}ms)", tool, success, duration)
         }
         "PhaseChanged" => {
@@ -282,14 +339,23 @@ fn extract_event_summary(event_type: &str, payload: &serde_json::Value) -> Strin
             format!("model={} in={} out={}", model, input, output)
         }
         "DelegationStarted" => {
-            let parent = payload.get("parent").and_then(|v| v.as_str()).unwrap_or("?");
+            let parent = payload
+                .get("parent")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let child = payload.get("child").and_then(|v| v.as_str()).unwrap_or("?");
             format!("{} → {}", parent, child)
         }
         "DelegationCompleted" => {
-            let parent = payload.get("parent").and_then(|v| v.as_str()).unwrap_or("?");
+            let parent = payload
+                .get("parent")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let child = payload.get("child").and_then(|v| v.as_str()).unwrap_or("?");
-            let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+            let status = payload
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             format!("{} → {} ({})", parent, child, status)
         }
         _ => payload.to_string(),

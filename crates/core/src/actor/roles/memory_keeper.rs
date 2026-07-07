@@ -13,13 +13,13 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, Notify, RwLock};
+use tokio::sync::{Notify, RwLock, broadcast};
 
+use praxis_memory::chunk_text_auto;
 use praxis_memory::embedding::EmbeddingService;
 use praxis_memory::episodic::{
     ChunkMetadata, ChunkType, EpisodicMemory, MemoryChunk, SearchResult,
 };
-use praxis_memory::chunk_text_auto;
 use praxis_shared::protocol::{MessageKind, SystemEvent};
 
 use crate::bus::EventBus;
@@ -91,7 +91,12 @@ impl MemoryKeeper {
     ///
     /// When `project_id` is `Some`, only chunks from that project are returned.
     /// When `None`, all chunks are searched (cross-project).
-    pub async fn search_rag(&self, query: &str, limit: usize, project_id: Option<&str>) -> Vec<SearchResult> {
+    pub async fn search_rag(
+        &self,
+        query: &str,
+        limit: usize,
+        project_id: Option<&str>,
+    ) -> Vec<SearchResult> {
         let memory = self.episodic_memory.read().await;
 
         if let Some(ref es) = *self.embedding_service.read().await {
@@ -177,7 +182,8 @@ impl MemoryKeeper {
                 duration_ms,
                 success,
             } => {
-                self.store_tool_call(agent, tool, *duration_ms, *success).await;
+                self.store_tool_call(agent, tool, *duration_ms, *success)
+                    .await;
             }
             _ => { /* ignore other event types */ }
         }
@@ -365,7 +371,7 @@ mod tests {
         // Create a mock embedding service (zero vectors from empty provider)
         let provider = praxis_providers::MockProvider::simple("test");
         let es = Arc::new(EmbeddingService::new_default(
-            Arc::new(provider) as Arc<dyn praxis_agent_traits::provider::LLMProvider>,
+            Arc::new(provider) as Arc<dyn praxis_agent_traits::provider::LLMProvider>
         ));
         keeper.set_embedding_service(es).await;
 

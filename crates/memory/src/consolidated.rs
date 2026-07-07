@@ -96,9 +96,12 @@ impl ConsolidatedMemory {
             let last = self.summaries.back().cloned();
             if let Some(last) = last {
                 tokio::spawn(async move {
-                    let payload: std::collections::HashMap<String, serde_json::Value> = [
-                        ("data".to_string(), serde_json::to_value(&last).unwrap_or(serde_json::Value::Null)),
-                    ].into_iter().collect();
+                    let payload: std::collections::HashMap<String, serde_json::Value> = [(
+                        "data".to_string(),
+                        serde_json::to_value(&last).unwrap_or(serde_json::Value::Null),
+                    )]
+                    .into_iter()
+                    .collect();
 
                     let client = match qdrant.build_client().await {
                         Ok(c) => c,
@@ -114,7 +117,10 @@ impl ConsolidatedMemory {
                     let point = PointStruct::new(summary_id, vec![0.0f32; 1], payload);
 
                     if let Err(e) = client
-                        .upsert_points(UpsertPointsBuilder::new(qdrant.collection.clone(), vec![point]))
+                        .upsert_points(UpsertPointsBuilder::new(
+                            qdrant.collection.clone(),
+                            vec![point],
+                        ))
                         .await
                     {
                         tracing::warn!("Qdrant sync failed (upsert): {}", e);
@@ -131,8 +137,12 @@ impl ConsolidatedMemory {
             .iter()
             .filter(|s| {
                 s.summary.to_lowercase().contains(&query_lower)
-                    || s.key_decisions.iter().any(|d| d.decision.to_lowercase().contains(&query_lower))
-                    || s.errors_learned.iter().any(|e| e.error.to_lowercase().contains(&query_lower))
+                    || s.key_decisions
+                        .iter()
+                        .any(|d| d.decision.to_lowercase().contains(&query_lower))
+                    || s.errors_learned
+                        .iter()
+                        .any(|e| e.error.to_lowercase().contains(&query_lower))
             })
             .collect()
     }
@@ -262,10 +272,12 @@ impl Summarizer {
             .collect();
 
         let count = interactions.len() as u32;
-        let period_start = interactions.first()
+        let period_start = interactions
+            .first()
             .map(|i| i.timestamp.clone())
             .unwrap_or_default();
-        let period_end = interactions.last()
+        let period_end = interactions
+            .last()
             .map(|i| i.timestamp.clone())
             .unwrap_or_default();
 
@@ -288,14 +300,31 @@ impl Summarizer {
     /// Generate a text summary from interactions.
     fn generate_summary_text(&self, interactions: &[InteractionSummary]) -> String {
         let total = interactions.len();
-        let decisions = interactions.iter().filter(|i| i.kind == InteractionKind::Decision).count();
-        let errors = interactions.iter().filter(|i| i.kind == InteractionKind::Error).count();
-        let tasks = interactions.iter().filter(|i| i.kind == InteractionKind::Task).count();
+        let decisions = interactions
+            .iter()
+            .filter(|i| i.kind == InteractionKind::Decision)
+            .count();
+        let errors = interactions
+            .iter()
+            .filter(|i| i.kind == InteractionKind::Error)
+            .count();
+        let tasks = interactions
+            .iter()
+            .filter(|i| i.kind == InteractionKind::Task)
+            .count();
 
         format!(
             "Session summary: {} interactions total ({} decisions, {} errors, {} tasks). Key activities: {}",
-            total, decisions, errors, tasks,
-            interactions.iter().take(3).map(|i| i.content.as_str()).collect::<Vec<_>>().join("; ")
+            total,
+            decisions,
+            errors,
+            tasks,
+            interactions
+                .iter()
+                .take(3)
+                .map(|i| i.content.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
         )
     }
 }
@@ -358,7 +387,11 @@ mod tests {
         for i in 0..5 {
             memory.store_sync(MemorySummary {
                 id: i.to_string(),
-                session_id: if i < 3 { "s1".to_string() } else { "s2".to_string() },
+                session_id: if i < 3 {
+                    "s1".to_string()
+                } else {
+                    "s2".to_string()
+                },
                 project_id: "p1".to_string(),
                 summary: format!("Summary {}", i),
                 key_decisions: vec![],
@@ -443,8 +476,16 @@ mod tests {
             project_id: "p1".to_string(),
             summary: String::new(),
             key_decisions: vec![
-                KeyDecision { decision: "Use Rust".to_string(), rationale: "Fast".to_string(), agent: "a".to_string() },
-                KeyDecision { decision: "Use Postgres".to_string(), rationale: "Reliable".to_string(), agent: "b".to_string() },
+                KeyDecision {
+                    decision: "Use Rust".to_string(),
+                    rationale: "Fast".to_string(),
+                    agent: "a".to_string(),
+                },
+                KeyDecision {
+                    decision: "Use Postgres".to_string(),
+                    rationale: "Reliable".to_string(),
+                    agent: "b".to_string(),
+                },
             ],
             errors_learned: vec![],
             current_state: String::new(),

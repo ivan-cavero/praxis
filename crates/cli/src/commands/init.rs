@@ -95,7 +95,10 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
     };
 
     // Check if name already taken
-    if projects.iter().any(|p| p.get("name").and_then(|v| v.as_str()) == Some(name)) {
+    if projects
+        .iter()
+        .any(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
+    {
         anyhow::bail!("Project '{}' already exists", name);
     }
 
@@ -133,4 +136,3 @@ pub fn init_project(name: &str) -> anyhow::Result<()> {
 
     Ok(())
 }
-

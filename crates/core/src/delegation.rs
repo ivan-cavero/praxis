@@ -10,13 +10,13 @@
 use praxis_shared::budget::Budget;
 use praxis_shared::protocol::MessageKind;
 
-use crate::agents::AgentRegistry;
 use crate::actor::roles::AgentFactory;
-use crate::orchestrator::task::{Task, TaskResult};
+use crate::agents::AgentRegistry;
 use crate::bus::EventBus;
+use crate::orchestrator::task::{Task, TaskResult};
 
-use std::sync::Arc;
 use praxis_agent_traits::provider::LLMProvider;
+use std::sync::Arc;
 
 /// A request to delegate a sub-task to a subagent.
 #[derive(Debug, Clone)]
@@ -67,13 +67,18 @@ pub async fn delegate_to_subagent(
 
     // 2. Validate the PARENT can spawn this child type
     //    (not the child's can_spawn — the parent's)
-    let parent_scoped = registry
-        .resolve(&request.parent_name)
-        .ok_or_else(|| format!("Parent agent '{}' not found in registry", request.parent_name))?;
+    let parent_scoped = registry.resolve(&request.parent_name).ok_or_else(|| {
+        format!(
+            "Parent agent '{}' not found in registry",
+            request.parent_name
+        )
+    })?;
     if !parent_scoped.definition.can_spawn_type(&request.agent_type) {
         return Err(format!(
             "Agent '{}' cannot spawn '{}' — not in its can_spawn list {:?}",
-            request.parent_name, request.agent_type, parent_scoped.definition.can_spawn()
+            request.parent_name,
+            request.agent_type,
+            parent_scoped.definition.can_spawn()
         ));
     }
 
@@ -123,11 +128,8 @@ pub async fn delegate_to_subagent(
 
     let child_result = match (&provider, bus) {
         (Some(p), Some(b)) => {
-            let agent = AgentFactory::create_with_provider_and_bus(
-                &resolved_role,
-                p.clone(),
-                b.clone(),
-            );
+            let agent =
+                AgentFactory::create_with_provider_and_bus(&resolved_role, p.clone(), b.clone());
             agent.execute(&child_task).await
         }
         (Some(p), None) => {

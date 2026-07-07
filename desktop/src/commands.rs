@@ -77,7 +77,9 @@ impl AppState {
 
     /// Initialize the CoreRuntime with an optional event store database path.
     pub async fn init_runtime(&self, db_path: Option<PathBuf>) -> Result<(), String> {
-        let mut rt = CoreRuntime::new().await.map_err(|e| e.to_string())?
+        let mut rt = CoreRuntime::new()
+            .await
+            .map_err(|e| e.to_string())?
             .with_default_memory();
 
         if let Some(ref path) = db_path {
@@ -125,7 +127,10 @@ async fn load_session(store: &Arc<SqliteEventStore>, id: &Uuid) -> Option<Sessio
         } else {
             "running".to_string()
         },
-        phase: snap.state["phase"].as_str().unwrap_or("unknown").to_string(),
+        phase: snap.state["phase"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string(),
         iteration: snap.state["iteration"].as_u64().unwrap_or(0) as u32,
         started_at: snap.updated_at.clone(),
     })

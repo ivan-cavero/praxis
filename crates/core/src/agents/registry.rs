@@ -4,8 +4,8 @@
 //! A project can override a global or built-in agent by creating a `.md`
 //! file with the same `name` in the project's `agents/` directory.
 
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use super::definition::{AgentDefinition, BUILTIN_AGENTS, parse_agent_md};
 
@@ -40,7 +40,9 @@ pub struct ScopedAgent {
 }
 
 impl ScopedAgent {
-    pub fn name(&self) -> &str { self.definition.name() }
+    pub fn name(&self) -> &str {
+        self.definition.name()
+    }
 }
 
 /// Registry of agent definitions loaded from all scopes.
@@ -55,7 +57,9 @@ pub struct AgentRegistry {
 impl AgentRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
-        Self { agents: HashMap::new() }
+        Self {
+            agents: HashMap::new(),
+        }
     }
 
     /// Build a registry with only built-in agents.
@@ -144,7 +148,10 @@ impl AgentRegistry {
         if let Some(config) = std::env::var_os("XDG_CONFIG_HOME") {
             PathBuf::from(config).join("praxis").join("agents")
         } else if let Some(home) = std::env::var_os("HOME") {
-            PathBuf::from(home).join(".config").join("praxis").join("agents")
+            PathBuf::from(home)
+                .join(".config")
+                .join("praxis")
+                .join("agents")
         } else if let Some(appdata) = std::env::var_os("APPDATA") {
             PathBuf::from(appdata).join("praxis").join("agents")
         } else {
@@ -191,7 +198,11 @@ fn load_dir_into(registry: &mut AgentRegistry, dir: &Path, scope: AgentScope) {
         match parse_agent_md(&content) {
             Ok(def) => {
                 let name = def.name().to_string();
-                tracing::debug!("Loaded agent '{name}' from {} ({})", scope.as_str(), path.display());
+                tracing::debug!(
+                    "Loaded agent '{name}' from {} ({})",
+                    scope.as_str(),
+                    path.display()
+                );
                 registry.insert(ScopedAgent {
                     definition: def,
                     scope,
@@ -220,7 +231,16 @@ mod tests {
     fn test_builtin_only_has_all_agents() {
         let registry = AgentRegistry::builtin_only();
         assert_eq!(registry.list().len(), 8);
-        for name in &["architect", "coder", "reviewer", "security", "tester", "git", "researcher", "explorer"] {
+        for name in &[
+            "architect",
+            "coder",
+            "reviewer",
+            "security",
+            "tester",
+            "git",
+            "researcher",
+            "explorer",
+        ] {
             assert!(registry.contains(name), "missing built-in agent: {name}");
         }
     }
@@ -263,7 +283,8 @@ mod tests {
         let agents_dir = dir.path().join("agents");
         std::fs::create_dir_all(&agents_dir).unwrap();
 
-        let custom_reviewer = "---\nname: reviewer\nmodel: gpt-5\ntemperature: 0.05\n---\nYou are a strict reviewer.";
+        let custom_reviewer =
+            "---\nname: reviewer\nmodel: gpt-5\ntemperature: 0.05\n---\nYou are a strict reviewer.";
         let mut file = std::fs::File::create(agents_dir.join("reviewer.md")).unwrap();
         file.write_all(custom_reviewer.as_bytes()).unwrap();
 
@@ -283,14 +304,16 @@ mod tests {
         std::fs::write(
             global_agents.join("tester.md"),
             "---\nname: tester\nmodel: gpt-5\n---\nGlobal tester.",
-        ).unwrap();
+        )
+        .unwrap();
 
         let project_agents = project_dir.path().join("agents");
         std::fs::create_dir_all(&project_agents).unwrap();
         std::fs::write(
             project_agents.join("tester.md"),
             "---\nname: tester\nmodel: claude-sonnet-4-20250514\n---\nProject tester.",
-        ).unwrap();
+        )
+        .unwrap();
 
         let registry = AgentRegistry::load(Some(&global_agents), Some(&project_agents));
         let agent = registry.resolve("tester").unwrap();
@@ -306,7 +329,8 @@ mod tests {
         std::fs::write(
             agents_dir.join("custom.md"),
             "---\nname: custom\nmodel: gpt-5\n---\nCustom agent.",
-        ).unwrap();
+        )
+        .unwrap();
 
         let registry = AgentRegistry::load(None, Some(&agents_dir));
         let builtin_count = registry.list_by_scope(AgentScope::Builtin).len();
@@ -330,7 +354,8 @@ mod tests {
         std::fs::write(
             agents_dir.join("custom.md"),
             "---\nname: custom\nmodel: gpt-5\n---\nCustom.",
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut registry = AgentRegistry::load(None, Some(&agents_dir));
         assert!(registry.remove("custom").is_some());

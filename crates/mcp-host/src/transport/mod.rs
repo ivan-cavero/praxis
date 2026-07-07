@@ -1,7 +1,7 @@
 //! MCP transport layer.
 
-pub mod stdio;
 pub mod sse;
+pub mod stdio;
 
-pub use stdio::StdioTransport;
 pub use sse::SseTransport;
+pub use stdio::StdioTransport;

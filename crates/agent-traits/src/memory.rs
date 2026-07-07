@@ -32,7 +32,10 @@ pub trait MemoryBackend: Send + Sync {
     async fn search(&self, query: &[f32], limit: usize) -> crate::Result<Vec<SearchResult>>;
 
     /// Remove entries matching the given filter.
-    async fn delete(&self, filter: &std::collections::HashMap<String, String>) -> crate::Result<usize>;
+    async fn delete(
+        &self,
+        filter: &std::collections::HashMap<String, String>,
+    ) -> crate::Result<usize>;
 
     /// Return statistics about stored memory.
     async fn stats(&self) -> crate::Result<MemoryStats>;

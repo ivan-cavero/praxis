@@ -6,7 +6,7 @@
 //!
 //! Protocol: Model Context Protocol over stdio transport.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::process::Command;
 
@@ -175,19 +175,21 @@ fn search_brave(query: &str, max_results: usize, api_key: &str) -> Result<Value,
     }
 
     let body = String::from_utf8_lossy(&output.stdout).to_string();
-    let parsed: Value =
-        serde_json::from_str(&body).map_err(|e| format!("Failed to parse Brave response: {}", e))?;
+    let parsed: Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse Brave response: {}", e))?;
 
     let web_results = parsed["web"]["results"]
         .as_array()
         .cloned()
         .unwrap_or_default()
         .into_iter()
-        .map(|r| json!({
-            "title": r["title"],
-            "url": r["url"],
-            "snippet": r["description"]
-        }))
+        .map(|r| {
+            json!({
+                "title": r["title"],
+                "url": r["url"],
+                "snippet": r["description"]
+            })
+        })
         .collect::<Vec<Value>>();
 
     Ok(json!({
@@ -214,18 +216,27 @@ fn tool_search(args: &Value, brave_api_key: &Option<String>) -> Result<Value, St
         .as_str()
         .ok_or_else(|| "Missing required argument: query".to_string())?;
 
-    let max_results = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
-    let engine = args.get("engine").and_then(|v| v.as_str()).unwrap_or("auto");
+    let max_results = args
+        .get("max_results")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10) as usize;
+    let engine = args
+        .get("engine")
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto");
 
     match engine {
         "brave" => {
-            let key = brave_api_key
-                .as_ref()
-                .ok_or_else(|| "Brave Search API key not set. Set BRAVE_API_KEY environment variable.".to_string())?;
+            let key = brave_api_key.as_ref().ok_or_else(|| {
+                "Brave Search API key not set. Set BRAVE_API_KEY environment variable.".to_string()
+            })?;
             search_brave(query, max_results, key)
         }
         "ddg" | "auto" => search_ddg(query, max_results),
-        _ => Err(format!("Unknown search engine: {}. Use 'ddg', 'brave', or 'auto'.", engine)),
+        _ => Err(format!(
+            "Unknown search engine: {}. Use 'ddg', 'brave', or 'auto'.",
+            engine
+        )),
     }
 }
 
@@ -238,7 +249,8 @@ fn tool_extract(args: &Value) -> Result<Value, String> {
         .args(&[
             "-s",
             "-L",
-            "-A", "Mozilla/5.0 (compatible; praxis-mcp-web-search/0.1.0)",
+            "-A",
+            "Mozilla/5.0 (compatible; praxis-mcp-web-search/0.1.0)",
             url,
         ])
         .output()
@@ -255,7 +267,11 @@ fn tool_extract(args: &Value) -> Result<Value, String> {
     let text = strip_html_tags(&html);
     // Limit to reasonable size
     let text = if text.len() > 10000 {
-        format!("{}... [truncated from {} chars]", &text[..10000], text.len())
+        format!(
+            "{}... [truncated from {} chars]",
+            &text[..10000],
+            text.len()
+        )
     } else {
         text
     };
@@ -413,7 +429,11 @@ fn main() {
 
     eprintln!(
         "praxis-mcp-web-search starting, engine: {}",
-        if brave_api_key.is_some() { "DuckDuckGo + Brave" } else { "DuckDuckGo" }
+        if brave_api_key.is_some() {
+            "DuckDuckGo + Brave"
+        } else {
+            "DuckDuckGo"
+        }
     );
 
     let stdin = io::stdin();
@@ -441,7 +461,11 @@ fn main() {
                     "id": null,
                     "error": {"code": -32700, "message": format!("Parse error: {}", e)}
                 });
-                let _ = writeln!(stdout_lock, "{}", serde_json::to_string(&error_resp).unwrap());
+                let _ = writeln!(
+                    stdout_lock,
+                    "{}",
+                    serde_json::to_string(&error_resp).unwrap()
+                );
                 let _ = stdout_lock.flush();
                 continue;
             }
@@ -488,7 +512,10 @@ mod tests {
     fn test_url_decode() {
         assert_eq!(url_decode("hello+world"), "hello world");
         assert_eq!(url_decode("a%20b"), "a b");
-        assert_eq!(url_decode("https%3A%2F%2Fexample.com"), "https://example.com");
+        assert_eq!(
+            url_decode("https%3A%2F%2Fexample.com"),
+            "https://example.com"
+        );
     }
 
     #[test]

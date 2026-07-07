@@ -262,7 +262,10 @@ mod tests {
 
     #[test]
     fn test_builtin_skills_count() {
-        assert!(builtin_skills().len() >= 6, "should have at least 6 built-in skills");
+        assert!(
+            builtin_skills().len() >= 6,
+            "should have at least 6 built-in skills"
+        );
     }
 
     #[test]
@@ -316,9 +319,21 @@ mod tests {
     #[test]
     fn test_all_skills_have_content() {
         for skill in builtin_skills() {
-            assert!(!skill.content.is_empty(), "skill '{}' has empty content", skill.id);
-            assert!(!skill.name.is_empty(), "skill '{}' has empty name", skill.id);
-            assert!(!skill.description.is_empty(), "skill '{}' has empty description", skill.id);
+            assert!(
+                !skill.content.is_empty(),
+                "skill '{}' has empty content",
+                skill.id
+            );
+            assert!(
+                !skill.name.is_empty(),
+                "skill '{}' has empty name",
+                skill.id
+            );
+            assert!(
+                !skill.description.is_empty(),
+                "skill '{}' has empty description",
+                skill.id
+            );
         }
     }
 }

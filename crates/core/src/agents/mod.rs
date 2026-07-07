@@ -17,5 +17,5 @@
 pub mod definition;
 pub mod registry;
 
-pub use definition::{AgentDefinition, AgentFrontmatter, parse_agent_md, ParseError};
+pub use definition::{AgentDefinition, AgentFrontmatter, ParseError, parse_agent_md};
 pub use registry::{AgentRegistry, AgentScope};

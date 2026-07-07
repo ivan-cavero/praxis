@@ -53,7 +53,9 @@ impl ChunkStrategy {
 
         // Check for structured content: headings, lists, code blocks
         let has_headings = lines.iter().any(|l| l.trim().starts_with('#'));
-        let has_turns = lines.iter().any(|l| l.starts_with("**") || l.contains(":**"));
+        let has_turns = lines
+            .iter()
+            .any(|l| l.starts_with("**") || l.contains(":**"));
         let has_code_blocks = content.contains("```");
         let has_sentences = content.contains('.') && content.len() > 200;
 
@@ -120,7 +122,9 @@ impl Chunker {
 
     /// Split content into chunks.
     pub fn chunk(&self, content: &str) -> Vec<Chunk> {
-        let strategy = self.strategy.unwrap_or_else(|| ChunkStrategy::detect(content));
+        let strategy = self
+            .strategy
+            .unwrap_or_else(|| ChunkStrategy::detect(content));
 
         match strategy {
             ChunkStrategy::BySize => self.chunk_by_size(content),
@@ -165,7 +169,9 @@ impl Chunker {
                 word_tokens + 1 // space token
             };
 
-            if current_tokens + word_tokens_with_space > self.target_tokens && !current_chunk.is_empty() {
+            if current_tokens + word_tokens_with_space > self.target_tokens
+                && !current_chunk.is_empty()
+            {
                 // Emit current chunk
                 chunks.push(Chunk {
                     content: current_chunk.trim().to_string(),
@@ -257,7 +263,8 @@ impl Chunker {
 
                 for para in &paragraphs {
                     let para_tokens = self.token_counter.count_tokens(para);
-                    if current_tokens + para_tokens > self.target_tokens && !current_para.is_empty() {
+                    if current_tokens + para_tokens > self.target_tokens && !current_para.is_empty()
+                    {
                         chunks.push(Chunk {
                             content: current_para.trim().to_string(),
                             index,
@@ -473,7 +480,8 @@ impl Chunker {
 /// Convenience: chunk content and produce a Vec of chunk contents.
 pub fn chunk_text(content: &str, target_tokens: u32) -> Vec<String> {
     let chunker = Chunker::new(target_tokens);
-    chunker.chunk(content)
+    chunker
+        .chunk(content)
         .into_iter()
         .map(|c| c.content)
         .collect()
@@ -482,7 +490,8 @@ pub fn chunk_text(content: &str, target_tokens: u32) -> Vec<String> {
 /// Convenience: chunk with auto-detected strategy.
 pub fn chunk_text_auto(content: &str) -> Vec<String> {
     let chunker = Chunker::default_chunker();
-    chunker.chunk(content)
+    chunker
+        .chunk(content)
         .into_iter()
         .map(|c| c.content)
         .collect()
@@ -534,7 +543,10 @@ The results section is long.
         let chunker = Chunker::new(512);
         let chunks = chunker.chunk(content);
 
-        assert!(chunks.len() >= 3, "3 headings should produce at least 3 chunks");
+        assert!(
+            chunks.len() >= 3,
+            "3 headings should produce at least 3 chunks"
+        );
         assert_eq!(chunks[0].boundary, ChunkBoundary::Heading);
     }
 
@@ -547,13 +559,13 @@ The results section is long.
         // Use conversation format that's detected as turns
         let conv = "**User:** Hello\n**Assistant:** Hi there!\n**User:** How are you?";
         let turn_or_structure = ChunkStrategy::detect(conv);
-        assert!(turn_or_structure == ChunkStrategy::ByTurn || turn_or_structure == ChunkStrategy::ByStructure);
+        assert!(
+            turn_or_structure == ChunkStrategy::ByTurn
+                || turn_or_structure == ChunkStrategy::ByStructure
+        );
         // Long text with sentences should be detected as sentence-based
         let long_text = "This is a long text with multiple sentences. It has several periods. Here is another one. And a fourth sentence for good measure. The quick brown fox jumps over the lazy dog near the riverbank. Additional padding to push past the 200 character threshold. Making sure we cross the detection limit easily.";
-        assert_eq!(
-            ChunkStrategy::detect(long_text),
-            ChunkStrategy::BySentence
-        );
+        assert_eq!(ChunkStrategy::detect(long_text), ChunkStrategy::BySentence);
         assert_eq!(
             ChunkStrategy::detect("just some words without structure or punctuation"),
             ChunkStrategy::BySize

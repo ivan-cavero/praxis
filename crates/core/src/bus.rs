@@ -138,7 +138,6 @@ mod tests {
     use super::*;
     use praxis_shared::protocol::MessageKind;
 
-
     #[tokio::test]
     async fn test_publish_subscribe() {
         let bus = EventBus::new();
@@ -168,10 +167,7 @@ mod tests {
         let mut rx1 = bus.subscribe();
         let mut rx2 = bus.subscribe();
 
-        bus.publish(
-            MessageKind::SessionHeartbeat,
-            "test",
-        );
+        bus.publish(MessageKind::SessionHeartbeat, "test");
 
         // Both subscribers receive the event
         let _ = tokio::time::timeout(std::time::Duration::from_secs(1), rx1.recv())
