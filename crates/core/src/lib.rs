@@ -137,6 +137,14 @@ pub struct CoreRuntime {
     /// Agent registry — resolves agent definitions from .md files (3 scopes).
     /// When set, agent system prompts come from the registry instead of TOML config.
     pub agent_registry: crate::agents::AgentRegistry,
+    /// Hot memory — per-agent sliding windows for interaction history.
+    /// Tracks recent interactions (input + output) per (session, agent) pair.
+    /// Auto-evicts oldest when over count (50) or token (62,720) limits.
+    pub hot_memory: Option<praxis_memory::hot::HotMemory>,
+    /// Context manager — runs the compression pipeline (truncate tool results,
+    /// compress history, reduce RAG, prune project context, EMC) when context
+    /// exceeds the budget. Connected to the loop via `prepare_context_with_history`.
+    pub context_manager: Option<praxis_memory::context::ContextManager>,
 }
 
 /// Result of executing tool calls from agent output.
@@ -189,6 +197,8 @@ impl CoreRuntime {
             write_state_file: false,
             skills_content: None,
             agent_registry: crate::agents::AgentRegistry::builtin_only(),
+            hot_memory: None,
+            context_manager: None,
         })
     }
 
@@ -523,6 +533,95 @@ impl CoreRuntime {
                      truncated {} chars from front",
                     task.role, token_count, budget.hard_limit, removed
                 );
+            }
+        }
+    }
+
+    /// Push an agent interaction (input + output) to the sliding window.
+    ///
+    /// Called after each agent execution. The sliding window auto-evicts the
+    /// oldest interaction when over its count (50) or token (62,720) limit.
+    /// This gives `ContextManager::prepare()` real history to compress.
+    fn push_agent_interaction(&self, agent_id: &str, input: &str, output: &str, token_count: u32) {
+        let Some(hot_memory) = &self.hot_memory else {
+            return;
+        };
+        let Some(session_id) = self.session_id else {
+            return;
+        };
+
+        let counter = praxis_memory::context::TokenCounter::default_token_counter();
+        let input_tokens = counter.count_tokens(input);
+        let output_tokens = counter.count_tokens(output);
+        let total_tokens = token_count.max(input_tokens + output_tokens);
+
+        hot_memory.push_interaction(
+            &session_id.to_string(),
+            agent_id,
+            praxis_memory::hot::Interaction {
+                role: "assistant".to_string(),
+                content: format!("INPUT:\n{input}\n\nOUTPUT:\n{output}"),
+                token_count: total_tokens,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        );
+    }
+
+    /// Inject compressed interaction history into `task.context`.
+    ///
+    /// Builds a `ContextWindow` from the agent's sliding window history plus
+    /// the current task context, then runs `ContextManager::prepare()` which
+    /// triggers the full compression pipeline (truncate tool results → compress
+    /// history → reduce RAG → prune project context → EMC) when over budget.
+    /// The compressed history is prepended to `task.context` as a
+    /// "--- Recent History ---" section.
+    fn prepare_context_with_history(&mut self, task: &mut orchestrator::Task, agent_id: &str) {
+        let Some(hot_memory) = &self.hot_memory else {
+            return;
+        };
+        let Some(context_manager) = &mut self.context_manager else {
+            return;
+        };
+        let Some(session_id) = self.session_id else {
+            return;
+        };
+
+        let window = hot_memory.get_context(&session_id.to_string(), agent_id);
+        let Some(window) = window else {
+            return;
+        };
+        if window.len() == 0 {
+            return;
+        }
+
+        // Build a ContextWindow from the sliding window's interactions
+        let mut ctx_window = praxis_memory::context::ContextWindow::new();
+        for interaction in window.interactions() {
+            ctx_window.push(praxis_memory::context::Message {
+                role: interaction.role.clone(),
+                content: interaction.content.clone(),
+            });
+        }
+
+        // Run the compression pipeline (triggers EMC when pressure > 85%)
+        context_manager.prepare(&mut ctx_window);
+
+        // Inject compressed history as a "Recent History" section
+        if ctx_window.len() > 0 {
+            let history = ctx_window
+                .messages
+                .iter()
+                .map(|m| m.content.clone())
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n");
+
+            if !history.is_empty() {
+                let history_section = format!("--- Recent History ---\n{history}\n--- End History ---");
+                task.context = if task.context.is_empty() {
+                    history_section
+                } else {
+                    format!("{history_section}\n\n{}", task.context)
+                };
             }
         }
     }
@@ -1395,6 +1494,18 @@ impl CoreRuntime {
             ));
         }
 
+        // Initialize hot memory (per-agent sliding windows) and context manager
+        // (compression pipeline + EMC) if not already set.
+        if self.hot_memory.is_none() {
+            self.hot_memory = Some(praxis_memory::hot::HotMemory::new());
+        }
+        if self.context_manager.is_none() {
+            self.context_manager = Some(praxis_memory::context::ContextManager::new(
+                128_000,
+                praxis_memory::context::BudgetProfile::Balanced,
+            ));
+        }
+
         // Register quality gates for review/test/security phases
         self.register_default_gates();
 
@@ -1510,7 +1621,8 @@ impl CoreRuntime {
                     // Inject skills content (SKILL.md) into the task context
                     self.inject_skills(&mut task);
 
-                    // Clamp context to model budget (front-truncate if over limit)
+                    // Inject compressed interaction history + clamp to budget
+                    self.prepare_context_with_history(&mut task, &role_config.name);
                     self.clamp_context_to_budget(&mut task);
 
                     let resolved_role = self
@@ -1627,6 +1739,14 @@ impl CoreRuntime {
 
                             results.push(result);
                             let result = results.last().unwrap();
+
+                            // Push interaction to sliding window for history tracking
+                            self.push_agent_interaction(
+                                &result.agent_id,
+                                goal,
+                                &result.content,
+                                result.token_usage.total,
+                            );
 
                             // ── Drift metrics recording (parallel) ──────────
                             let pressure = self.compute_context_pressure();
@@ -1753,7 +1873,8 @@ impl CoreRuntime {
                     }
                     // ── End MemoryRAG injection ──────────────────────────────────
 
-                    // Clamp context to model budget (front-truncate if over limit)
+                    // Inject compressed interaction history + clamp to budget
+                    self.prepare_context_with_history(&mut task, &role_config.name);
                     self.clamp_context_to_budget(&mut task);
 
                     let resolved_role = self
@@ -1961,6 +2082,14 @@ impl CoreRuntime {
 
                     results.push(result);
                     let result = results.last().unwrap();
+
+                    // Push interaction to sliding window for history tracking
+                    self.push_agent_interaction(
+                        &result.agent_id,
+                        goal,
+                        &result.content,
+                        result.token_usage.total,
+                    );
 
                     // ── Drift metrics recording ─────────────────────────
                     // Estimate context pressure from token usage vs budget
@@ -2352,7 +2481,8 @@ impl CoreRuntime {
                 // Inject skills content (SKILL.md) into the task context
                 self.inject_skills(&mut task);
 
-                // Clamp context to model budget (front-truncate if over limit)
+                // Inject compressed interaction history + clamp to budget
+                self.prepare_context_with_history(&mut task, &role_config.name);
                 self.clamp_context_to_budget(&mut task);
 
                 let resolved_role = self
@@ -2382,6 +2512,14 @@ impl CoreRuntime {
 
                 results.push(result);
                 let result = results.last().unwrap();
+
+                // Push interaction to sliding window for history tracking
+                self.push_agent_interaction(
+                    &result.agent_id,
+                    &goal,
+                    &result.content,
+                    result.token_usage.total,
+                );
 
                 // Accumulate session budget (resume path)
                 if result.token_usage.total > 0 {
