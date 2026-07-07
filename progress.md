@@ -63,9 +63,9 @@ Profile hot paths, reduce allocations, optimize bottlenecks.
 - [x] Audit crates/core/src/machine/gate.rs evaluators for redundant allocations — self.name.clone() is necessary for GateVerdict ownership; no redundant allocations found
 
 ### 2C — Optimize hot paths
-- [ ] Audit crates/core/src/loop/controller.rs — minimize work per iteration
-- [ ] Audit crates/core/src/loop/pathology.rs — lazy metrics where possible
-- [ ] Audit crates/core/src/drift/metrics.rs — simplify z-score computation
+- [x] Audit crates/core/src/loop/controller.rs — minimize work per iteration — clean: events pre-allocated VecDeque(256), current_results cleared each phase
+- [x] Audit crates/core/src/loop/pathology.rs — lazy metrics where possible — clean: VecDeque pre-allocated with capacity, no unnecessary allocations
+- [x] Audit crates/core/src/drift/metrics.rs — simplify z-score computation — reduced from 42 mean/z_score calls to 17 by computing each dimension's mean and z-score once
 
 ---
 
