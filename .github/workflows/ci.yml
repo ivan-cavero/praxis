@@ -55,6 +55,9 @@ jobs:
       - name: Clippy (exclude desktop — needs dashboard/dist)
         run: cargo clippy --workspace --exclude desktop -- -D warnings
 
+      - name: Build CLI binary (for e2e tests)
+        run: cargo build -p praxis-cli
+
       - name: Unit tests (exclude desktop — needs dashboard/dist)
         run: cargo test --workspace --exclude desktop
 
