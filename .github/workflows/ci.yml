@@ -61,6 +61,9 @@ jobs:
       - name: Unit tests (exclude desktop — needs dashboard/dist)
         run: cargo test --workspace --exclude desktop
 
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Build dashboard
         run: |
           cd dashboard
