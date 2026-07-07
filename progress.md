@@ -123,7 +123,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 
 ### 4D — Accessibility
 - [x] Add aria-label to all icon-only buttons
-- [ ] Ensure color contrast meets WCAG AA
+- [x] Ensure color contrast meets WCAG AA
 - [x] Add focus-visible outlines for keyboard nav
 - [ ] Test basic flow with screen reader
 

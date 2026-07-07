@@ -122,6 +122,7 @@ impl StateMachine {
     /// Attempt to transition to a new phase.
     ///
     /// Returns `Ok(PhaseTransition)` on success, or `Err(reason)` on failure.
+    #[tracing::instrument(skip(self))]
     pub fn transition(&mut self, to: Phase, iteration: u32) -> Result<PhaseTransition, String> {
         if !self.can_transition(to) {
             return Err(format!(
@@ -154,6 +155,7 @@ impl StateMachine {
     }
 
     /// Detect if the machine is in a cycle (A→B→A→B).
+    #[tracing::instrument(skip(self))]
     pub fn detect_cycle(&self, window: usize) -> bool {
         if self.history.len() < window * 2 {
             return false;

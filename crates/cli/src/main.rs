@@ -809,6 +809,18 @@ enum SessionCommands {
     Diff {
         id: String,
     },
+    /// Undo the latest file change in a session's change history.
+    Undo {
+        id: String,
+    },
+    /// Redo the latest undone file change in a session's change history.
+    Redo {
+        id: String,
+    },
+    /// List all change records for a session (undo/redo history).
+    Changes {
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2108,6 +2120,156 @@ async fn main() -> anyhow::Result<()> {
                     }
                     Err(e) if e.is_connect() => {
                         diff_local(&id).await;
+                    }
+                    Err(e) => {
+                        println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
+            SessionCommands::Undo { id } => {
+                // Try the API server first.
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let api_url = "http://localhost:8080";
+                let undo_url = format!("{}/api/sessions/{}/undo", api_url, id);
+
+                match client.post(&undo_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                        println!(
+                            "{} {}",
+                            "✓".green(),
+                            body.get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Change undone")
+                        );
+                    }
+                    Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                        undo_local(&id).await;
+                    }
+                    Ok(resp) => {
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
+                    }
+                    Err(e) if e.is_connect() => {
+                        undo_local(&id).await;
+                    }
+                    Err(e) => {
+                        println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
+            SessionCommands::Redo { id } => {
+                // Try the API server first.
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let api_url = "http://localhost:8080";
+                let redo_url = format!("{}/api/sessions/{}/redo", api_url, id);
+
+                match client.post(&redo_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                        println!(
+                            "{} {}",
+                            "✓".green(),
+                            body.get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Change redone")
+                        );
+                    }
+                    Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                        redo_local(&id).await;
+                    }
+                    Ok(resp) => {
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
+                    }
+                    Err(e) if e.is_connect() => {
+                        redo_local(&id).await;
+                    }
+                    Err(e) => {
+                        println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
+            SessionCommands::Changes { id } => {
+                // Try the API server first.
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let api_url = "http://localhost:8080";
+                let changes_url = format!("{}/api/sessions/{}/changes", api_url, id);
+
+                match client.get(&changes_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                        let changes = body.get("changes").and_then(|c| c.as_array());
+                        match changes {
+                            Some(changes) if !changes.is_empty() => {
+                                println!(
+                                    "{} Change history for session {} ({} records)",
+                                    "→".cyan(),
+                                    id,
+                                    changes.len()
+                                );
+                                println!("{}", "─".repeat(80).dimmed());
+                                for change in changes {
+                                    let seq = change.get("seq").and_then(|s| s.as_i64()).unwrap_or(0);
+                                    let desc = change
+                                        .get("description")
+                                        .and_then(|d| d.as_str())
+                                        .unwrap_or("");
+                                    let undone = change
+                                        .get("undone")
+                                        .and_then(|u| u.as_bool())
+                                        .unwrap_or(false);
+                                    let status = if undone { " (undone)" } else { "" };
+                                    let commit = change
+                                        .get("commit_hash")
+                                        .and_then(|c| c.as_str())
+                                        .unwrap_or("");
+                                    let short_commit = if commit.len() >= 8 {
+                                        &commit[..8]
+                                    } else {
+                                        commit
+                                    };
+                                    println!(
+                                        "  {} {} {}{}",
+                                        format!("#{}", seq).yellow(),
+                                        short_commit.dimmed(),
+                                        desc,
+                                        status.red()
+                                    );
+                                }
+                            }
+                            _ => {
+                                println!("{} No change history for session {}", "→".cyan(), id);
+                            }
+                        }
+                    }
+                    Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                        changes_local(&id).await;
+                    }
+                    Ok(resp) => {
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
+                    }
+                    Err(e) if e.is_connect() => {
+                        changes_local(&id).await;
                     }
                     Err(e) => {
                         println!("{} Error: {}", "✗".red(), e);
@@ -3878,6 +4040,151 @@ async fn diff_local(id: &str) {
     }
 }
 
+/// Undo the latest change using the local SQLite DB (when the API server is not running).
+async fn undo_local(id: &str) {
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("state.db");
+    if !db_path.exists() {
+        println!("{} No database found. Run a session first.", "✗".red());
+        return;
+    }
+
+    let sid = match uuid::Uuid::parse_str(id) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Invalid session ID: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Failed to open database: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let working_dir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            println!("{} Cannot determine working directory: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    match praxis_core::undo::undo_change(&store, sid, &working_dir) {
+        Ok(message) => {
+            println!("{} {}", "✓".green(), message);
+        }
+        Err(e) => {
+            println!("{} Undo failed: {}", "✗".red(), e);
+        }
+    }
+}
+
+/// Redo the latest undone change using the local SQLite DB.
+async fn redo_local(id: &str) {
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("state.db");
+    if !db_path.exists() {
+        println!("{} No database found. Run a session first.", "✗".red());
+        return;
+    }
+
+    let sid = match uuid::Uuid::parse_str(id) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Invalid session ID: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Failed to open database: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let working_dir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            println!("{} Cannot determine working directory: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    match praxis_core::undo::redo_change(&store, sid, &working_dir) {
+        Ok(message) => {
+            println!("{} {}", "✓".green(), message);
+        }
+        Err(e) => {
+            println!("{} Redo failed: {}", "✗".red(), e);
+        }
+    }
+}
+
+/// List change history using the local SQLite DB.
+async fn changes_local(id: &str) {
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("state.db");
+    if !db_path.exists() {
+        println!("{} No database found. Run a session first.", "✗".red());
+        return;
+    }
+
+    let sid = match uuid::Uuid::parse_str(id) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Invalid session ID: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Failed to open database: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    match praxis_core::undo::list_changes(&store, sid) {
+        Ok(changes) => {
+            if changes.is_empty() {
+                println!("{} No change history for session {}", "→".cyan(), id);
+            } else {
+                println!(
+                    "{} Change history for session {} ({} records)",
+                    "→".cyan(),
+                    id,
+                    changes.len()
+                );
+                println!("{}", "─".repeat(80).dimmed());
+                for change in &changes {
+                    let status = if change.undone { " (undone)" } else { "" };
+                    let short_commit = if change.commit_hash.len() >= 8 {
+                        &change.commit_hash[..8]
+                    } else {
+                        &change.commit_hash
+                    };
+                    println!(
+                        "  {} {} {}{}",
+                        format!("#{}", change.seq).yellow(),
+                        short_commit.dimmed(),
+                        change.description,
+                        status.red()
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            println!("{} Failed to list changes: {}", "✗".red(), e);
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -57,6 +57,7 @@ impl Gate {
     }
 
     /// Evaluate the gate given a set of review results.
+    #[tracing::instrument(skip(self, results))]
     pub fn evaluate(&mut self, results: &[ReviewResult]) -> GateVerdict {
         let verdict = match &self.evaluator {
             GateEvaluator::AllAgentsPass => {
@@ -242,6 +243,7 @@ impl GateRegistry {
     }
 
     /// Evaluate all gates for a phase.
+    #[tracing::instrument(skip(self, results))]
     pub fn evaluate_phase(&mut self, phase: &Phase, results: &[ReviewResult]) -> Vec<GateVerdict> {
         let gate_names: Vec<String> = self.phase_gates.get(phase).cloned().unwrap_or_default();
 

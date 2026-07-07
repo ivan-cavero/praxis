@@ -2099,6 +2099,20 @@ impl CoreRuntime {
 
             // Save checkpoint after each phase transition
             self.save_checkpoint(goal).await;
+
+            // Capture undo/redo change snapshot (best-effort).
+            if let Some(store) = &self.event_store
+                && let Some(sid) = self.session_id
+                && let Some(cwd) = std::env::current_dir().ok()
+            {
+                let desc = format!(
+                    "Phase: {:?}, Iteration {}",
+                    current_phase, self.loop_controller.iteration
+                );
+                if let Err(e) = crate::undo::capture_change(store, sid, &cwd, &desc) {
+                    tracing::warn!("Failed to capture undo change: {}", e);
+                }
+            }
         }
 
         self.loop_controller.stop();
@@ -2489,6 +2503,20 @@ impl CoreRuntime {
             current_phase = next_phase;
             self.loop_controller.increment_iteration();
             self.save_checkpoint(&goal).await;
+
+            // Capture undo/redo change snapshot (best-effort).
+            if let Some(store) = &self.event_store
+                && let Some(sid) = self.session_id
+                && let Some(cwd) = std::env::current_dir().ok()
+            {
+                let desc = format!(
+                    "Phase: {:?}, Iteration {}",
+                    current_phase, self.loop_controller.iteration
+                );
+                if let Err(e) = crate::undo::capture_change(store, sid, &cwd, &desc) {
+                    tracing::warn!("Failed to capture undo change: {}", e);
+                }
+            }
         }
 
         self.loop_controller.stop();

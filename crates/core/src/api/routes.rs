@@ -143,6 +143,9 @@ impl ApiServer {
             .route("/api/sessions/{id}/state", get(sessions::get_state))
             .route("/api/sessions/{id}/rollback", post(sessions::rollback))
             .route("/api/sessions/{id}/diff", get(sessions::diff))
+            .route("/api/sessions/{id}/undo", post(sessions::undo))
+            .route("/api/sessions/{id}/redo", post(sessions::redo))
+            .route("/api/sessions/{id}/changes", get(sessions::list_changes))
             .route("/api/agents", get(agent_crud::list_agents))
             .route("/api/agents", post(agent_crud::create_agent))
             .route("/api/agents/{name}", get(agent_crud::get_agent))
@@ -1732,6 +1735,88 @@ pub mod sessions {
         }
     }
 
+    /// Undo the latest file change in a session's change history.
+    ///
+    /// Marks the most recent active change as undone and restores the working
+    /// tree to the previous change (or the session baseline). Returns 404 if
+    /// no active changes exist.
+    pub async fn undo(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<serde_json::Value>, StatusCode> {
+        let Some(store) = &state.event_store else {
+            return Err(StatusCode::NOT_FOUND);
+        };
+
+        let sid = uuid::Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        let working_dir = std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        match crate::undo::undo_change(store, sid, &working_dir) {
+            Ok(message) => Ok(Json(serde_json::json!({
+                "session_id": id,
+                "status": "undone",
+                "message": message,
+            }))),
+            Err(e) => {
+                tracing::error!("Undo failed for session {}: {}", id, e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+
+    /// Redo the latest undone file change in a session's change history.
+    ///
+    /// Marks the most recent undone change as active and restores the working
+    /// tree to its state. Returns 404 if no undone changes exist.
+    pub async fn redo(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<serde_json::Value>, StatusCode> {
+        let Some(store) = &state.event_store else {
+            return Err(StatusCode::NOT_FOUND);
+        };
+
+        let sid = uuid::Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        let working_dir = std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        match crate::undo::redo_change(store, sid, &working_dir) {
+            Ok(message) => Ok(Json(serde_json::json!({
+                "session_id": id,
+                "status": "redone",
+                "message": message,
+            }))),
+            Err(e) => {
+                tracing::error!("Redo failed for session {}: {}", id, e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+
+    /// List all change records for a session (undo/redo history).
+    ///
+    /// Returns an array of change records ordered by sequence, each with its
+    /// commit hash, description, and undone status.
+    pub async fn list_changes(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<serde_json::Value>, StatusCode> {
+        let Some(store) = &state.event_store else {
+            return Err(StatusCode::NOT_FOUND);
+        };
+
+        let sid = uuid::Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        match crate::undo::list_changes(store, sid) {
+            Ok(changes) => Ok(Json(serde_json::json!({
+                "session_id": id,
+                "changes": changes,
+            }))),
+            Err(e) => {
+                tracing::error!("List changes failed for session {}: {}", id, e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
     #[derive(Serialize)]
     pub struct AgentSummary {
         pub name: String,
