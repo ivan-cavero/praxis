@@ -31,7 +31,7 @@ pub use orchestrator::roles::ResolvedRole as AgentRoleResolved;
 pub use orchestrator::{Task, TaskResult, TaskStatus};
 pub use completion::{
     CompletionCriterion, OutcomeResult, OutcomeVerifier,
-    CodingOutcomeVerifier, ManualCompletionVerifier, default_coding_criterion,
+    default_coding_criterion,
 };
 
 use praxis_mcp_host::McpHost;
@@ -756,9 +756,8 @@ impl CoreRuntime {
                 self.shutdown_requested.store(true, std::sync::atomic::Ordering::SeqCst);
             }
 
-            RecoveryKind::LogOnly | RecoveryKind::PauseAgent => {
+            RecoveryKind::LogOnly => {
                 // LogOnly is already logged above.
-                // PauseAgent: just warn; the loop will continue but the event is visible.
             }
         }
     }

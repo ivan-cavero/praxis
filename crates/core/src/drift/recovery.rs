@@ -40,8 +40,6 @@ pub enum RecoveryKind {
     ContextReset,
     /// Switch to a more capable (expensive) model.
     ModelUpgrade,
-    /// Stop execution, notify user.
-    PauseAgent,
     /// Terminate session, save diagnostic.
     KillSession,
     /// Transfer to a fresh session (handoff).
@@ -58,8 +56,6 @@ pub struct RecoveryOrchestrator {
     consecutive_resets: u32,
     /// Model tier for upgrade/downgrade.
     current_tier: ModelTier,
-    /// Current model name.
-    current_model: String,
 }
 
 /// Model tier for switching.
@@ -98,7 +94,6 @@ impl RecoveryOrchestrator {
             max_consecutive_resets: 3,
             consecutive_resets: 0,
             current_tier: ModelTier::Balanced,
-            current_model: "gpt-5".to_string(),
         }
     }
 
@@ -204,84 +199,9 @@ impl RecoveryOrchestrator {
         }
     }
 
-    /// Execute model upgrade/downgrade.
-    pub fn execute_model_switch(&mut self, direction: &str) -> RecoveryResult {
-        let old_model = self.current_model.clone();
-
-        match direction {
-            "upgrade" => {
-                self.current_tier = self.current_tier.upgrade();
-                self.current_model = Self::model_for_tier(&self.current_tier);
-            }
-            "downgrade" => {
-                self.current_tier = self.current_tier.downgrade();
-                self.current_model = Self::model_for_tier(&self.current_tier);
-            }
-            _ => {}
-        }
-
-        let action = RecoveryAction {
-            kind: if direction == "upgrade" {
-                RecoveryKind::ModelUpgrade
-            } else {
-                RecoveryKind::ForceConsolidation // Downgrade is a form of consolidation
-            },
-            reason: format!(
-                "Model switched: {} → {} ({})",
-                old_model, self.current_model, direction
-            ),
-            severity: ASIStatus::Drift,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            agent_id: None,
-        };
-
-        self.history.push(action.clone());
-
-        RecoveryResult {
-            action,
-            context_cleared: false,
-            memory_injected: false,
-            summary_length: 0,
-            session_id: String::new(),
-        }
-    }
-
-    /// Execute session handoff.
-    pub fn execute_session_handoff(
-        &mut self,
-        old_session_id: &str,
-        _goal: &str,
-    ) -> RecoveryResult {
-        let action = RecoveryAction {
-            kind: RecoveryKind::SessionHandoff,
-            reason: format!(
-                "Session handoff from {} (max resets reached)",
-                old_session_id
-            ),
-            severity: ASIStatus::Critical,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            agent_id: None,
-        };
-
-        self.history.push(action.clone());
-
-        RecoveryResult {
-            action,
-            context_cleared: true,
-            memory_injected: false,
-            summary_length: 0,
-            session_id: old_session_id.to_string(),
-        }
-    }
-
     /// Get the current model tier.
     pub fn current_tier(&self) -> &ModelTier {
         &self.current_tier
-    }
-
-    /// Get the current model name.
-    pub fn current_model(&self) -> &str {
-        &self.current_model
     }
 
     /// Reset the consecutive reset counter (call after successful recovery).
@@ -292,20 +212,6 @@ impl RecoveryOrchestrator {
     /// Get history of recovery actions.
     pub fn history(&self) -> &[RecoveryAction] {
         &self.history
-    }
-
-    /// Get the last recovery action.
-    pub fn last_action(&self) -> Option<&RecoveryAction> {
-        self.history.last()
-    }
-
-    /// Get the model name for a tier.
-    fn model_for_tier(tier: &ModelTier) -> String {
-        match tier {
-            ModelTier::Fast => "gpt-4o-mini".to_string(),
-            ModelTier::Balanced => "gpt-5".to_string(),
-            ModelTier::Capable => "claude-4-opus".to_string(),
-        }
     }
 }
 
