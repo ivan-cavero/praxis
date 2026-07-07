@@ -45,5 +45,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Enabling auto-merge on PR #${{ steps.release.outputs.pr }}"
-          gh pr merge --auto --squash "${{ steps.release.outputs.pr }}"
+          PR_NUMBER=$(echo '${{ steps.release.outputs.pr }}' | jq -r '.number // .')
+          echo "Enabling auto-merge on PR #${PR_NUMBER}"
+          gh pr merge --auto --squash "${PR_NUMBER}"
