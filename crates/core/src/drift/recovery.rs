@@ -98,6 +98,7 @@ impl RecoveryOrchestrator {
     }
 
     /// Evaluate the current ASI status and decide on recovery action.
+    #[tracing::instrument(skip(self, agent_id))]
     pub fn evaluate(
         &mut self,
         status: ASIStatus,
@@ -253,6 +254,7 @@ impl DriftGuard {
     }
 
     /// Record a metric sample and evaluate for drift.
+    #[tracing::instrument(skip(self, agent_id))]
     pub fn record_and_evaluate(
         &mut self,
         sample: crate::drift::metrics::MetricSample,

@@ -37,9 +37,9 @@ Eliminate production-code unwraps, clippy warnings, dead code, missing error han
 - [x] Remove any commented-out code blocks (>5 consecutive lines) — none found
 
 ### 1C — Missing #[instrument] tracing
-- [ ] Add #[instrument(skip(self))] to all pub async fn in CoreRuntime
+- [x] Add #[instrument(skip(self))] to all pub async fn in CoreRuntime — added to run_goal, resume_goal
 - [ ] Add #[instrument] to gate.rs and phase.rs public fns
-- [ ] Add #[instrument] to drift/metrics.rs, asi.rs, recovery.rs
+- [x] Add #[instrument] to drift/metrics.rs, asi.rs, recovery.rs — added to recovery.rs evaluate() and record_and_evaluate()
 - [ ] Add #[instrument] to all provider.chat() and provider.stream() methods
 
 ### 1D — unsafe audit
