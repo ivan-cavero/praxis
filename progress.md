@@ -234,9 +234,9 @@ New dashboard views.
 - [x] Theme customization (accent color, font size)
 
 ### 8C — PWA support
-- [ ] Service worker for offline access
-- [ ] Manifest.json for PWA install
-- [ ] Push notifications for session completion
+- [x] Service worker for offline access
+- [x] Manifest.json for PWA install
+- [x] Push notifications for session completion
 
 ---
 

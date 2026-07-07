@@ -16,6 +16,7 @@ import Icon from '../components/ui/Icon.vue'
 import AgentsConfig from '../components/dashboard/AgentsConfig.vue'
 import RemoteConnections from '../components/dashboard/RemoteConnections.vue'
 import { useTheme, type AccentColor, type FontSize } from '../composables/useTheme'
+import { usePwaNotifications } from '../composables/usePwaNotifications'
 
 const emit = defineEmits<{
   close: []
@@ -27,6 +28,19 @@ const updater = useUpdater()
 const toast = useToast()
 const { version, uptime } = storeToRefs(store)
 const theme = useTheme()
+const notifications = usePwaNotifications()
+const notifPermission = computed(() => notifications.permission.value)
+function enableNotifications() {
+  notifications.enable()
+    .then(granted => {
+      if (granted) toast.success('Notifications enabled')
+      else toast.error('Notification permission denied')
+    })
+}
+function disableNotifications() {
+  notifications.disable()
+  toast.success('Notifications disabled')
+}
 
 // ─── Tabs (computed — 'limits' only shows when a project is active) ──
 
@@ -425,6 +439,35 @@ async function handleCheckUpdate() {
                 </div>
                 <button class="btn btn-ghost theme-reset" @click="theme.reset()">
                   Reset to defaults
+                </button>
+              </div>
+            </div>
+
+            <div class="section-card">
+              <div class="section-card-header">
+                <Icon name="info" :size="20" class="section-icon" />
+                <div>
+                  <h3 class="section-title">Notifications</h3>
+                  <p class="section-desc">Get notified when sessions complete</p>
+                </div>
+              </div>
+              <div class="notif-settings">
+                <span class="notif-status">
+                  Permission: {{ notifPermission }}
+                </span>
+                <button
+                  v-if="notifPermission !== 'granted'"
+                  class="btn btn-secondary"
+                  @click="enableNotifications()"
+                >
+                  Enable Notifications
+                </button>
+                <button
+                  v-else
+                  class="btn btn-ghost"
+                  @click="disableNotifications()"
+                >
+                  Disable
                 </button>
               </div>
             </div>
@@ -1109,6 +1152,21 @@ async function handleCheckUpdate() {
   cursor: pointer;
 }
 .theme-reset:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+/* ═══ Notification Settings ═══ */
+
+.notif-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.notif-status {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
 
 
 /* ═══ Toast ═══ */

@@ -10,6 +10,7 @@ import { useWebSocket } from './composables/useWebSocket'
 import TitleBar from './components/layout/TitleBar.vue'
 import Icon from './components/ui/Icon.vue'
 import ToastContainer from './components/ui/ToastContainer.vue'
+import ReloadPrompt from './components/ReloadPrompt.vue'
 import OnboardingOverlay from './components/OnboardingOverlay.vue'
 import LoginView from './views/LoginView.vue'
 import SettingsDialog from './views/SettingsDialog.vue'
@@ -403,6 +404,7 @@ function handleLogin(token: string) {
 
     <!-- Toast notifications -->
     <ToastContainer />
+    <ReloadPrompt />
 
     <!-- First-run onboarding -->
     <OnboardingOverlay />
