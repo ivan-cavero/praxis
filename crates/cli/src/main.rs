@@ -273,7 +273,7 @@ fn add_provider_to_project_config(
             .iter()
             .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
             .ok_or_else(|| format!("Project '{}' not found", name))?,
-        None => projects.last().ok_or("No projects configured")?,
+        None => projects.last().ok_or("No projects configured".to_string())?,
     };
 
     let proj_name = project
@@ -798,6 +798,14 @@ enum SessionCommands {
         tail: bool,
         #[arg(long)]
         json: bool,
+    },
+    /// Rollback a session's file changes to the pre-session git baseline.
+    Rollback {
+        id: String,
+    },
+    /// Show the diff between a session's baseline and the current state.
+    Diff {
+        id: String,
     },
 }
 
@@ -2025,6 +2033,94 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+            SessionCommands::Rollback { id } => {
+                // Try the API server first (for sessions started via `praxis server`).
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()
+                    .unwrap_or_default();
+                let api_url = "http://localhost:8080";
+                let rollback_url = format!("{}/api/sessions/{}/rollback", api_url, id);
+
+                match client.post(&rollback_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let body: serde_json::Value =
+                            resp.json().await.unwrap_or_default();
+                        println!(
+                            "{} {}",
+                            "✓".green(),
+                            body.get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Session rolled back")
+                        );
+                    }
+                    Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                        // API server has no event store — fall back to local DB.
+                        rollback_local(&id).await;
+                    }
+                    Ok(resp) => {
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
+                    }
+                    Err(e) if e.is_connect() => {
+                        // API server not running — fall back to local DB.
+                        rollback_local(&id).await;
+                    }
+                    Err(e) => {
+                        println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
+            SessionCommands::Diff { id } => {
+                // Try the API server first.
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_default();
+                let api_url = "http://localhost:8080";
+                let diff_url = format!("{}/api/sessions/{}/diff", api_url, id);
+
+                match client.get(&diff_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let body: serde_json::Value =
+                            resp.json().await.unwrap_or_default();
+                        let diff_text = body
+                            .get("diff")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("");
+                        if diff_text.is_empty() {
+                            println!("{} No changes since baseline.", "→".cyan());
+                        } else {
+                            println!(
+                                "{} Diff from baseline for session {}",
+                                "→".cyan(),
+                                id
+                            );
+                            println!("{}", "─".repeat(80));
+                            println!("{}", diff_text);
+                        }
+                    }
+                    Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                        diff_local(&id).await;
+                    }
+                    Ok(resp) => {
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
+                    }
+                    Err(e) if e.is_connect() => {
+                        diff_local(&id).await;
+                    }
+                    Err(e) => {
+                        println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
         },
 
         Commands::Provider(cmd) => match cmd {
@@ -2806,7 +2902,7 @@ async fn main() -> anyhow::Result<()> {
                         agent
                     );
                     let path = injections_dir.join(&filename);
-                    match std::fs::write(&path, serde_json::to_string_pretty(&injection).map_err(|e| format!("Failed to serialize injection: {e}"))?) {
+                    match std::fs::write(&path, serde_json::to_string_pretty(&injection).map_err(|e| anyhow::anyhow!(e))?) {
                         Ok(()) => {
                             println!(
                                 "{} Injection written for agent '{}'",
@@ -3033,7 +3129,7 @@ async fn main() -> anyhow::Result<()> {
             // For plan mode, we run the goal but with a manual completion criterion
             // so it stops after the first Planning + Designing iteration.
             runtime = runtime
-                .with_completion(praxis_core::CompletionCriterion::from_string("manual").map_err(|e| format!("Invalid completion criterion: {e}"))?);
+                .with_completion(praxis_core::CompletionCriterion::from_string("manual").expect("manual is a valid completion criterion"));
 
             println!("  {} Running Planning + Designing phases...", "→".dimmed());
 
@@ -3310,7 +3406,7 @@ async fn main() -> anyhow::Result<()> {
             println!();
 
             // Pick the most recent session (last in list)
-            let session_id = session_ids.last().ok_or("No sessions found")?;
+            let session_id = session_ids.last().expect("session_ids non-empty (checked above)");
             println!(
                 "{} Watching most recent session: {}",
                 "→".cyan(),
@@ -3688,6 +3784,98 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Rollback a session using the local SQLite DB (when the API server is not running).
+async fn rollback_local(id: &str) {
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("state.db");
+    if !db_path.exists() {
+        println!("{} No database found. Run a session first.", "✗".red());
+        return;
+    }
+
+    let sid = match uuid::Uuid::parse_str(id) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Invalid session ID: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Failed to open database: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let working_dir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            println!("{} Cannot determine working directory: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    match praxis_core::rollback::restore_baseline(&store, sid, &working_dir) {
+        Ok(message) => {
+            println!("{} {}", "✓".green(), message);
+        }
+        Err(e) => {
+            println!("{} Rollback failed: {}", "✗".red(), e);
+        }
+    }
+}
+
+/// Show the diff for a session using the local SQLite DB (when the API server is not running).
+async fn diff_local(id: &str) {
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("state.db");
+    if !db_path.exists() {
+        println!("{} No database found. Run a session first.", "✗".red());
+        return;
+    }
+
+    let sid = match uuid::Uuid::parse_str(id) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Invalid session ID: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Failed to open database: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let working_dir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            println!("{} Cannot determine working directory: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    match praxis_core::rollback::diff_from_baseline(&store, sid, &working_dir) {
+        Ok(diff_text) => {
+            if diff_text.is_empty() {
+                println!("{} No changes since baseline.", "→".cyan());
+            } else {
+                println!("{} Diff from baseline for session {}", "→".cyan(), id);
+                println!("{}", "─".repeat(80));
+                println!("{}", diff_text);
+            }
+        }
+        Err(e) => {
+            println!("{} Diff failed: {}", "✗".red(), e);
+        }
+    }
 }
 
 #[cfg(test)]

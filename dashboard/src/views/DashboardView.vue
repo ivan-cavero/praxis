@@ -90,10 +90,34 @@ onUnmounted(() => {
       <p class="dashboard-subtitle">System overview — sessions, agents, and costs</p>
     </div>
 
-    <!-- Loading state -->
-    <div v-if="isLoading" class="loading-state">
-      <span class="loading-spinner" />
-      <p>Loading dashboard...</p>
+    <!-- Skeleton loading state -->
+    <div v-if="isLoading" class="skeleton-grid">
+      <MetricCard skeleton />
+      <MetricCard skeleton />
+      <MetricCard skeleton />
+      <MetricCard skeleton />
+      <MetricCard skeleton />
+      <MetricCard skeleton />
+    </div>
+
+    <!-- Skeleton sessions table -->
+    <div v-if="isLoading" class="section">
+      <div class="section-header">
+        <h2 class="section-title">Sessions</h2>
+      </div>
+      <div class="session-list">
+        <div v-for="n in 3" :key="n" class="session-row skeleton-row" />
+      </div>
+    </div>
+
+    <!-- Skeleton agent grid -->
+    <div v-if="isLoading" class="section">
+      <div class="section-header">
+        <h2 class="section-title">Agent Status</h2>
+      </div>
+      <div class="agent-grid">
+        <div v-for="n in 3" :key="n" class="agent-card skeleton-card" />
+      </div>
     </div>
 
     <template v-else>
@@ -211,12 +235,16 @@ onUnmounted(() => {
 
 .loading-state {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-4);
   padding: var(--space-12);
   color: var(--text-muted);
+}
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
 }
 
 .loading-spinner {
@@ -360,6 +388,33 @@ onUnmounted(() => {
 .row-chevron {
   color: var(--text-muted);
   opacity: 0.4;
+}
+.skeleton-row {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-row::after {
+  content: '';
+  position: absolute;
+  inset: var(--space-4);
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+.skeleton-card {
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+.skeleton-card::after {
+  content: '';
+  position: absolute;
+  inset: var(--space-4);
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
 }
 
 .agent-grid {

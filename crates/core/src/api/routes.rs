@@ -141,6 +141,8 @@ impl ApiServer {
                 get(sessions::get_checkpoint),
             )
             .route("/api/sessions/{id}/state", get(sessions::get_state))
+            .route("/api/sessions/{id}/rollback", post(sessions::rollback))
+            .route("/api/sessions/{id}/diff", get(sessions::diff))
             .route("/api/agents", get(agent_crud::list_agents))
             .route("/api/agents", post(agent_crud::create_agent))
             .route("/api/agents/{name}", get(agent_crud::get_agent))
@@ -1664,6 +1666,66 @@ pub mod sessions {
             "session_id": id,
             "was_active_run": was_active,
         })))
+    }
+
+    /// Rollback a session's file changes to the pre-session git baseline.
+    ///
+    /// Restores the working tree to the HEAD commit + uncommitted diff captured
+    /// at `run_goal` start. Returns 404 if no baseline exists for the session.
+    pub async fn rollback(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<serde_json::Value>, StatusCode> {
+        let Some(store) = &state.event_store else {
+            return Err(StatusCode::NOT_FOUND);
+        };
+
+        let sid = uuid::Uuid::parse_str(&id)
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let working_dir =
+            std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        match crate::rollback::restore_baseline(store, sid, &working_dir) {
+            Ok(message) => Ok(Json(serde_json::json!({
+                "session_id": id,
+                "status": "rolled_back",
+                "message": message,
+            }))),
+            Err(e) => {
+                tracing::error!("Rollback failed for session {}: {}", id, e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+
+    /// Get the diff between a session's baseline commit and the current HEAD.
+    ///
+    /// Returns the unified diff text. Empty string if no baseline or no changes.
+    pub async fn diff(
+        State(state): State<Arc<AppState>>,
+        axum::extract::Path(id): axum::extract::Path<String>,
+    ) -> Result<Json<serde_json::Value>, StatusCode> {
+        let Some(store) = &state.event_store else {
+            return Err(StatusCode::NOT_FOUND);
+        };
+
+        let sid = uuid::Uuid::parse_str(&id)
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let working_dir =
+            std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        match crate::rollback::diff_from_baseline(store, sid, &working_dir) {
+            Ok(diff_text) => Ok(Json(serde_json::json!({
+                "session_id": id,
+                "diff": diff_text,
+            }))),
+            Err(e) => {
+                tracing::error!("Diff failed for session {}: {}", id, e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     }
 
     #[derive(Serialize)]

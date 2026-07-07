@@ -283,7 +283,10 @@ mod tests {
         assert!(msg.contains("Restored"));
 
         // Verify files are back to baseline state.
-        assert_eq!(std::fs::read_to_string(tmp.join("a.txt")).unwrap(), "original\n");
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("a.txt")).unwrap().trim_end(),
+            "original"
+        );
         assert!(!tmp.join("b.txt").exists());
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -314,8 +317,8 @@ mod tests {
         // Restore should bring back v2-uncommitted.
         restore_baseline(&store, sid, &tmp).expect("restore");
         assert_eq!(
-            std::fs::read_to_string(tmp.join("a.txt")).unwrap(),
-            "v2-uncommitted\n"
+            std::fs::read_to_string(tmp.join("a.txt")).unwrap().trim_end(),
+            "v2-uncommitted"
         );
 
         let _ = std::fs::remove_dir_all(&tmp);

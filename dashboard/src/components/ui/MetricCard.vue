@@ -3,17 +3,19 @@
  * MetricCard — compact stat card with optional icon and accent color.
  */
 import Icon from './Icon.vue'
-const { label, value, sub, color = 'green', icon } = defineProps<{
-  label: string
-  value: string | number
+const { label, value, sub, color = 'green', icon, skeleton = false } = defineProps<{
+  label?: string
+  value?: string | number
   sub?: string
   color?: 'green' | 'emerald' | 'amber' | 'crimson' | 'blue' | 'purple'
   icon?: string
+  skeleton?: boolean
 }>()
 </script>
 
 <template>
-  <div class="metric-card animate-slide-up">
+  <!-- Data state -->
+  <div v-if="!skeleton" class="metric-card animate-slide-up">
     <div class="metric-top">
       <div class="metric-label">{{ label }}</div>
       <div v-if="icon" class="metric-icon" :class="color">
@@ -22,6 +24,16 @@ const { label, value, sub, color = 'green', icon } = defineProps<{
     </div>
     <div class="metric-value" :class="color">{{ value }}</div>
     <div v-if="sub" class="metric-sub">{{ sub }}</div>
+  </div>
+
+  <!-- Skeleton state -->
+  <div v-else class="metric-card metric-card-skeleton">
+    <div class="metric-top">
+      <div class="skeleton skeleton-label" />
+      <div v-if="icon" class="skeleton skeleton-icon" />
+    </div>
+    <div class="skeleton skeleton-value" />
+    <div v-if="sub" class="skeleton skeleton-sub" />
   </div>
 </template>
 
@@ -90,5 +102,32 @@ const { label, value, sub, color = 'green', icon } = defineProps<{
 .metric-sub {
   font-size: 12px;
   color: var(--text-muted);
+}
+.metric-card-skeleton {
+  pointer-events: none;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+.skeleton-label {
+  width: 60%;
+  height: 12px;
+}
+.skeleton-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+}
+.skeleton-value {
+  width: 50%;
+  height: 28px;
+  margin-top: var(--space-1);
+}
+.skeleton-sub {
+  width: 40%;
+  height: 12px;
 }
 </style>
