@@ -36,6 +36,13 @@ toml.workspace = true
 serde_yaml_neo.workspace = true
 qrcode.workspace = true
 gethostname.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "loop_throughput"
+harness = false

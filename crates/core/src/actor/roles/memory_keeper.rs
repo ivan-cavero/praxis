@@ -86,19 +86,22 @@ impl MemoryKeeper {
 
     /// Search episodic memory for chunks relevant to `query`.
     ///
-    /// Uses embedding-based `search()` when an embedding service is configured,
-    /// falls back to keyword `search_text()` otherwise.
-    pub async fn search_rag(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+    /// Uses embedding-based `search_with_filter()` when an embedding service is configured,
+    /// falls back to keyword `search_text_with_filter()` otherwise.
+    ///
+    /// When `project_id` is `Some`, only chunks from that project are returned.
+    /// When `None`, all chunks are searched (cross-project).
+    pub async fn search_rag(&self, query: &str, limit: usize, project_id: Option<&str>) -> Vec<SearchResult> {
         let memory = self.episodic_memory.read().await;
 
         if let Some(ref es) = *self.embedding_service.read().await {
             let query_embedding = es.embed(query).await;
             if !query_embedding.is_empty() {
-                return memory.search(&query_embedding, limit);
+                return memory.search_with_filter(&query_embedding, limit, project_id);
             }
         }
 
-        memory.search_text(query, limit)
+        memory.search_text_with_filter(query, limit, project_id)
     }
 
     /// Get a handle to the shutdown notifier.
@@ -346,7 +349,7 @@ mod tests {
         let keeper = MemoryKeeper::new(bus, memory);
 
         // Without embedding service, search_rag falls back to keyword search_text()
-        let results = keeper.search_rag("test query", 5).await;
+        let results = keeper.search_rag("test query", 5, None).await;
         assert!(results.is_empty());
     }
 
