@@ -40,6 +40,12 @@ jobs:
           manifest-file: .release-please-manifest.json
           target-branch: main
 
+      - name: Checkout repo (needed by gh pr merge --auto)
+        if: steps.release.outputs.pr != ''
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
       - name: Enable auto-merge on release PR
         if: steps.release.outputs.pr != ''
         env:
