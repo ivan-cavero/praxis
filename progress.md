@@ -207,10 +207,10 @@ Complete CLI implementation and UX.
 - [x] context history — show budget history
 
 ### 7B — New CLI commands
-- [ ] praxis doctor — diagnose configuration, provider, project health
-- [ ] praxis completion <shell> — bash, zsh, fish, powershell
-- [ ] praxis logs --tail — follow mode
-- [ ] praxis session export <id> — JSON/YAML export
+- [x] praxis doctor — diagnose configuration, provider, project health
+- [x] praxis completion <shell> — bash, zsh, fish, powershell
+- [x] praxis logs --tail — follow mode
+- [x] praxis session export <id> — JSON/YAML export
 
 ### 7C — CLI UX
 - [ ] ratatui colored output for session list / session show
