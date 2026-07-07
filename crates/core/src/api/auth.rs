@@ -9,7 +9,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -111,7 +111,10 @@ impl AuthState {
 
     /// Validate a JWT token and return its claims.
     pub fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {
-        let token_data = decode::<Claims>(token, &self.decoding_key, &Validation::default())
+        let mut validation = Validation::default();
+        validation.set_required_spec_claims(&["exp", "iat", "sub"]);
+        validation.algorithms = vec![Algorithm::HS256];
+        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)
             .map_err(|e| match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
                 jsonwebtoken::errors::ErrorKind::InvalidSignature => AuthError::InvalidSignature,

@@ -73,7 +73,7 @@ Profile hot paths, reduce allocations, optimize bottlenecks.
 Vulnerability scan, authentication audit, dependency review.
 
 ### 3A — JWT auth audit
-- [ ] Verify alg is pinned, reject lg: none
+- [x] Verify alg is pinned, reject lg: none — added Validation::set_required_spec_claims(["exp", "iat", "sub"]) and algorithms = vec![Algorithm::HS256] to reject alg:none and algorithm switching attacks
 - [ ] Verify token expiry checked on EVERY request
 - [ ] Verify first-run token is one-time + expiring
 
