@@ -244,10 +244,10 @@ New dashboard views.
 Automation and release improvements.
 
 ### 9A — CI improvements
-- [ ] Add cargo audit step to CI
-- [ ] Add cargo deny step (licenses, duplicates)
-- [ ] Add benchmark comparison (comment on PRs)
-- [ ] Add E2E test step (Playwright)
+- [x] Add cargo audit step to CI
+- [x] Add cargo deny step (licenses, duplicates)
+- [x] Add benchmark comparison (comment on PRs)
+- [x] Add E2E test step (Playwright)
 
 ### 9B — Release automation
 - [ ] Automated changelog from conventional commits

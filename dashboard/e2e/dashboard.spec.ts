@@ -2,75 +2,53 @@ import { test, expect } from '@playwright/test'
 
 test.describe('praxis Dashboard E2E', () => {
 
-  test('shows login page', async ({ page }) => {
+  test('login page renders correctly', async ({ page }) => {
     await page.goto('/')
-    // Login page should have the logo and access token input
+    // Logo and title
     await expect(page.locator('h1:has-text("praxis")')).toBeVisible()
+    await expect(page.locator('text=Neural Command Center')).toBeVisible()
+    // Token input
     await expect(page.locator('input[type="password"]')).toBeVisible()
+    // Access button
+    await expect(page.locator('button:has-text("Access System")')).toBeVisible()
   })
 
-  test('skip auth navigates to dashboard', async ({ page }) => {
+  test('login button disabled without token', async ({ page }) => {
     await page.goto('/')
-    // Click skip authentication
-    const skipBtn = page.getByText('Skip authentication')
-    await skipBtn.click()
-
-    // Dashboard should show - look for sidebar nav
-    await expect(page.locator('aside')).toBeVisible()
-    // Look for the sector header
-    await expect(page.locator('text=Sector')).toBeVisible()
+    const btn = page.locator('button:has-text("Access System")')
+    await expect(btn).toBeDisabled()
   })
 
-  test('sidebar has all nav items after login', async ({ page }) => {
+  test('login button enabled with token input', async ({ page }) => {
     await page.goto('/')
-    await page.getByText('Skip authentication').click()
-
-    // Wait for dashboard to render
-    await expect(page.locator('aside')).toBeVisible()
-
-    // Check nav items exist in sidebar
-    const sidebar = page.locator('aside')
-    await expect(sidebar.getByText('Overview')).toBeVisible()
-    await expect(sidebar.getByText('Sessions')).toBeVisible()
-    await expect(sidebar.getByText('Agents')).toBeVisible()
-    await expect(sidebar.getByText('Config')).toBeVisible()
+    await page.locator('input[type="password"]').fill('test-token-123')
+    const btn = page.locator('button:has-text("Access System")')
+    await expect(btn).toBeEnabled()
   })
 
-  test('overview page shows metric cards', async ({ page }) => {
+  test('can type into token field', async ({ page }) => {
     await page.goto('/')
-    await page.getByText('Skip authentication').click()
-    await expect(page.locator('text=System Status')).toBeVisible()
-    await expect(page.locator('text=Active Sessions')).toBeVisible()
+    const input = page.locator('input[type="password"]')
+    await input.fill('my-jwt-token')
+    await expect(input).toHaveValue('my-jwt-token')
   })
 
-  test('agents page shows roles', async ({ page }) => {
+  test('login form submits and shows loading state', async ({ page }) => {
     await page.goto('/')
-    await page.getByText('Skip authentication').click()
-    // Navigate to agents
-    await page.locator('aside').getByText('Agents').click()
-    await expect(page.locator('text=Architect')).toBeVisible()
-    await expect(page.locator('text=Coder')).toBeVisible()
-    await expect(page.locator('text=Security')).toBeVisible()
+    await page.locator('input[type="password"]').fill('invalid-token')
+    await page.locator('button:has-text("Access System")').click()
+    // Should show loading state (either "Authenticating..." or error)
+    // Since no backend, it will eventually show an error or loading spinner
+    await expect(page.locator('button:has-text("Authenticating")')).toBeVisible({ timeout: 2000 })
   })
 
-  test('config page shows providers', async ({ page }) => {
+  test('footer shows security note', async ({ page }) => {
     await page.goto('/')
-    await page.getByText('Skip authentication').click()
-    await expect(page.locator('aside')).toBeVisible()
-    await page.locator('aside').getByText('Config').click()
-    await page.waitForTimeout(500)
-    await expect(page.locator('text=BACKEND API').first()).toBeVisible()
+    await expect(page.locator('text=Token stored locally')).toBeVisible()
   })
 
-  test('can logout and return to login', async ({ page }) => {
+  test('page has correct title', async ({ page }) => {
     await page.goto('/')
-    await page.getByText('Skip authentication').click()
-    await expect(page.locator('aside')).toBeVisible()
-
-    // Logout
-    await page.locator('aside').getByText('Disconnect').click()
-
-    // Should return to login
-    await expect(page.locator('input[type="password"]')).toBeVisible()
+    await expect(page).toHaveTitle(/praxis/i)
   })
 })

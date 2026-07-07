@@ -1,0 +1,50 @@
+# cargo-deny configuration
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+# ─── Licenses ───────────────────────────────────────────────────────
+[licenses]
+# Allow these common permissive licenses
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "Unlicense",
+]
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+
+# ─── Bans / Duplicates ─────────────────────────────────────────────
+[bans]
+# Warn on multiple versions of the same crate
+multiple-versions = "warn"
+# Warn on wildcard dependencies
+wildcards = "warn"
+# Highlight duplicates in output
+highlight = "all"
+
+# ─── Advisories ─────────────────────────────────────────────────────
+[advisories]
+# Error on known vulnerabilities
+vulnerability = "deny"
+# Error on unmaintained crates (warning would be noisy for a young project)
+unmaintained = "warn"
+# Error on crates with yanked versions
+yanked = "deny"
+# Ignore advisories by ID (add with reason + expiry)
+ignore = []
+
+# ─── Sources ────────────────────────────────────────────────────────
+[sources]
+# Only allow crates.io by default
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

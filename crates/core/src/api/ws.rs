@@ -2,10 +2,14 @@
 //!
 //! Each connected client receives all system events as JSON.
 //! Clients can send commands (inject, subscribe, unsubscribe).
+//!
+//! All connections require a valid Bearer JWT token.
 
+use super::auth::Claims;
 use super::routes::AppState;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket};
+use axum::http::header;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -14,17 +18,37 @@ use tokio::sync::broadcast;
 pub async fn ws_handler(
     ws: axum::extract::ws::WebSocketUpgrade,
     State(state): axum::extract::State<Arc<AppState>>,
+    request: axum::extract::Request,
 ) -> axum::response::Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    let claims = match extract_bearer_token(&request) {
+        Some(token) => match state.auth.validate_token(&token) {
+            Ok(c) => c,
+            Err(_) => {
+                return ws.on_upgrade(|_| async {});
+            }
+        },
+        None => {
+            return ws.on_upgrade(|_| async {});
+        }
+    };
+
+    tracing::info!("WS authenticated client: {}@{}", claims.sub, claims.role);
+    ws.on_upgrade(move |socket| handle_socket(socket, claims, state))
 }
 
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
-    let (mut sender, mut receiver) = socket.split();
+fn extract_bearer_token(request: &axum::extract::Request) -> Option<String> {
+    request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer ").map(|stripped| stripped.to_string()))
+}
 
-    // Subscribe to EventBus
+async fn handle_socket(socket: WebSocket, claims: Claims, state: Arc<AppState>) {
+    let (mut sender, mut receiver) = socket.split();
+    let client_id = claims.sub.clone();
     let mut rx = state.bus.subscribe();
 
-    // Spawn a task to forward events to this client
     let send_task = tokio::spawn(async move {
         loop {
             match rx.recv().await {
@@ -50,11 +74,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
-    // Read incoming messages
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
-                handle_client_message(&text);
+                handle_client_message(&text, &client_id);
             }
             Ok(Message::Close(_)) => break,
             Err(e) => {
@@ -68,11 +91,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     send_task.abort();
 }
 
-fn handle_client_message(text: &str) {
+fn handle_client_message(text: &str, client_id: &str) {
     let msg: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(_) => {
-            tracing::debug!("WS invalid JSON: {}", text);
+            tracing::debug!("WS {} invalid JSON: {}", client_id, text);
             return;
         }
     };
@@ -81,15 +104,18 @@ fn handle_client_message(text: &str) {
 
     match msg_type {
         "ping" => {
-            tracing::debug!("WS ping received");
+            tracing::debug!("WS {} ping received", client_id);
         }
         "inject" => {
             let target = msg["target"].as_str().unwrap_or("unknown");
             let message = msg["message"].as_str().unwrap_or("");
-            tracing::info!("WS inject to {}: {}", target, message);
+            tracing::info!("WS {} inject to {}: {}", client_id, target, message);
+        }
+        "subscribe" | "unsubscribe" => {
+            tracing::debug!("WS {} {} requested", client_id, msg_type);
         }
         _ => {
-            tracing::debug!("WS unknown command: {}", msg_type);
+            tracing::debug!("WS {} unknown command: {}", client_id, msg_type);
         }
     }
 }
@@ -100,23 +126,24 @@ mod tests {
 
     #[test]
     fn test_handle_client_message_ping() {
-        handle_client_message(r#"{"type": "ping"}"#);
+        handle_client_message(r#"{"type": "ping"}"#, "test-client");
     }
 
     #[test]
     fn test_handle_client_message_inject() {
         handle_client_message(
             r#"{"type": "inject", "target": "coder", "message": "use thiserror"}"#,
+            "test-client",
         );
     }
 
     #[test]
     fn test_handle_client_message_invalid_json() {
-        handle_client_message(r#"not-json"#);
+        handle_client_message("not-json", "test-client");
     }
 
     #[test]
     fn test_handle_client_message_unknown() {
-        handle_client_message(r#"{"type": "unknown_command"}"#);
+        handle_client_message(r#"{"type": "unknown_command"}"#, "test-client");
     }
 }

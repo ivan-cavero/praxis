@@ -4,13 +4,17 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30000,
   retries: 1,
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'test-results' }],
+  ],
   use: {
     baseURL: 'http://localhost:3000',
     headless: true,
     viewport: { width: 1280, height: 800 },
   },
   webServer: {
-    command: 'npm run dev',
+    command: 'bun run dev',
     port: 3000,
     reuseExistingServer: true,
     timeout: 30000,
