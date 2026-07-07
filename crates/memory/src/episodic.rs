@@ -195,11 +195,19 @@ impl EpisodicMemory {
         self.chunks.push(chunk);
         self.recency.push_back(chunk_id.clone());
 
-        // Evict oldest if over capacity
-        while self.chunks.len() > self.max_chunks {
-            if let Some(oldest_id) = self.recency.pop_front() {
-                self.chunks.retain(|c| c.id != oldest_id);
+        // Evict oldest if over capacity — batch all evictions into a single
+        // retain pass (O(n+k)) instead of one retain per chunk (O(k×n)).
+        let mut to_evict: std::collections::HashSet<String> = std::collections::HashSet::new();
+        while self.chunks.len() - to_evict.len() > self.max_chunks {
+            match self.recency.pop_front() {
+                Some(oldest_id) => {
+                    to_evict.insert(oldest_id);
+                }
+                None => break,
             }
+        }
+        if !to_evict.is_empty() {
+            self.chunks.retain(|c| !to_evict.contains(&c.id));
         }
 
         // Sync to Qdrant if configured (fire-and-forget)
