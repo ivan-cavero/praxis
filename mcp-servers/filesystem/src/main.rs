@@ -34,6 +34,7 @@ fn resolve_path(root: &Path, requested: &str) -> Result<PathBuf, String> {
 }
 
 /// Resolve a path for writing (parent must exist, file may not).
+/// Canonicalizes the final path to prevent symlink escape attacks.
 fn resolve_path_write(root: &Path, requested: &str) -> Result<PathBuf, String> {
     let requested = requested.trim_start_matches('/').trim_start_matches('\\');
     let resolved = root.join(requested);
@@ -56,7 +57,36 @@ fn resolve_path_write(root: &Path, requested: &str) -> Result<PathBuf, String> {
         }
     }
 
-    Ok(resolved)
+    // Canonicalize the final path to prevent symlink escape (TOCTOU fix)
+    // If the file doesn't exist yet, canonicalize the parent and append the filename
+    let canonical_resolved = if resolved.exists() {
+        resolved
+            .canonicalize()
+            .map_err(|_| format!("Cannot resolve path: {}", requested))?
+    } else {
+        // File doesn't exist yet — canonicalize parent and append filename
+        let canonical_parent = resolved
+            .parent()
+            .and_then(|p| p.canonicalize().ok())
+            .ok_or_else(|| format!("Cannot resolve parent directory: {}", requested))?;
+        let filename = resolved
+            .file_name()
+            .ok_or_else(|| format!("Invalid filename: {}", requested))?;
+        canonical_parent.join(filename)
+    };
+
+    // Double-check the canonical path is still within root
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve root path: {}", e))?;
+    if !canonical_resolved.starts_with(&canonical_root) {
+        return Err(format!(
+            "Path traversal denied: {} is outside the allowed root",
+            requested
+        ));
+    }
+
+    Ok(canonical_resolved)
 }
 
 // ─── Tool Implementations ──────────────────────────────────────────
@@ -181,20 +211,34 @@ fn tool_search(root: &Path, args: &Value) -> Result<Value, String> {
             let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
             let path = entry.path();
 
-            if path.is_dir() {
+            // Canonicalize to prevent symlink escape
+            let canonical_path = match path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => continue, // Skip unreadable/symlink entries
+            };
+
+            // Verify still within root
+            let canonical_root = root
+                .canonicalize()
+                .map_err(|e| format!("Cannot resolve root path: {}", e))?;
+            if !canonical_path.starts_with(&canonical_root) {
+                continue; // Skip entries outside sandbox
+            }
+
+            if canonical_path.is_dir() {
                 // Don't recurse into hidden directories or node_modules, .git, target
                 let name = entry.file_name().to_string_lossy().to_string();
                 if !name.starts_with('.') && name != "node_modules" && name != "target" {
-                    search_recursive(&path, pattern, root, matches)?;
+                    search_recursive(&canonical_path, pattern, root, matches)?;
                 }
-            } else if path.is_file()
-                && let Ok(content) = std::fs::read_to_string(&path)
+            } else if canonical_path.is_file()
+                && let Ok(content) = std::fs::read_to_string(&canonical_path)
             {
                 for (line_num, line) in content.lines().enumerate() {
                     if line.contains(pattern) {
-                        let relative = path
+                        let relative = canonical_path
                             .strip_prefix(root)
-                            .unwrap_or(&path)
+                            .unwrap_or(&canonical_path)
                             .to_string_lossy()
                             .to_string();
                         matches.push(json!({
@@ -238,27 +282,45 @@ fn tool_glob(root: &Path, args: &Value) -> Result<Value, String> {
         for entry in entries {
             let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
             let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
+
+            // Canonicalize to prevent symlink escape
+            let canonical_path = match path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => continue, // Skip unreadable/symlink entries
+            };
+
+            // Verify still within root
+            let canonical_root = root
+                .canonicalize()
+                .map_err(|e| format!("Cannot resolve root path: {}", e))?;
+            if !canonical_path.starts_with(&canonical_root) {
+                continue; // Skip entries outside sandbox
+            }
+
+            let name = canonical_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
 
             // Match against wildcard pattern
             let matched = simple_glob_match(&name, pattern);
 
-            if path.is_dir() {
+            if canonical_path.is_dir() {
                 if !name.starts_with('.') && name != "node_modules" && name != "target" {
-                    glob_recursive(&path, pattern, root, results)?;
+                    glob_recursive(&canonical_path, pattern, root, results)?;
                 }
                 if matched {
-                    let relative = path
+                    let relative = canonical_path
                         .strip_prefix(root)
-                        .unwrap_or(&path)
+                        .unwrap_or(&canonical_path)
                         .to_string_lossy()
                         .to_string();
                     results.push(relative);
                 }
             } else if matched {
-                let relative = path
+                let relative = canonical_path
                     .strip_prefix(root)
-                    .unwrap_or(&path)
+                    .unwrap_or(&canonical_path)
                     .to_string_lossy()
                     .to_string();
                 results.push(relative);

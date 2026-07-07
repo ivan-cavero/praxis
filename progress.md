@@ -92,8 +92,8 @@ Vulnerability scan, authentication audit, dependency review.
 - [x] Check for unmaintained/abandoned dependencies — atk/gtk/gdk all v0.18.2 unmaintained (GTK3 bindings via Tauri); proc-macro-error, rustls-pemfile, unic-* crates unmaintained; all are Tauri transitive deps
 
 ### 3E — MCP path sandboxing
-- [ ] Verify filesystem MCP server sandboxes paths to project dir
-- [ ] Check MCP tools cannot escape via symlinks or ..
+- [x] Verify filesystem MCP server sandboxes paths to project dir — resolve_path() canonicalizes both root and requested path, rejects if canonical_resolved doesn't start with canonical_root; resolve_path_write() now canonicalizes the final path (not just parent) to fix TOCTOU symlink escape; all tools (read, write, edit, list, search, glob) use these resolvers
+- [x] Check MCP tools cannot escape via symlinks or .. — fixed resolve_path_write TOCTOU by canonicalizing final path (or parent+filename if file doesn't exist); fixed tool_search and tool_glob recursive traversal to canonicalize each directory entry before recursing, skipping entries outside root; .. traversal blocked by canonicalize() resolving to absolute path
 
 ---
 
