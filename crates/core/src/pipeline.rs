@@ -1125,7 +1125,10 @@ impl CoreRuntime {
         &mut self,
         config_path: Option<&std::path::Path>,
         vault: Option<&VaultService>,
-    ) -> (ForgeConfig, std::sync::Arc<praxis_providers::ProviderRouter>) {
+    ) -> (
+        ForgeConfig,
+        std::sync::Arc<praxis_providers::ProviderRouter>,
+    ) {
         let config = match config_path.map(load_forge_config) {
             Some(Ok(cfg)) => cfg,
             Some(Err(e)) => {

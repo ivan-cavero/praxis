@@ -327,7 +327,10 @@ impl SqliteEventStore {
     }
 
     /// Get the latest (highest-seq) active (not undone) change record for a session.
-    pub fn get_latest_active_change(&self, session_id: &str) -> Result<Option<ChangeRecord>, String> {
+    pub fn get_latest_active_change(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ChangeRecord>, String> {
         let conn = self.conn()?;
         let result = conn
             .query_row(
@@ -355,7 +358,10 @@ impl SqliteEventStore {
     }
 
     /// Get the latest (highest-seq) undone change record for a session (for redo).
-    pub fn get_latest_undone_change(&self, session_id: &str) -> Result<Option<ChangeRecord>, String> {
+    pub fn get_latest_undone_change(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ChangeRecord>, String> {
         let conn = self.conn()?;
         let result = conn
             .query_row(

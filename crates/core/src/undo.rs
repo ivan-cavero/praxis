@@ -232,9 +232,7 @@ fn restore_to_baseline(
     let baseline = store
         .get_session_baseline(&session_id.to_string())
         .map_err(|e| anyhow::anyhow!("Failed to load session baseline: {}", e))?
-        .ok_or_else(|| {
-            anyhow::anyhow!("No baseline found for session {}", session_id)
-        })?;
+        .ok_or_else(|| anyhow::anyhow!("No baseline found for session {}", session_id))?;
 
     if baseline.baseline_commit.is_empty() && baseline.uncommitted_diff.is_empty() {
         return Ok(()); // Non-git directory.
@@ -378,10 +376,12 @@ mod tests {
 
         let result = undo_change(&store, sid, &tmp);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No active changes to undo"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No active changes to undo")
+        );
     }
 
     #[test]
@@ -392,10 +392,12 @@ mod tests {
 
         let result = redo_change(&store, sid, &tmp);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No undone changes to redo"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No undone changes to redo")
+        );
     }
 
     #[test]

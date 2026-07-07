@@ -21,9 +21,9 @@ pub mod machine;
 pub mod orchestrator;
 pub mod pipeline;
 pub mod rollback;
-pub mod undo;
 pub mod runtime;
 pub mod skills;
+pub mod undo;
 pub mod workflow;
 
 #[cfg(test)]
@@ -478,7 +478,8 @@ mod tests {
 
     #[test]
     fn test_max_sub_agents_zero_means_no_limit() {
-        let output = "DELEGATE:researcher:task1\nDELEGATE:researcher:task2\nDELEGATE:researcher:task3";
+        let output =
+            "DELEGATE:researcher:task1\nDELEGATE:researcher:task2\nDELEGATE:researcher:task3";
         let mut delegations = parse_delegate_requests(output);
         assert_eq!(delegations.len(), 3);
 

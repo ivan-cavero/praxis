@@ -1,16 +1,16 @@
-﻿# â”€â”€â”€ praxis Docker image â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+﻿# ─── praxis Docker image ───────────────────────────────────────────────────────
 #
 # Multi-stage build of the praxis CLI binary (server mode).
-# The desktop (Tauri) app is NOT built here â€” it ships as a native
+# The desktop (Tauri) app is NOT built here — it ships as a native
 # installer via the release workflow. This image runs `praxis server`.
 #
 # Build:  docker build -t praxis .
 # Run:    docker run -p 8080:8080 -v praxis-data:/data praxis
 
-# â”€â”€â”€ Build stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Build stage ──────────────────────────────────────────────────────────────
 FROM rustlang/rust:nightly AS builder
 
-# Tauri/WebKit deps are NOT needed â€” we only build the CLI binary,
+# Tauri/WebKit deps are NOT needed — we only build the CLI binary,
 # which has no GUI dependencies. Keep the image lean.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -31,9 +31,13 @@ COPY tests ./tests
 
 # Build only the CLI binary in release mode. --bin praxis matches the
 # [[bin]] name in crates/cli/Cargo.toml.
-RUN cargo build --release --bin praxis
+# Remove the desktop workspace member before building — it's only needed
+# for native Tauri builds, not for the Docker server image. Cargo requires
+# ALL workspace member Cargo.toml files to exist during workspace resolution,
+# and we don't want to pull Tauri deps into the build.
+RUN sed -i '/"desktop"/d' Cargo.toml && cargo build --release --bin praxis
 
-# â”€â”€â”€ Runtime stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

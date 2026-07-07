@@ -41,7 +41,10 @@ fn extract_bearer_token(request: &axum::extract::Request) -> Option<String> {
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer ").map(|stripped| stripped.to_string()))
+        .and_then(|s| {
+            s.strip_prefix("Bearer ")
+                .map(|stripped| stripped.to_string())
+        })
 }
 
 async fn handle_socket(socket: WebSocket, claims: Claims, state: Arc<AppState>) {
