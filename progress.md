@@ -134,7 +134,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 
 ### 4F — Real-time features
 - [x] Improve useWebSocket — connection health indicator
-- [ ] Add live agent status updates (pulsing dots)
+- [x] Add live agent status updates (pulsing dots)
 - [ ] Add real-time token counter animation
 - [x] Add session event timeline (scrollable feed)
 

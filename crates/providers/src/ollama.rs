@@ -38,6 +38,7 @@ impl OllamaProvider {
 
 #[async_trait]
 impl LLMProvider for OllamaProvider {
+    #[tracing::instrument(skip(self, messages, config))]
     async fn chat(
         &self,
         messages: &[ChatMessage],
@@ -104,6 +105,7 @@ impl LLMProvider for OllamaProvider {
         })
     }
 
+    #[tracing::instrument(skip(self, messages, config))]
     async fn stream(
         &self,
         messages: &[ChatMessage],

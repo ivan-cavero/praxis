@@ -266,6 +266,8 @@ onUnmounted(() => {
         </div>
         <div v-else class="logs-list">
           <div v-for="(entry, idx) in liveLog" :key="idx" class="log-entry" :class="entry.kind">
+            <span v-if="entry.kind === 'start'" class="log-entry-dot log-dot-running" />
+            <span v-else class="log-entry-dot log-dot-static" />
             <span class="log-time">{{ entry.timestamp.slice(11, 19) }}</span>
             <span class="log-agent">{{ entry.agent }}</span>
             <span class="log-text">{{ entry.text }}</span>
@@ -516,6 +518,28 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.log-entry-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.log-dot-running {
+  background: #00aaff;
+  box-shadow: 0 0 6px #00aaff66;
+  animation: logDotPulse 1s infinite;
+}
+
+.log-dot-static {
+  background: #333;
+}
+
+@keyframes logDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
 }
 
 .log-text {

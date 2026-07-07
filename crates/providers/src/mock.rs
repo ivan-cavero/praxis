@@ -61,6 +61,7 @@ impl MockProvider {
 
 #[async_trait]
 impl LLMProvider for MockProvider {
+    #[tracing::instrument(skip(self, _messages, config))]
     async fn chat(
         &self,
         _messages: &[ChatMessage],
@@ -87,6 +88,7 @@ impl LLMProvider for MockProvider {
         })
     }
 
+    #[tracing::instrument(skip(self, _messages, _config))]
     async fn stream(
         &self,
         _messages: &[ChatMessage],

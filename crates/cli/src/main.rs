@@ -7,7 +7,6 @@ mod commands;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
 use praxis_agent_traits::persistence::EventStore;
 use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatRole, LLMProvider};
 use rusqlite::params as rusqlite_params;
@@ -357,10 +356,6 @@ struct Cli {
     /// Enable verbose output
     #[arg(short, long, global = true)]
     verbose: bool,
-
-    /// Output machine-readable JSON (for scripting/automation)
-    #[arg(long, global = true)]
-    json: bool,
 }
 
 #[derive(Subcommand)]
@@ -688,32 +683,6 @@ enum Commands {
     ///   praxis doctor
     Doctor,
 
-    /// Generate shell completion scripts
-    ///
-    /// EXAMPLES:
-    ///   praxis completion bash > /etc/bash_completion.d/praxis
-    ///   praxis completion zsh > ~/.zsh/completions/_praxis
-    ///   praxis completion fish > ~/.config/fish/completions/praxis.fish
-    ///   praxis completion powershell > praxis.ps1
-    Completion {
-        /// Target shell
-        shell: String,
-    },
-
-    /// Follow session logs in real-time (polls the API server)
-    ///
-    /// EXAMPLES:
-    ///   praxis logs <session-id>
-    ///   praxis logs <session-id> --interval 2
-    Logs {
-        /// Session ID to follow
-        session_id: String,
-
-        /// Polling interval in seconds (default: 2)
-        #[arg(long, default_value = "2")]
-        interval: u64,
-    },
-
     /// Interactive quickstart guide — sets up your first project and provider
     ///
     /// EXAMPLES:
@@ -829,6 +798,8 @@ enum SessionCommands {
         id: String,
         #[arg(long)]
         tail: bool,
+        #[arg(long)]
+        json: bool,
     },
     /// Rollback a session's file changes to the pre-session git baseline.
     Rollback {
@@ -849,13 +820,6 @@ enum SessionCommands {
     /// List all change records for a session (undo/redo history).
     Changes {
         id: String,
-    },
-    /// Export a session's full state (events, checkpoint, changes) as JSON or YAML.
-    Export {
-        id: String,
-        /// Output format: json or yaml (default: json)
-        #[arg(long, default_value = "json")]
-        format: String,
     },
 }
 
@@ -965,8 +929,6 @@ async fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::from_default_env().add_directive(log_level.into()),
         )
         .init();
-
-    let json_output = cli.json;
 
     match cli.command {
         // ─── Init ──────────────────────────────────────────
@@ -1228,14 +1190,8 @@ async fn main() -> anyhow::Result<()> {
                     } else {
                         None
                     };
-                    let spinner = ProgressBar::new_spinner();
-                    spinner.set_style(
-                        ProgressStyle::with_template("{spinner:.cyan} {msg}")
-                            .unwrap()
-                            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
-                    );
-                    spinner.set_message("Starting core runtime...");
-                    spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+
+                    println!("{}", "📦 Starting core runtime...".dimmed());
                     let data_dir = get_data_dir();
                     std::fs::create_dir_all(&data_dir)?;
                     let db_path = data_dir.join("state.db");
@@ -1386,24 +1342,22 @@ async fn main() -> anyhow::Result<()> {
                         }
                     });
 
-                    spinner.set_message("Initializing agent pipeline...");
+                    println!("{}", "🤖 Initializing agent pipeline...".dimmed());
 
                     // Resolve project config path (temp file, cleaned up after)
                     let config_path = resolve_config_path(project.as_deref());
                     if let Some(ref path) = config_path {
-                        spinner.println(format!(
+                        println!(
                             "  {} Using project config: {}",
                             "→".dimmed(),
                             path.display()
-                        ));
+                        );
                     }
 
                     // Set project name on runtime for checkpoint metadata
                     if let Some(ref name) = project {
                         runtime = runtime.with_project_name(name.clone());
                     }
-
-                    spinner.finish_and_clear();
 
                     // Run through the full agent pipeline
                     let result = runtime
@@ -1894,11 +1848,7 @@ async fn main() -> anyhow::Result<()> {
                 let data_dir = get_data_dir();
                 let db_path = data_dir.join("state.db");
                 if !db_path.exists() {
-                    if json_output {
-                        println!("[]");
-                    } else {
-                        println!("{} No database found. Run a session first.", "→".cyan());
-                    }
+                    println!("{} No database found. Run a session first.", "→".cyan());
                 } else {
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
@@ -1907,45 +1857,11 @@ async fn main() -> anyhow::Result<()> {
                         .await
                         .map_err(|e| anyhow::anyhow!(e))?;
                     if session_ids.is_empty() {
-                        if json_output {
-                            println!("[]");
-                        } else {
-                            println!("{} No sessions found", "→".cyan());
-                        }
-                    } else if json_output {
-                        let mut sessions = Vec::new();
-                        for sid in &session_ids {
-                            let snapshot = store
-                                .get_snapshot(*sid)
-                                .await
-                                .map_err(|e| anyhow::anyhow!(e))?;
-                            if let Some(snap) = snapshot {
-                                sessions.push(serde_json::json!({
-                                    "id": sid.to_string(),
-                                    "goal": snap.state.get("goal").and_then(|v| v.as_str()).unwrap_or(""),
-                                    "phase": snap.state.get("phase").and_then(|v| v.as_str()).unwrap_or(""),
-                                    "iteration": snap.state.get("iteration").and_then(|v| v.as_u64()).unwrap_or(0),
-                                    "version": snap.version,
-                                    "updated_at": snap.updated_at,
-                                }));
-                            } else {
-                                sessions.push(serde_json::json!({
-                                    "id": sid.to_string(),
-                                    "goal": "",
-                                    "phase": "unknown",
-                                    "iteration": 0,
-                                }));
-                            }
-                        }
-                        println!("{}", serde_json::to_string_pretty(&sessions)?);
+                        println!("{} No sessions found", "→".cyan());
                     } else {
                         println!("{} Sessions ({})", "→".cyan(), session_ids.len());
-                        println!(
-                            "  {:<38} {:<12} {:<8} Goal",
-                            "ID", "Phase", "Iter"
-                        );
-                        println!("  {}", "─".repeat(80).dimmed());
                         for sid in &session_ids {
+                            // Load snapshot for metadata
                             let snapshot = store
                                 .get_snapshot(*sid)
                                 .await
@@ -1966,27 +1882,16 @@ async fn main() -> anyhow::Result<()> {
                                     .get("iteration")
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
-                                let phase_colored = match phase {
-                                    "Completed" => phase.green().bold(),
-                                    "Failed" => phase.red().bold(),
-                                    "Idle" | "Planning" => phase.cyan(),
-                                    _ => phase.yellow(),
-                                };
                                 println!(
-                                    "  {:<38} {:<12} {:<8} {}",
+                                    "  {} {} — {} (iter {}) — {}",
+                                    "•".dimmed(),
                                     sid.to_string().dimmed(),
-                                    phase_colored,
+                                    goal.cyan(),
                                     iteration,
-                                    goal,
+                                    phase.dimmed(),
                                 );
                             } else {
-                                println!(
-                                    "  {:<38} {:<12} {:<8} {}",
-                                    sid.to_string().dimmed(),
-                                    "none".dimmed(),
-                                    "-",
-                                    "(no checkpoint)".dimmed(),
-                                );
+                                println!("  {} {} (no checkpoint)", "•".dimmed(), sid);
                             }
                         }
                     }
@@ -1996,11 +1901,7 @@ async fn main() -> anyhow::Result<()> {
                 let data_dir = get_data_dir();
                 let db_path = data_dir.join("state.db");
                 if !db_path.exists() {
-                    if json_output {
-                        println!("{{\"error\": \"No database found\"}}");
-                    } else {
-                        println!("{} No database found.", "→".cyan());
-                    }
+                    println!("{} No database found.", "→".cyan());
                 } else {
                     let sid = uuid::Uuid::parse_str(&id)
                         .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
@@ -2012,53 +1913,24 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!(e))?;
                     match snapshot {
                         Some(snap) => {
-                            if json_output {
-                                let mut obj = serde_json::json!({
-                                    "id": sid.to_string(),
-                                    "type": snap.aggregate_type,
-                                    "version": snap.version,
-                                    "updated_at": snap.updated_at,
-                                });
-                                if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str()) {
-                                    obj["goal"] = serde_json::Value::String(goal.to_string());
-                                }
-                                if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
-                                    obj["phase"] = serde_json::Value::String(phase.to_string());
-                                }
-                                if let Some(iteration) = snap.state.get("iteration").and_then(|v| v.as_u64()) {
-                                    obj["iteration"] = serde_json::Value::Number(iteration.into());
-                                }
-                                println!("{}", serde_json::to_string_pretty(&obj)?);
-                            } else {
-                                println!("  {} Session: {}", "→".cyan(), sid);
-                                println!("  {} Type: {}", "→".cyan(), snap.aggregate_type);
-                                println!("  {} Version: {}", "→".cyan(), snap.version);
-                                println!("  {} Updated: {}", "→".cyan(), snap.updated_at);
-                                if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str()) {
-                                    println!("  {} Goal: {}", "→".cyan(), goal);
-                                }
-                                if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
-                                    let phase_colored = match phase {
-                                        "Completed" => phase.green().bold(),
-                                        "Failed" => phase.red().bold(),
-                                        "Idle" | "Planning" => phase.cyan(),
-                                        _ => phase.yellow(),
-                                    };
-                                    println!("  {} Phase: {}", "→".cyan(), phase_colored);
-                                }
-                                if let Some(iteration) =
-                                    snap.state.get("iteration").and_then(|v| v.as_u64())
-                                {
-                                    println!("  {} Iteration: {}", "→".cyan(), iteration);
-                                }
+                            println!("  {} Session: {}", "→".cyan(), sid);
+                            println!("  {} Type: {}", "→".cyan(), snap.aggregate_type);
+                            println!("  {} Version: {}", "→".cyan(), snap.version);
+                            println!("  {} Updated: {}", "→".cyan(), snap.updated_at);
+                            if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str()) {
+                                println!("  {} Goal: {}", "→".cyan(), goal);
+                            }
+                            if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
+                                println!("  {} Phase: {}", "→".cyan(), phase);
+                            }
+                            if let Some(iteration) =
+                                snap.state.get("iteration").and_then(|v| v.as_u64())
+                            {
+                                println!("  {} Iteration: {}", "→".cyan(), iteration);
                             }
                         }
                         None => {
-                            if json_output {
-                                println!("{{\"error\": \"No checkpoint found for session {}\"}}", id);
-                            } else {
-                                println!("{} No checkpoint found for session {}", "→".cyan(), id);
-                            }
+                            println!("{} No checkpoint found for session {}", "→".cyan(), id);
                         }
                     }
                 }
@@ -2075,57 +1947,37 @@ async fn main() -> anyhow::Result<()> {
 
                 match client.post(&stop_url).send().await {
                     Ok(resp) if resp.status().is_success() => {
-                        if json_output {
-                            println!("{{\"status\": \"stopped\", \"session_id\": \"{}\"}}", id);
-                        } else {
-                            println!("{} Stop signal sent to session {}", "✓".green(), id);
-                            println!("  The session will stop after the current iteration.");
-                        }
+                        println!("{} Stop signal sent to session {}", "✓".green(), id);
+                        println!("  The session will stop after the current iteration.");
                     }
                     Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
-                        if json_output {
-                            println!("{{\"error\": \"Session not found\", \"session_id\": \"{}\"}}", id);
-                        } else {
-                            println!("{} Session {} not found on the API server.", "✗".red(), id);
-                            println!(
-                                "  Is the API server running? Start it with: {}",
-                                "praxis server".cyan()
-                            );
-                        }
+                        println!("{} Session {} not found on the API server.", "✗".red(), id);
+                        println!(
+                            "  Is the API server running? Start it with: {}",
+                            "praxis server".cyan()
+                        );
                     }
                     Ok(resp) => {
-                        if json_output {
-                            println!("{{\"error\": \"API returned status {}\", \"session_id\": \"{}\"}}", resp.status(), id);
-                        } else {
-                            println!(
-                                "{} API server returned status {}",
-                                "⚠".yellow(),
-                                resp.status()
-                            );
-                        }
+                        println!(
+                            "{} API server returned status {}",
+                            "⚠".yellow(),
+                            resp.status()
+                        );
                     }
                     Err(e) if e.is_connect() => {
-                        if json_output {
-                            println!("{{\"error\": \"Cannot reach API server\", \"url\": \"{}\"}}", api_url);
-                        } else {
-                            println!("{} Cannot reach API server at {}", "✗".red(), api_url);
-                            println!("  Start it with: {}", "praxis server".cyan());
-                            println!();
-                            println!(
-                                "  If the session is running in this terminal, press Ctrl+C to stop it."
-                            );
-                        }
+                        println!("{} Cannot reach API server at {}", "✗".red(), api_url);
+                        println!("  Start it with: {}", "praxis server".cyan());
+                        println!();
+                        println!(
+                            "  If the session is running in this terminal, press Ctrl+C to stop it."
+                        );
                     }
                     Err(e) => {
-                        if json_output {
-                            println!("{{\"error\": \"{}\"}}", e);
-                        } else {
-                            println!("{} Error stopping session: {}", "✗".red(), e);
-                        }
+                        println!("{} Error stopping session: {}", "✗".red(), e);
                     }
                 }
             }
-            SessionCommands::Logs { id, tail } => {
+            SessionCommands::Logs { id, tail, json } => {
                 // Try the API server first.
                 let client = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(10))
@@ -2142,7 +1994,7 @@ async fn main() -> anyhow::Result<()> {
                             println!("{} No events found for session {}", "→".cyan(), id);
                             std::process::exit(0);
                         }
-                        if json_output {
+                        if json {
                             println!("{}", serde_json::to_string_pretty(&events)?);
                         } else {
                             let mut display_events: Vec<&serde_json::Value> = if tail {
@@ -2190,7 +2042,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                     _ => {
                         // API server not running or error — fall back to local DB.
-                        logs_local(&id, tail, json_output).await;
+                        logs_local(&id, tail, json).await;
                     }
                 }
             }
@@ -2423,65 +2275,6 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-            SessionCommands::Export { id, format } => {
-                let sid = match uuid::Uuid::parse_str(&id) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        println!("{} Invalid session ID: {}", "✗".red(), e);
-                        return Ok(());
-                    }
-                };
-
-                let data_dir = get_data_dir();
-                let db_path = data_dir.join("state.db");
-                if !db_path.exists() {
-                    println!("{} No database found. Run a session first.", "✗".red());
-                    return Ok(());
-                }
-
-                let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        println!("{} Failed to open database: {}", "✗".red(), e);
-                        return Ok(());
-                    }
-                };
-
-                // Gather session data: events, snapshot, changes
-                let events = store
-                    .read_events(sid, None)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
-
-                let snapshot = store.get_snapshot(sid).await.map_err(|e| anyhow::anyhow!(e))?;
-
-                let changes = praxis_core::undo::list_changes(&store, sid)
-                    .unwrap_or_default();
-
-                let export = serde_json::json!({
-                    "session_id": id,
-                    "exported_at": chrono::Utc::now().to_rfc3339(),
-                    "events": events,
-                    "snapshot": snapshot,
-                    "changes": changes,
-                });
-
-                match format.to_lowercase().as_str() {
-                    "json" => {
-                        println!("{}", serde_json::to_string_pretty(&export)?);
-                    }
-                    "yaml" => {
-                        let yaml = serde_yaml_neo::to_string(&export)
-                            .map_err(|e| anyhow::anyhow!("YAML serialization error: {}", e))?;
-                        println!("{}", yaml);
-                    }
-                    other => {
-                        println!("{} Unknown format: {}", "✗".red(), other);
-                        println!("  Supported: json, yaml");
-                        std::process::exit(1);
-                    }
-                }
-            }
         },
 
         Commands::Provider(cmd) => match cmd {
@@ -2489,46 +2282,11 @@ async fn main() -> anyhow::Result<()> {
                 // Read providers from the most recent project's forge.toml
                 let config = load_project_config(None);
                 if config.providers.is_empty() {
-                    if json_output {
-                        println!("{{\"providers\": [], \"supported\": [\"openai\", \"anthropic\", \"google\", \"custom\"]}}");
-                    } else {
-                        println!("{} No providers configured", "→".cyan());
-                        println!(
-                            "  {} Use {} to add one",
-                            "→".dimmed(),
-                            "praxis provider add <name> <base_url> --api-key-stdin".yellow()
-                        );
-                    }
-                } else if json_output {
-                    let providers: Vec<_> = config
-                        .providers
-                        .iter()
-                        .map(|(name, p)| {
-                            let key_status = if p.api_key_ref.starts_with("env:") {
-                                format!("env:{}", p.api_key_ref.strip_prefix("env:").unwrap_or("?"))
-                            } else if p.api_key_ref.starts_with("keyring:")
-                                || p.api_key_ref.starts_with("vault:")
-                            {
-                                "vault".to_string()
-                            } else if p.api_key_ref.is_empty() {
-                                "none".to_string()
-                            } else {
-                                "literal".to_string()
-                            };
-                            serde_json::json!({
-                                "name": name,
-                                "base_url": p.base_url,
-                                "default_model": p.default_model,
-                                "key_status": key_status,
-                            })
-                        })
-                        .collect();
+                    println!("{} No providers configured", "→".cyan());
                     println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "providers": providers,
-                            "supported": ["openai", "anthropic", "google", "custom"]
-                        }))?
+                        "  {} Use {} to add one",
+                        "→".dimmed(),
+                        "praxis provider add <name> <base_url> --api-key-stdin".yellow()
                     );
                 } else {
                     println!(
@@ -2560,19 +2318,19 @@ async fn main() -> anyhow::Result<()> {
                         );
                         println!("    Base URL: {}", provider.base_url.dimmed());
                     }
-                    println!();
-                    println!("  Supported APIs:");
-                    println!("    {} OpenAI (api.openai.com)", "•".dimmed());
-                    println!("    {} Anthropic (api.anthropic.com)", "•".dimmed());
-                    println!(
-                        "    {} Google AI (generativelanguage.googleapis.com)",
-                        "•".dimmed()
-                    );
-                    println!(
-                        "    {} Any OpenAI-compatible API (custom base_url)",
-                        "•".dimmed()
-                    );
                 }
+                println!();
+                println!("  Supported APIs:");
+                println!("    {} OpenAI (api.openai.com)", "•".dimmed());
+                println!("    {} Anthropic (api.anthropic.com)", "•".dimmed());
+                println!(
+                    "    {} Google AI (generativelanguage.googleapis.com)",
+                    "•".dimmed()
+                );
+                println!(
+                    "    {} Any OpenAI-compatible API (custom base_url)",
+                    "•".dimmed()
+                );
             }
             ProviderCommands::Test { name } => {
                 println!("{} Testing provider: {}...", "→".cyan(), name);
@@ -3088,42 +2846,49 @@ async fn main() -> anyhow::Result<()> {
                 let db_path = data_dir.join("state.db");
                 let projects_path = data_dir.join("projects.json");
 
+                println!("{} Memory & Persistence Stats", "→".cyan().bold());
+                println!("{}", "─".repeat(50).dimmed());
+
                 // Projects
                 let project_count = std::fs::read_to_string(&projects_path)
                     .ok()
                     .and_then(|c| serde_json::from_str::<Vec<serde_json::Value>>(&c).ok())
                     .map(|p| p.len())
                     .unwrap_or(0);
-
-                let mut stats = serde_json::json!({
-                    "projects": project_count,
-                    "data_dir": data_dir.display().to_string(),
-                });
+                println!("  {} Projects: {}", "→".cyan(), project_count);
 
                 // Sessions and checkpoints
-                let (session_count, checkpoint_count) = if db_path.exists() {
+                if db_path.exists() {
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
                     let session_ids = store
                         .list_aggregates("session")
                         .await
                         .map_err(|e| anyhow::anyhow!(e))?;
+                    println!("  {} Sessions: {}", "→".cyan(), session_ids.len());
+
                     let mut snapshots = 0;
                     for sid in &session_ids {
                         if let Ok(Some(_)) = store.get_snapshot(*sid).await {
                             snapshots += 1;
                         }
                     }
-                    (session_ids.len(), snapshots)
+                    println!("  {} Checkpoints: {}", "→".cyan(), snapshots);
+                    println!(
+                        "  {} Database: {}",
+                        "→".cyan(),
+                        db_path.display().to_string().dimmed()
+                    );
                 } else {
-                    (0, 0)
-                };
-                stats["sessions"] = serde_json::Value::Number(session_count.into());
-                stats["checkpoints"] = serde_json::Value::Number(checkpoint_count.into());
-                if db_path.exists() {
-                    stats["database_path"] =
-                        serde_json::Value::String(db_path.display().to_string());
+                    println!("  {} No database found. Run a session first.", "→".cyan());
                 }
+
+                // Data directory
+                println!(
+                    "  {} Data dir: {}",
+                    "→".cyan(),
+                    data_dir.display().to_string().dimmed()
+                );
 
                 // Injections
                 let injections_dir = data_dir.join("injections");
@@ -3131,34 +2896,7 @@ async fn main() -> anyhow::Result<()> {
                     let count = std::fs::read_dir(&injections_dir)
                         .map(|entries| entries.filter_map(|e| e.ok()).count())
                         .unwrap_or(0);
-                    stats["pending_injections"] = serde_json::Value::Number(count.into());
-                }
-
-                if json_output {
-                    println!("{}", serde_json::to_string_pretty(&stats)?);
-                } else {
-                    println!("{} Memory & Persistence Stats", "→".cyan().bold());
-                    println!("{}", "─".repeat(50).dimmed());
-                    println!("  {} Projects: {}", "→".cyan(), project_count);
-                    println!("  {} Sessions: {}", "→".cyan(), session_count);
-                    println!("  {} Checkpoints: {}", "→".cyan(), checkpoint_count);
-                    if db_path.exists() {
-                        println!(
-                            "  {} Database: {}",
-                            "→".cyan(),
-                            db_path.display().to_string().dimmed()
-                        );
-                    } else {
-                        println!("  {} No database found. Run a session first.", "→".cyan());
-                    }
-                    println!(
-                        "  {} Data dir: {}",
-                        "→".cyan(),
-                        data_dir.display().to_string().dimmed()
-                    );
-                    if let Some(inj) = stats.get("pending_injections").and_then(|v| v.as_u64()) {
-                        println!("  {} Pending injections: {}", "→".cyan(), inj);
-                    }
+                    println!("  {} Pending injections: {}", "→".cyan(), count);
                 }
             }
             MemoryCommands::Sessions => {
@@ -3407,22 +3145,12 @@ async fn main() -> anyhow::Result<()> {
             println!("  {} Max runs: {}", "→".dimmed(), max_runs);
             println!();
 
+            let vault = load_vault();
+
             let mut total_tokens: u64 = 0;
             let mut total_cost: f64 = 0.0;
 
-            let bar = ProgressBar::new(max_runs as u64);
-            bar.set_style(
-                ProgressStyle::with_template(
-                    "{spinner:.cyan} [{elapsed_precise}] {bar:20.cyan} {pos}/{len} {msg}",
-                )
-                .unwrap()
-                .progress_chars("=>-"),
-            );
-
-            let vault = load_vault();
-
             for run_num in 1..=max_runs {
-                bar.set_message(format!("Run {}/{}", run_num, max_runs));
                 println!("{} Run {}/{}", "▶".cyan(), run_num, max_runs);
 
                 // Check if the until-command already passes before running
@@ -3536,19 +3264,11 @@ async fn main() -> anyhow::Result<()> {
                     break;
                 }
 
-                bar.inc(1);
-
                 if run_num < max_runs {
-                    bar.set_message("waiting...");
+                    println!("  {} Waiting {} before next run...", "⏳".dimmed(), every);
                     tokio::time::sleep(interval).await;
                 }
             }
-
-            bar.finish_with_message(format!(
-                "Done — {} tokens, ${:.4}",
-                total_tokens,
-                total_cost
-            ));
 
             println!();
             println!(
@@ -4255,99 +3975,6 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", "═".repeat(50).dimmed());
             println!("  Docs: https://github.com/praxis-ai/praxis");
             println!("  Help: {}", "praxis help".yellow());
-        }
-
-        // ─── Completion ────────────────────────────────────
-        Commands::Completion { shell } => {
-            use clap::CommandFactory;
-            use clap_complete::Shell;
-            let target = match shell.to_lowercase().as_str() {
-                "bash" => Shell::Bash,
-                "zsh" => Shell::Zsh,
-                "fish" => Shell::Fish,
-                "powershell" | "pwsh" => Shell::PowerShell,
-                "elvish" => Shell::Elvish,
-                other => {
-                    println!("{} Unknown shell: {}", "✗".red(), other);
-                    println!("  Supported: bash, zsh, fish, powershell, elvish");
-                    std::process::exit(1);
-                }
-            };
-            let mut cmd = Cli::command();
-            clap_complete::generate(target, &mut cmd, "praxis", &mut std::io::stdout());
-        }
-
-        // ─── Logs (follow mode) ────────────────────────────
-        Commands::Logs {
-            session_id,
-            interval,
-        } => {
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .build()
-                .map_err(|e| anyhow::anyhow!(e))?;
-            let api_url = "http://localhost:8080";
-            let events_url = format!("{}/api/sessions/{}/events", api_url, session_id);
-
-            println!(
-                "{} Following session {} (interval: {}s, API: {})",
-                "→".cyan(),
-                session_id.yellow(),
-                interval,
-                api_url.dimmed()
-            );
-            println!("  Press Ctrl+C to stop.");
-            println!("{}", "─".repeat(80).dimmed());
-
-            let mut last_count = 0usize;
-            loop {
-                match client.get(&events_url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        let events: Vec<serde_json::Value> =
-                            resp.json().await.unwrap_or_default();
-                        if events.len() > last_count {
-                            for event in &events[last_count..] {
-                                let time: String = event
-                                    .get("created_at")
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("")
-                                    .chars()
-                                    .skip(11)
-                                    .take(8)
-                                    .collect();
-                                let event_type = event
-                                    .get("type")
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("?");
-                                println!("  {} {}", time.dimmed(), event_type.cyan());
-                                if let Some(payload) = event.get("payload")
-                                    && let Ok(pretty) = serde_json::to_string_pretty(payload)
-                                {
-                                    for line in pretty.lines().take(3) {
-                                        println!("    {}", line.dimmed());
-                                    }
-                                }
-                            }
-                            last_count = events.len();
-                        }
-                    }
-                    Ok(_) => {
-                        // Non-success status — keep trying.
-                    }
-                    Err(e) if e.is_connect() => {
-                        println!(
-                            "{} API server not reachable. Start with: {}",
-                            "✗".red(),
-                            "praxis server".cyan()
-                        );
-                        std::process::exit(1);
-                    }
-                    Err(_) => {
-                        // Transient error — keep trying.
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
-            }
         }
     }
 

@@ -104,6 +104,7 @@ impl GeminiProvider {
 
 #[async_trait]
 impl LLMProvider for GeminiProvider {
+    #[tracing::instrument(skip(self, messages, config))]
     async fn chat(
         &self,
         messages: &[ChatMessage],
@@ -162,6 +163,7 @@ impl LLMProvider for GeminiProvider {
         })
     }
 
+    #[tracing::instrument(skip(self, messages, config))]
     async fn stream(
         &self,
         messages: &[ChatMessage],

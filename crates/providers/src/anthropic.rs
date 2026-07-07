@@ -102,6 +102,7 @@ impl AnthropicProvider {
 
 #[async_trait]
 impl LLMProvider for AnthropicProvider {
+    #[tracing::instrument(skip(self, messages, config))]
     async fn chat(
         &self,
         messages: &[ChatMessage],
@@ -196,6 +197,7 @@ impl LLMProvider for AnthropicProvider {
         })
     }
 
+    #[tracing::instrument(skip(self, messages, config))]
     async fn stream(
         &self,
         messages: &[ChatMessage],

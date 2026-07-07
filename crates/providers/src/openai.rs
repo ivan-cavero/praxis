@@ -146,6 +146,7 @@ impl OpenAIProvider {
 #[async_trait]
 impl LLMProvider for OpenAIProvider {
     /// Send a non-streaming chat completion request.
+    #[tracing::instrument(skip(self, messages, config))]
     async fn chat(
         &self,
         messages: &[ChatMessage],
@@ -193,6 +194,7 @@ impl LLMProvider for OpenAIProvider {
     }
 
     /// Send a streaming chat completion request.
+    #[tracing::instrument(skip(self, messages, config))]
     async fn stream(
         &self,
         messages: &[ChatMessage],
