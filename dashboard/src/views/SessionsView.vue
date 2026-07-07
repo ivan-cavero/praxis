@@ -117,7 +117,7 @@ onUnmounted(() => {
               v-if="session.status === 'running'"
               class="btn-icon"
               @click="handleStop(session.id)"
-              title="Stop session"
+              aria-label="Stop session"
             >
               <Icon name="stop" :size="14" />
             </button>
@@ -148,7 +148,7 @@ onUnmounted(() => {
             <span>Iter {{ session.iteration }}</span>
           </div>
           <div v-if="session.status === 'running'" class="session-card-actions" @click.stop>
-            <button class="btn-icon" @click="handleStop(session.id)" title="Stop session">
+            <button class="btn-icon" @click="handleStop(session.id)" aria-label="Stop session">
               <Icon name="stop" :size="14" />
             </button>
           </div>

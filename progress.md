@@ -32,9 +32,9 @@ Eliminate production-code unwraps, clippy warnings, dead code, missing error han
 - [x] FINAL CHECK: cargo build && cargo test passes (verified clean)
 
 ### 1B — Dead code removal
-- [ ] Check crates/core/src/workflow/goal.rs and workflow.rs — if still 9-line stubs, remove them
-- [ ] Search for #[allow(dead_code)] attributes and address underlying issues
-- [ ] Remove any commented-out code blocks (>5 consecutive lines)
+- [x] Check crates/core/src/workflow/goal.rs and workflow.rs — goal.rs is full implementation (93 lines); workflow.rs renamed to engine.rs (real 130-line impl), no stubs
+- [x] Search for #[allow(dead_code)] attributes and address underlying issues — zero found
+- [x] Remove any commented-out code blocks (>5 consecutive lines) — none found
 
 ### 1C — Missing #[instrument] tracing
 - [ ] Add #[instrument(skip(self))] to all pub async fn in CoreRuntime
@@ -122,7 +122,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 - [ ] Virtual scroll for large session lists if needed
 
 ### 4D — Accessibility
-- [ ] Add ria-label to all icon-only buttons
+- [x] Add aria-label to all icon-only buttons
 - [ ] Ensure color contrast meets WCAG AA
 - [ ] Add focus-visible outlines for keyboard nav
 - [ ] Test basic flow with screen reader
@@ -185,9 +185,9 @@ egistry.rs
 - [x] Wire into run_goal, allow workflow defs in forge.toml
 
 ### 6D — Agent delegation (wire existing delegation.rs)
-- [ ] Connect delegation system to agent execution
-- [ ] Allow sub-agent spawning for complex tasks
-- [ ] Add max_sub_agents config to forge.toml roles
+- [x] Connect delegation system to agent execution
+- [x] Allow sub-agent spawning for complex tasks
+- [x] Add max_sub_agents config to forge.toml roles
 
 ### 6E — Undo/redo for changes
 - [ ] Add praxis undo CLI command

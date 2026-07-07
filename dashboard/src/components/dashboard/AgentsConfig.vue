@@ -260,7 +260,7 @@ async function loadAgentDefinitions() {
             <button
               v-if="getRole(agentKey)"
               class="btn-remove"
-              title="Remove role"
+              aria-label="Remove role"
               @click.stop="removeRole(agentKey)"
             >
               <Icon name="x" :size="14" />

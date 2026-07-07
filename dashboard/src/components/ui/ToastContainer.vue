@@ -35,6 +35,7 @@ function iconFor(kind: ToastItem['kind']): string {
         <button
           v-if="item.dismissible"
           class="toast-close"
+          aria-label="Dismiss"
           @click.stop="toast.dismiss(item.id)"
         >
           <Icon name="x" :size="12" />

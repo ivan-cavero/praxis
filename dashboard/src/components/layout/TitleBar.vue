@@ -124,6 +124,7 @@ onUnmounted(() => {
         class="titlebar-btn titlebar-btn-minimize"
         @click="handleMinimize"
         title="Minimize"
+        aria-label="Minimize"
       >
         <Icon name="minus" :size="14" />
       </button>
@@ -131,6 +132,7 @@ onUnmounted(() => {
         class="titlebar-btn titlebar-btn-maximize"
         @click="handleMaximize"
         :title="isMaximized ? 'Restore' : 'Maximize'"
+        :aria-label="isMaximized ? 'Restore' : 'Maximize'"
       >
         <template v-if="isMaximized">
           <!-- Restore icon: two overlapping squares -->
@@ -150,6 +152,7 @@ onUnmounted(() => {
         class="titlebar-btn titlebar-btn-close"
         @click="handleClose"
         title="Close"
+        aria-label="Close"
       >
         <Icon name="x" :size="14" />
       </button>

@@ -202,6 +202,7 @@ onUnmounted(() => {
           <button
             class="btn btn-ghost btn-xs text-red-400"
             @click.stop="handleRemove(conn.id)"
+            aria-label="Remove connection"
           >
             <Icon name="trash-2" :size="14" />
           </button>

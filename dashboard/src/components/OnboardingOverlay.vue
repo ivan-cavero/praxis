@@ -69,7 +69,7 @@ function goToAgents(): void {
 <template>
   <div v-if="isVisible" class="onboarding-overlay" @click.self="skipStep">
     <div class="onboarding-card">
-      <button class="onboarding-skip" @click="skipStep" title="Skip onboarding">
+      <button class="onboarding-skip" @click="skipStep" aria-label="Skip onboarding">
         <Icon name="x" :size="18" />
       </button>
 

@@ -145,7 +145,7 @@ function formatTokens(tokens: number): string {
   <div class="cost-analysis-view">
     <div class="cost-header">
       <h1 class="cost-title">Cost & Efficiency Analysis</h1>
-      <button class="refresh-btn" @click="loadData" :disabled="isLoading">
+      <button class="refresh-btn" @click="loadData" :disabled="isLoading" aria-label="Refresh data">
         <Icon v-if="isLoading" name="refresh" :size="14" class="animate-spin" />
         <Icon v-else name="refresh" :size="14" />
       </button>

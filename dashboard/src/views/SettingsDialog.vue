@@ -299,7 +299,7 @@ async function handleCheckUpdate() {
       <!-- Dialog Header -->
       <div class="dialog-header">
         <h2 class="dialog-title">Settings</h2>
-        <button class="dialog-close" @click="emit('close')" title="Close">
+        <button class="dialog-close" @click="emit('close')" aria-label="Close settings">
           <Icon name="x" :size="20" />
         </button>
       </div>
@@ -395,7 +395,7 @@ async function handleCheckUpdate() {
             <div v-if="saveError" class="toast toast-error">
               <Icon name="alert-circle" :size="14" />
               <span>{{ saveError }}</span>
-              <button class="toast-dismiss" @click="saveError = null">
+              <button class="toast-dismiss" @click="saveError = null" aria-label="Dismiss">
                 <Icon name="x" :size="12" />
               </button>
             </div>
@@ -422,6 +422,7 @@ async function handleCheckUpdate() {
                       class="provider-card-delete"
                       :disabled="saving === provider.provider"
                       @click.stop="deleteKey(provider.provider)"
+                      aria-label="Delete key"
                       title="Delete key"
                     >
                       <Icon name="trash" :size="14" />
@@ -582,7 +583,7 @@ async function handleCheckUpdate() {
             <div v-if="limitsError" class="toast toast-error">
               <Icon name="alert-circle" :size="14" />
               <span>{{ limitsError }}</span>
-              <button class="toast-dismiss" @click="limitsError = null">
+              <button class="toast-dismiss" @click="limitsError = null" aria-label="Dismiss">
                 <Icon name="x" :size="12" />
               </button>
             </div>

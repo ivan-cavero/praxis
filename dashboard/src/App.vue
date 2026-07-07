@@ -272,6 +272,7 @@ function handleLogin(token: string) {
           class="sidebar-toggle"
           @click="sidebarOpen = !sidebarOpen"
           title="Toggle menu"
+          aria-label="Toggle menu"
         >
           <Icon :name="sidebarOpen ? 'x' : 'menu'" :size="20" />
         </button>
@@ -313,6 +314,7 @@ function handleLogin(token: string) {
                 class="sidebar-section-action"
                 @click="showNewProject = true"
                 title="New Project"
+                aria-label="New Project"
               >
                 <Icon name="plus" :size="14" />
               </button>
@@ -341,14 +343,12 @@ function handleLogin(token: string) {
             <div class="sidebar-user" @click="openSettings()">
               <div class="user-avatar">P</div>
               <span class="user-name">praxis</span>
-              <button class="sidebar-gear-btn" title="Settings">
+              <button class="sidebar-gear-btn" title="Settings" aria-label="Settings">
                 <Icon name="settings" :size="16" />
               </button>
-            </div>
           </div>
-        </aside>
-
-        <!-- Main Content Area -->
+          </div>
+          </aside>
         <div class="main-content">
           <Transition name="page" mode="out-in">
             <router-view />
@@ -374,7 +374,7 @@ function handleLogin(token: string) {
       <div class="modal-card modal-card-sm">
         <div class="modal-header">
           <h3 class="modal-title">New Project</h3>
-          <button class="modal-close" @click="showNewProject = false">
+          <button class="modal-close" @click="showNewProject = false" aria-label="Close">
             <Icon name="x" :size="18" />
           </button>
         </div>

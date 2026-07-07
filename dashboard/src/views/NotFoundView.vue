@@ -21,9 +21,8 @@ const router = useRouter()
           <Icon name="dashboard" :size="16" />
           Go to Dashboard
         </button>
-        <button class="btn btn-ghost" @click="router.back()">
+        <button class="btn btn-ghost" @click="router.back()" aria-label="Go Back">
           <Icon name="arrow-left" :size="16" />
-          Go Back
         </button>
       </div>
     </div>

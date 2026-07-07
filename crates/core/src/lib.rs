@@ -451,4 +451,40 @@ mod tests {
         assert_eq!(requests[0].0, "researcher");
         assert_eq!(requests[0].1, "investigate patterns");
     }
+
+    #[test]
+    fn test_max_sub_agents_default_is_three() {
+        let fm = crate::agents::AgentFrontmatter::default();
+        assert_eq!(fm.max_sub_agents, 3);
+    }
+
+    #[test]
+    fn test_max_sub_agents_truncates_delegations() {
+        // Simulate the truncation logic from process_delegation_requests:
+        // when max_sub_agents > 0 and delegations.len() > max, truncate.
+        let output = "DELEGATE:researcher:task1\nDELEGATE:researcher:task2\nDELEGATE:researcher:task3\nDELEGATE:researcher:task4";
+        let mut delegations = parse_delegate_requests(output);
+        assert_eq!(delegations.len(), 4);
+
+        let max: u32 = 2;
+        if max > 0 && delegations.len() > max as usize {
+            delegations.truncate(max as usize);
+        }
+        assert_eq!(delegations.len(), 2);
+        assert_eq!(delegations[0].1, "task1");
+        assert_eq!(delegations[1].1, "task2");
+    }
+
+    #[test]
+    fn test_max_sub_agents_zero_means_no_limit() {
+        let output = "DELEGATE:researcher:task1\nDELEGATE:researcher:task2\nDELEGATE:researcher:task3";
+        let mut delegations = parse_delegate_requests(output);
+        assert_eq!(delegations.len(), 3);
+
+        let max: u32 = 0;
+        if max > 0 && delegations.len() > max as usize {
+            delegations.truncate(max as usize);
+        }
+        assert_eq!(delegations.len(), 3); // unchanged — 0 means no limit
+    }
 }

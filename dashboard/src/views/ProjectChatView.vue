@@ -602,7 +602,7 @@ watch(() => ws.events.value.length, () => {
         class="chat-plan-btn"
         :disabled="!inputText.trim() || isPlanning"
         @click="planGoal"
-        title="Plan first (Planning + Designing only)"
+        aria-label="Plan first"
       >
         <Icon v-if="isPlanning" name="refresh" :size="16" class="animate-spin" />
         <Icon v-else name="code" :size="16" />
@@ -614,7 +614,7 @@ watch(() => ws.events.value.length, () => {
       <div class="options-dialog">
         <div class="options-header">
           <h2>Goal Options</h2>
-          <button class="options-close" @click="showOptions = false">
+          <button class="options-close" @click="showOptions = false" aria-label="Close options">
             <Icon name="x" :size="18" />
           </button>
         </div>

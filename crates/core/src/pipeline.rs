@@ -669,9 +669,22 @@ impl CoreRuntime {
         };
 
         // Parse DELEGATE:agent_type:task_description lines from output
-        let delegations = parse_delegate_requests(output);
+        let mut delegations = parse_delegate_requests(output);
         if delegations.is_empty() {
             return output.to_string();
+        }
+
+        // Enforce max_sub_agents limit (0 = no limit)
+        let max = parent_def.max_sub_agents();
+        if max > 0 && delegations.len() > max as usize {
+            tracing::warn!(
+                "Agent '{}' requested {} delegations but max_sub_agents={}. Truncating to {}.",
+                agent_name,
+                delegations.len(),
+                max,
+                max
+            );
+            delegations.truncate(max as usize);
         }
 
         // Build parent budget from session limits
@@ -770,14 +783,23 @@ impl CoreRuntime {
             used_turns: 0,
         }
     }
-    /// Resolve a provider for a given model name.
+    /// Resolve a provider for a given model name via the stored ProviderRouter.
+    ///
+    /// Returns `None` when no router is configured (tests, mock mode) or the
+    /// model doesn't match any registered provider. The delegation system uses
+    /// this to give child agents real LLM access instead of mock mode.
     fn resolve_provider_for_model(
         &self,
-        _model: &str,
+        model: &str,
     ) -> Option<std::sync::Arc<dyn praxis_agent_traits::provider::LLMProvider>> {
-        // In production, this would use the provider router.
-        // For now, return None (mock mode) — the delegation still works with mock agents.
-        None
+        let router = self.provider_router.as_ref()?;
+        match router.resolve(model) {
+            Ok(provider) => Some(provider),
+            Err(e) => {
+                tracing::warn!("No provider for model '{}': {}", model, e);
+                None
+            }
+        }
     }
     /// dashboard can show them in real-time.
     ///
@@ -1103,7 +1125,7 @@ impl CoreRuntime {
         &mut self,
         config_path: Option<&std::path::Path>,
         vault: Option<&VaultService>,
-    ) -> (ForgeConfig, praxis_providers::ProviderRouter) {
+    ) -> (ForgeConfig, std::sync::Arc<praxis_providers::ProviderRouter>) {
         let config = match config_path.map(load_forge_config) {
             Some(Ok(cfg)) => cfg,
             Some(Err(e)) => {
@@ -1116,8 +1138,11 @@ impl CoreRuntime {
             }
         };
 
-        let provider_router = self.init_providers(&config, vault).await;
+        let provider_router = std::sync::Arc::new(self.init_providers(&config, vault).await);
 
+        // Store the router on the runtime so delegation can resolve real
+        // providers for child agents (see `resolve_provider_for_model`).
+        self.provider_router = Some(std::sync::Arc::clone(&provider_router));
         // Wire embedding service to MemoryKeeper using the first available provider
         if let Some(provider) = provider_router.first_provider() {
             self.with_embedding_provider(provider).await;
@@ -1165,6 +1190,7 @@ impl CoreRuntime {
 
         (config, provider_router)
     }
+    #[tracing::instrument(skip(self, vault))]
     pub async fn run_goal(
         &mut self,
         goal: &str,
@@ -2107,6 +2133,7 @@ impl CoreRuntime {
         })
     }
 
+    #[tracing::instrument(skip(self, vault))]
     pub async fn resume_goal(
         &mut self,
         session_id: uuid::Uuid,
