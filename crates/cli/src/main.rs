@@ -8,6 +8,8 @@ mod commands;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use praxis_agent_traits::persistence::EventStore;
+use praxis_agent_traits::provider::{ChatConfig, ChatMessage, ChatRole, LLMProvider};
+use rusqlite::params as rusqlite_params;
 use std::path::PathBuf;
 
 /// Parse a human-readable duration string (e.g., "30s", "5min", "1h", "2h30min").
@@ -1069,9 +1071,10 @@ async fn main() -> anyhow::Result<()> {
 
                     let store = praxis_persistence::SqliteEventStore::new(&db_path)
                         .map_err(|e| anyhow::anyhow!(e))?;
+                    let pool = store.pool().clone();
                     let mut runtime = praxis_core::CoreRuntime::new()
                         .await?
-                        .with_default_memory()
+                        .with_sqlite_memory(pool)
                         .with_event_store(store)
                         .with_state_file()
                         .with_skills();
@@ -1762,10 +1765,148 @@ async fn main() -> anyhow::Result<()> {
             ProviderCommands::Test { name } => {
                 println!("{} Testing provider: {}...", "→".cyan(), name);
                 let config = load_project_config(None);
-                if let Some(provider) = config.providers.get(&name) {
-                    println!("  {} Base URL: {}", "→".dimmed(), provider.base_url);
-                    println!("  {} Model: {}", "→".dimmed(), provider.default_model);
-                    println!("  {} (would send test request to API)", "→".dimmed());
+                if let Some(provider_cfg) = config.providers.get(&name) {
+                    println!("  {} Base URL: {}", "→".dimmed(), provider_cfg.base_url);
+                    println!("  {} Model: {}", "→".dimmed(), provider_cfg.default_model);
+
+                    // Resolve API key the same way CoreRuntime does
+                    let api_key = if provider_cfg.api_key_ref.starts_with("env:") {
+                        let env_var = &provider_cfg.api_key_ref[4..];
+                        std::env::var(env_var).unwrap_or_default()
+                    } else if !provider_cfg.api_key_ref.is_empty() {
+                        provider_cfg.api_key_ref.clone()
+                    } else {
+                        String::new()
+                    };
+
+                    if api_key.is_empty() {
+                        println!("  {} No API key configured", "⚠".yellow());
+                        println!("  {} Provider will use mock behavior", "→".dimmed());
+                        return Ok(());
+                    }
+
+                    // Build the provider
+                    let result: Result<String, anyhow::Error> = match provider_cfg.name.as_str() {
+                        "nan" | "openai" | "openai_compat" => {
+                            let p = praxis_providers::OpenAIProvider::new(
+                                                            api_key,
+                                                            provider_cfg.default_model.clone(),
+                                                            Some(provider_cfg.base_url.clone()),
+                                                            None,
+                                                            None,
+                                                        )
+                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
+                                                        let resp = p
+                                                            .chat(
+                                                                &[ChatMessage {
+                                                                    role: ChatRole::User,
+                                                                    content: "ping".to_string(),
+                                                                    tool_calls: None,
+                                                                    tool_call_id: None,
+                                                                }],
+                                                                &ChatConfig {
+                                                                    max_tokens: 5,
+                                                                    temperature: 0.0,
+                                                                    ..Default::default()
+                                                                },
+                                                            )
+                                                            .await;
+                                                        match resp {
+                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                                                        }
+                        }
+                        "anthropic" => {
+                            let p = praxis_providers::AnthropicProvider::new(
+                                                            api_key,
+                                                            provider_cfg.default_model.clone(),
+                                                            Some(provider_cfg.base_url.clone()),
+                                                            None,
+                                                            None,
+                                                        )
+                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
+                                                        let resp = p
+                                                            .chat(
+                                                                &[ChatMessage {
+                                                                    role: ChatRole::User,
+                                                                    content: "ping".to_string(),
+                                                                    tool_calls: None,
+                                                                    tool_call_id: None,
+                                                                }],
+                                                                &ChatConfig {
+                                                                    max_tokens: 5,
+                                                                    temperature: 0.0,
+                                                                    ..Default::default()
+                                                                },
+                                                            )
+                                                            .await;
+                                                        match resp {
+                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                                                        }
+                        }
+                        "gemini" => {
+                            let p = praxis_providers::GeminiProvider::new(
+                                                            api_key,
+                                                            provider_cfg.default_model.clone(),
+                                                            Some(provider_cfg.base_url.clone()),
+                                                            None,
+                                                            None,
+                                                        )
+                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e.0))?;
+                                                        let resp = p
+                                                            .chat(
+                                                                &[ChatMessage {
+                                                                    role: ChatRole::User,
+                                                                    content: "ping".to_string(),
+                                                                    tool_calls: None,
+                                                                    tool_call_id: None,
+                                                                }],
+                                                                &ChatConfig {
+                                                                    max_tokens: 5,
+                                                                    temperature: 0.0,
+                                                                    ..Default::default()
+                                                                },
+                                                            )
+                                                            .await;
+                                                        match resp {
+                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                                                        }
+                        }
+                        "ollama" => {
+                            let p = praxis_providers::OllamaProvider::new(
+                                                            provider_cfg.default_model.clone(),
+                                                            Some(provider_cfg.base_url.clone()),
+                                                        )
+                                                        .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
+                                                        let resp = p
+                                                            .chat(
+                                                                &[ChatMessage {
+                                                                    role: ChatRole::User,
+                                                                    content: "ping".to_string(),
+                                                                    tool_calls: None,
+                                                                    tool_call_id: None,
+                                                                }],
+                                                                &ChatConfig {
+                                                                    max_tokens: 5,
+                                                                    temperature: 0.0,
+                                                                    ..Default::default()
+                                                                },
+                                                            )
+                                                            .await;
+                                                        match resp {
+                                                            Ok(r) => Ok(format!("Response: {}", r.content.trim())),
+                                                            Err(e) => Err(anyhow::anyhow!("API error: {}", e)),
+                                                        }
+                        }
+                        _ => Err(anyhow::anyhow!("Unknown provider type: {}", provider_cfg.name)),
+                    };
+
+                    match result {
+                        Ok(msg) => println!("  ✓ {}", msg.green()),
+                        Err(msg) => println!("  ✗ {}", msg.to_string().red()),
+                    }
                 } else {
                     println!("  {} Provider '{}' not found in config", "✗".red(), name);
                 }
@@ -1964,7 +2105,48 @@ async fn main() -> anyhow::Result<()> {
             }
             ContextCommands::History { session } => {
                 println!("{} Compression history for session: {}", "→".cyan(), session);
-                println!("  {} (would show from SQLite context_snapshots table)", "→".dimmed());
+
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("state.db");
+                let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("  {} Cannot open store: {}", "✗".red(), e);
+                        return Ok(());
+                    }
+                };
+
+                let conn = store.conn().map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+                let mut stmt = conn.prepare(
+                    "SELECT id, session_id, iteration, pressure_before, pressure_after, created_at \
+                     FROM context_snapshots WHERE session_id = ?1 ORDER BY created_at DESC LIMIT 50"
+                ).map_err(|e| anyhow::anyhow!("Query error: {}", e))?;
+
+                let rows = stmt.query_map(rusqlite_params![session], |row| {
+                    Ok((
+                        row.get::<_, String>("id")?,
+                        row.get::<_, i64>("iteration")?,
+                        row.get::<_, f64>("pressure_before").ok(),
+                        row.get::<_, f64>("pressure_after").ok(),
+                        row.get::<_, String>("created_at")?,
+                    ))
+                }).map_err(|e| anyhow::anyhow!("Query error: {}", e))?;
+
+                let mut entries: Vec<_> = rows.filter_map(|r| r.ok()).collect();
+                entries.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)); // sort by iteration desc
+
+                if entries.is_empty() {
+                    println!("  {} No compression history found for this session", "→".dimmed());
+                } else {
+                    println!("  {:<6} {:<12} {:<14} {}", "Iteration", "Pressure In", "Pressure Out", "Time");
+                    println!("  {}", "─".repeat(50));
+                    for (_id, iteration, pressure_before, pressure_after, created_at) in entries.iter() {
+                        let pb = pressure_before.map_or("N/A".to_string(), |v| format!("{:.1}%", v * 100.0));
+                        let pa = pressure_after.map_or("N/A".to_string(), |v| format!("{:.1}%", v * 100.0));
+                        println!("  {:<6} {:<12} {:<14} {}", iteration, pb, pa, created_at);
+                    }
+                    println!("\n  {} {} snapshots", "→".dimmed(), entries.len());
+                }
             }
             ContextCommands::ForceCompress { session } => {
                 println!("{} Forcing compression for session: {}", "→".cyan(), session);
