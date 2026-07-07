@@ -1978,72 +1978,71 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             SessionCommands::Logs { id, tail, json } => {
-                let data_dir = get_data_dir();
-                let db_path = data_dir.join("state.db");
-
-                if !db_path.exists() {
-                    println!("{} No database found. Run a session first.", "→".cyan());
-                    std::process::exit(1);
-                }
-
-                let sid = uuid::Uuid::parse_str(&id)
-                    .map_err(|e| anyhow::anyhow!("Invalid session ID: {}", e))?;
-                let store = praxis_persistence::SqliteEventStore::new(&db_path)
+                // Try the API server first.
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
                     .map_err(|e| anyhow::anyhow!(e))?;
-                let events = store
-                    .read_events(sid, None)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let api_url = "http://localhost:8080";
+                let events_url = format!("{}/api/sessions/{}/events", api_url, id);
 
-                if events.is_empty() {
-                    println!("{} No events found for session {}", "→".cyan(), id);
-                    std::process::exit(0);
-                }
-
-                if json {
-                    let json_events: Vec<_> = events
-                        .iter()
-                        .map(|e| {
-                            serde_json::json!({
-                                "id": e.id,
-                                "type": e.event_type,
-                                "version": e.version,
-                                "created_at": e.created_at,
-                                "payload": e.payload,
-                            })
-                        })
-                        .collect();
-                    println!("{}", serde_json::to_string_pretty(&json_events)?);
-                } else {
-                    let mut display_events: Vec<_> = if tail {
-                        events.iter().rev().take(50).collect()
-                    } else {
-                        events.iter().collect()
-                    };
-                    if tail {
-                        display_events.reverse();
-                    }
-
-                    println!(
-                        "{} Logs for session {} ({} events)",
-                        "→".cyan(),
-                        id,
-                        events.len()
-                    );
-                    println!("{}", "─".repeat(80));
-                    for event in &display_events {
-                        let time: String = event.created_at.chars().skip(11).take(8).collect();
-                        println!(
-                            "  {} {} {}",
-                            time.dimmed(),
-                            event.event_type.cyan(),
-                            event.version
-                        );
-                        if let Ok(pretty) = serde_json::to_string_pretty(&event.payload) {
-                            for line in pretty.lines().take(3) {
-                                println!("    {}", line.dimmed());
+                match client.get(&events_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let events: Vec<serde_json::Value> =
+                            resp.json().await.unwrap_or_default();
+                        if events.is_empty() {
+                            println!("{} No events found for session {}", "→".cyan(), id);
+                            std::process::exit(0);
+                        }
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&events)?);
+                        } else {
+                            let mut display_events: Vec<&serde_json::Value> = if tail {
+                                events.iter().rev().take(50).collect()
+                            } else {
+                                events.iter().collect()
+                            };
+                            if tail {
+                                display_events.reverse();
+                            }
+                            println!(
+                                "{} Logs for session {} ({} events)",
+                                "→".cyan(),
+                                id,
+                                events.len()
+                            );
+                            println!("{}", "─".repeat(80));
+                            for event in &display_events {
+                                let time: String = event
+                                    .get("created_at")
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("")
+                                    .chars()
+                                    .skip(11)
+                                    .take(8)
+                                    .collect();
+                                let event_type = event
+                                    .get("type")
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("?");
+                                let version = event
+                                    .get("version")
+                                    .and_then(|v| v.as_i64())
+                                    .unwrap_or(0);
+                                println!("  {} {} {}", time.dimmed(), event_type.cyan(), version);
+                                if let Some(payload) = event.get("payload")
+                                    && let Ok(pretty) = serde_json::to_string_pretty(payload)
+                                {
+                                    for line in pretty.lines().take(3) {
+                                        println!("    {}", line.dimmed());
+                                    }
+                                }
                             }
                         }
+                    }
+                    _ => {
+                        // API server not running or error — fall back to local DB.
+                        logs_local(&id, tail, json).await;
                     }
                 }
             }
@@ -3041,49 +3040,83 @@ async fn main() -> anyhow::Result<()> {
             message_type,
             message,
         } => {
-            let data_dir = get_data_dir();
-            let injections_dir = data_dir.join("injections");
-            match std::fs::create_dir_all(&injections_dir) {
-                Ok(()) => {
-                    let injection = serde_json::json!({
-                        "target_agent": agent,
-                        "message_type": message_type,
-                        "content": message,
-                        "created_at": chrono::Utc::now().to_rfc3339(),
-                    });
-                    let filename = format!(
-                        "{}_{}.json",
-                        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
-                        agent
+            // Try the API server first (for sessions started via `praxis server`).
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let api_url = "http://localhost:8080";
+            let inject_url = format!("{}/api/inject", api_url);
+
+            let inject_body = serde_json::json!({
+                "target_agent": agent,
+                "message_type": message_type,
+                "content": message,
+            });
+
+            match client.post(&inject_url).json(&inject_body).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    println!(
+                        "{} Injection sent to API server for agent '{}'",
+                        "✓".green(),
+                        agent.cyan()
                     );
-                    let path = injections_dir.join(&filename);
-                    match std::fs::write(
-                        &path,
-                        serde_json::to_string_pretty(&injection).map_err(|e| anyhow::anyhow!(e))?,
-                    ) {
+                    println!("  Type: {}", message_type.dimmed());
+                    println!("  Message: {}", message.dimmed());
+                    println!();
+                    println!(
+                        "  {} The running session will pick it up on the next iteration.",
+                        "→".cyan()
+                    );
+                }
+                _ => {
+                    // API server not running or error — fall back to local file.
+                    let data_dir = get_data_dir();
+                    let injections_dir = data_dir.join("injections");
+                    match std::fs::create_dir_all(&injections_dir) {
                         Ok(()) => {
-                            println!(
-                                "{} Injection written for agent '{}'",
-                                "✓".green(),
-                                agent.cyan()
+                            let injection = serde_json::json!({
+                                "target_agent": agent,
+                                "message_type": message_type,
+                                "content": message,
+                                "created_at": chrono::Utc::now().to_rfc3339(),
+                            });
+                            let filename = format!(
+                                "{}_{}.json",
+                                chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+                                agent
                             );
-                            println!("  File: {}", path.display());
-                            println!("  Type: {}", message_type.dimmed());
-                            println!("  Message: {}", message.dimmed());
-                            println!();
-                            println!(
-                                "  {} The running session will pick it up on the next iteration.",
-                                "→".cyan()
-                            );
+                            let path = injections_dir.join(&filename);
+                            match std::fs::write(
+                                &path,
+                                serde_json::to_string_pretty(&injection)
+                                    .map_err(|e| anyhow::anyhow!(e))?,
+                            ) {
+                                Ok(()) => {
+                                    println!(
+                                        "{} Injection written for agent '{}'",
+                                        "✓".green(),
+                                        agent.cyan()
+                                    );
+                                    println!("  File: {}", path.display());
+                                    println!("  Type: {}", message_type.dimmed());
+                                    println!("  Message: {}", message.dimmed());
+                                    println!();
+                                    println!(
+                                        "  {} The running session will pick it up on the next iteration.",
+                                        "→".cyan()
+                                    );
+                                }
+                                Err(e) => {
+                                    println!("{} Failed to write injection: {}", "✗".red(), e);
+                                }
+                            }
                         }
                         Err(e) => {
-                            println!("{} Failed to write injection: {}", "✗".red(), e);
+                            println!("{} Failed to create injections directory: {}", "✗".red(), e);
+                            println!("  Tried: {}", injections_dir.display());
                         }
                     }
-                }
-                Err(e) => {
-                    println!("{} Failed to create injections directory: {}", "✗".red(), e);
-                    println!("  Tried: {}", injections_dir.display());
                 }
             }
         }
@@ -4040,6 +4073,86 @@ async fn diff_local(id: &str) {
     }
 }
 
+/// Show logs for a session using the local SQLite DB (when the API server is not running).
+async fn logs_local(id: &str, tail: bool, json: bool) {
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("state.db");
+    if !db_path.exists() {
+        println!("{} No database found. Run a session first.", "→".cyan());
+        std::process::exit(1);
+    }
+
+    let sid = match uuid::Uuid::parse_str(id) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Invalid session ID: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let store = match praxis_persistence::SqliteEventStore::new(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} Failed to open database: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    let events = match store.read_events(sid, None).await {
+        Ok(e) => e,
+        Err(e) => {
+            println!("{} Failed to read events: {}", "✗".red(), e);
+            return;
+        }
+    };
+
+    if events.is_empty() {
+        println!("{} No events found for session {}", "→".cyan(), id);
+        std::process::exit(0);
+    }
+
+    if json {
+        let json_events: Vec<_> = events
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "id": e.id,
+                    "type": e.event_type,
+                    "version": e.version,
+                    "created_at": e.created_at,
+                    "payload": e.payload,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&json_events).unwrap_or_default());
+    } else {
+        let mut display_events: Vec<_> = if tail {
+            events.iter().rev().take(50).collect()
+        } else {
+            events.iter().collect()
+        };
+        if tail {
+            display_events.reverse();
+        }
+
+        println!(
+            "{} Logs for session {} ({} events)",
+            "→".cyan(),
+            id,
+            events.len()
+        );
+        println!("{}", "─".repeat(80));
+        for event in &display_events {
+            let time: String = event.created_at.chars().skip(11).take(8).collect();
+            println!("  {} {} {}", time.dimmed(), event.event_type.cyan(), event.version);
+            if let Ok(pretty) = serde_json::to_string_pretty(&event.payload) {
+                for line in pretty.lines().take(3) {
+                    println!("    {}", line.dimmed());
+                }
+            }
+        }
+    }
+}
 /// Undo the latest change using the local SQLite DB (when the API server is not running).
 async fn undo_local(id: &str) {
     let data_dir = get_data_dir();

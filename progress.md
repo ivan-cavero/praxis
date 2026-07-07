@@ -38,7 +38,7 @@ Eliminate production-code unwraps, clippy warnings, dead code, missing error han
 
 ### 1C — Missing #[instrument] tracing
 - [x] Add #[instrument(skip(self))] to all pub async fn in CoreRuntime — added to run_goal, resume_goal
-- [ ] Add #[instrument] to gate.rs and phase.rs public fns
+- [x] Add #[instrument] to gate.rs and phase.rs public fns — added to Gate::evaluate(), GateRegistry::evaluate_phase(), StateMachine::transition(), StateMachine::detect_cycle()
 - [x] Add #[instrument] to drift/metrics.rs, asi.rs, recovery.rs — added to recovery.rs evaluate() and record_and_evaluate()
 - [ ] Add #[instrument] to all provider.chat() and provider.stream() methods
 
@@ -201,10 +201,10 @@ egistry.rs
 Complete CLI implementation and UX.
 
 ### 7A — Implement stubbed commands
-- [ ] session stop — graceful stop via API
-- [ ] session logs — stream logs from event store
-- [ ] inject — send mid-loop injection via API
-- [ ] context history — show budget history
+- [x] session stop — graceful stop via API
+- [x] session logs — stream logs from event store
+- [x] inject — send mid-loop injection via API
+- [x] context history — show budget history
 
 ### 7B — New CLI commands
 - [ ] praxis doctor — diagnose configuration, provider, project health

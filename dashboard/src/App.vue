@@ -6,6 +6,7 @@ import { useAppStore } from './stores/app'
 import { useApi, apiPort, setApiPort } from './composables/useApi'
 import { useUpdater } from './composables/useUpdater'
 import { useApiStatus } from './composables/useApiStatus'
+import { useWebSocket } from './composables/useWebSocket'
 import TitleBar from './components/layout/TitleBar.vue'
 import Icon from './components/ui/Icon.vue'
 import ToastContainer from './components/ui/ToastContainer.vue'
@@ -19,6 +20,7 @@ const store = useAppStore()
 const api = useApi()
 const updater = useUpdater()
 const apiStatus = useApiStatus()
+const ws = useWebSocket()
 
 // ─── Store refs ───────────────────────────────────────────────────
 const { projects } = storeToRefs(store)
