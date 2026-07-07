@@ -347,7 +347,7 @@ fn add_provider_to_project_config(
     about = "Autonomous Multi-Agent System",
     long_about = "praxis — Autonomous Multi-Agent System\n\nAn AI agent orchestration system that runs goals through a pipeline of\nspecialized agents (architect, coder, reviewer, security, tester).\n\nEXAMPLES:\n  praxis init my-project\n  praxis run --project my-project --goal \"Build a hello world CLI\"\n  praxis monitor\n  praxis dashboard\n"
 )]
-#[command(version = "0.5.0")]
+#[command(version)]
 #[command(arg_required_else_help = true)]
 struct Cli {
     #[command(subcommand)]
@@ -1914,10 +1914,7 @@ async fn async_main() -> anyhow::Result<()> {
                         println!("{}", serde_json::to_string_pretty(&sessions)?);
                     } else {
                         println!("{} Sessions ({})", "→".cyan(), session_ids.len());
-                        println!(
-                            "  {:<38} {:<12} {:<8} Goal",
-                            "ID", "Phase", "Iter"
-                        );
+                        println!("  {:<38} {:<12} {:<8} Goal", "ID", "Phase", "Iter");
                         println!("  {}", "─".repeat(80).dimmed());
                         for sid in &session_ids {
                             let snapshot = store
@@ -1993,13 +1990,18 @@ async fn async_main() -> anyhow::Result<()> {
                                     "version": snap.version,
                                     "updated_at": snap.updated_at,
                                 });
-                                if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str()) {
+                                if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str())
+                                {
                                     obj["goal"] = serde_json::Value::String(goal.to_string());
                                 }
-                                if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
+                                if let Some(phase) =
+                                    snap.state.get("phase").and_then(|v| v.as_str())
+                                {
                                     obj["phase"] = serde_json::Value::String(phase.to_string());
                                 }
-                                if let Some(iteration) = snap.state.get("iteration").and_then(|v| v.as_u64()) {
+                                if let Some(iteration) =
+                                    snap.state.get("iteration").and_then(|v| v.as_u64())
+                                {
                                     obj["iteration"] = serde_json::Value::Number(iteration.into());
                                 }
                                 println!("{}", serde_json::to_string_pretty(&obj)?);
@@ -2008,10 +2010,13 @@ async fn async_main() -> anyhow::Result<()> {
                                 println!("  {} Type: {}", "→".cyan(), snap.aggregate_type);
                                 println!("  {} Version: {}", "→".cyan(), snap.version);
                                 println!("  {} Updated: {}", "→".cyan(), snap.updated_at);
-                                if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str()) {
+                                if let Some(goal) = snap.state.get("goal").and_then(|v| v.as_str())
+                                {
                                     println!("  {} Goal: {}", "→".cyan(), goal);
                                 }
-                                if let Some(phase) = snap.state.get("phase").and_then(|v| v.as_str()) {
+                                if let Some(phase) =
+                                    snap.state.get("phase").and_then(|v| v.as_str())
+                                {
                                     let phase_colored = match phase {
                                         "Completed" => phase.green().bold(),
                                         "Failed" => phase.red().bold(),
@@ -2029,7 +2034,10 @@ async fn async_main() -> anyhow::Result<()> {
                         }
                         None => {
                             if json_output {
-                                println!("{{\"error\": \"No checkpoint found for session {}\"}}", id);
+                                println!(
+                                    "{{\"error\": \"No checkpoint found for session {}\"}}",
+                                    id
+                                );
                             } else {
                                 println!("{} No checkpoint found for session {}", "→".cyan(), id);
                             }
@@ -2058,7 +2066,10 @@ async fn async_main() -> anyhow::Result<()> {
                     }
                     Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
                         if json_output {
-                            println!("{{\"error\": \"Session not found\", \"session_id\": \"{}\"}}", id);
+                            println!(
+                                "{{\"error\": \"Session not found\", \"session_id\": \"{}\"}}",
+                                id
+                            );
                         } else {
                             println!("{} Session {} not found on the API server.", "✗".red(), id);
                             println!(
@@ -2069,7 +2080,11 @@ async fn async_main() -> anyhow::Result<()> {
                     }
                     Ok(resp) => {
                         if json_output {
-                            println!("{{\"error\": \"API returned status {}\", \"session_id\": \"{}\"}}", resp.status(), id);
+                            println!(
+                                "{{\"error\": \"API returned status {}\", \"session_id\": \"{}\"}}",
+                                resp.status(),
+                                id
+                            );
                         } else {
                             println!(
                                 "{} API server returned status {}",
@@ -2080,7 +2095,10 @@ async fn async_main() -> anyhow::Result<()> {
                     }
                     Err(e) if e.is_connect() => {
                         if json_output {
-                            println!("{{\"error\": \"Cannot reach API server\", \"url\": \"{}\"}}", api_url);
+                            println!(
+                                "{{\"error\": \"Cannot reach API server\", \"url\": \"{}\"}}",
+                                api_url
+                            );
                         } else {
                             println!("{} Cannot reach API server at {}", "✗".red(), api_url);
                             println!("  Start it with: {}", "praxis server".cyan());
@@ -2110,8 +2128,7 @@ async fn async_main() -> anyhow::Result<()> {
 
                 match client.get(&events_url).send().await {
                     Ok(resp) if resp.status().is_success() => {
-                        let events: Vec<serde_json::Value> =
-                            resp.json().await.unwrap_or_default();
+                        let events: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
                         if events.is_empty() {
                             println!("{} No events found for session {}", "→".cyan(), id);
                             std::process::exit(0);
@@ -2143,14 +2160,10 @@ async fn async_main() -> anyhow::Result<()> {
                                     .skip(11)
                                     .take(8)
                                     .collect();
-                                let event_type = event
-                                    .get("type")
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("?");
-                                let version = event
-                                    .get("version")
-                                    .and_then(|v| v.as_i64())
-                                    .unwrap_or(0);
+                                let event_type =
+                                    event.get("type").and_then(|t| t.as_str()).unwrap_or("?");
+                                let version =
+                                    event.get("version").and_then(|v| v.as_i64()).unwrap_or(0);
                                 println!("  {} {} {}", time.dimmed(), event_type.cyan(), version);
                                 if let Some(payload) = event.get("payload")
                                     && let Ok(pretty) = serde_json::to_string_pretty(payload)
@@ -2346,7 +2359,8 @@ async fn async_main() -> anyhow::Result<()> {
                                 );
                                 println!("{}", "─".repeat(80).dimmed());
                                 for change in changes {
-                                    let seq = change.get("seq").and_then(|s| s.as_i64()).unwrap_or(0);
+                                    let seq =
+                                        change.get("seq").and_then(|s| s.as_i64()).unwrap_or(0);
                                     let desc = change
                                         .get("description")
                                         .and_then(|d| d.as_str())
@@ -2405,7 +2419,9 @@ async fn async_main() -> anyhow::Result<()> {
                 let config = load_project_config(None);
                 if config.providers.is_empty() {
                     if json_output {
-                        println!("{{\"providers\": [], \"supported\": [\"openai\", \"anthropic\", \"google\", \"custom\"]}}");
+                        println!(
+                            "{{\"providers\": [], \"supported\": [\"openai\", \"anthropic\", \"google\", \"custom\"]}}"
+                        );
                     } else {
                         println!("{} No providers configured", "→".cyan());
                         println!(
@@ -4301,7 +4317,10 @@ async fn logs_local(id: &str, tail: bool, json: bool) {
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&json_events).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_events).unwrap_or_default()
+        );
     } else {
         let mut display_events: Vec<_> = if tail {
             events.iter().rev().take(50).collect()
@@ -4321,7 +4340,12 @@ async fn logs_local(id: &str, tail: bool, json: bool) {
         println!("{}", "─".repeat(80));
         for event in &display_events {
             let time: String = event.created_at.chars().skip(11).take(8).collect();
-            println!("  {} {} {}", time.dimmed(), event.event_type.cyan(), event.version);
+            println!(
+                "  {} {} {}",
+                time.dimmed(),
+                event.event_type.cyan(),
+                event.version
+            );
             if let Ok(pretty) = serde_json::to_string_pretty(&event.payload) {
                 for line in pretty.lines().take(3) {
                     println!("    {}", line.dimmed());
