@@ -48,6 +48,16 @@ pub struct AgentFrontmatter {
     pub max_depth: u8,
     #[serde(default)]
     pub can_spawn: Vec<String>,
+    /// Maximum number of sub-agents this agent can spawn per turn (0 = no
+    /// limit). When the parent emits more `DELEGATE:` lines than this in a
+    /// single output, only the first `max_sub_agents` are executed; the rest
+    /// are logged and skipped. Defaults to 3.
+    #[serde(default = "default_max_sub_agents")]
+    pub max_sub_agents: u32,
+}
+
+fn default_max_sub_agents() -> u32 {
+    3
 }
 
 fn default_model() -> String {
@@ -78,6 +88,7 @@ impl Default for AgentFrontmatter {
             max_turns: default_max_turns(),
             max_depth: default_max_depth(),
             can_spawn: Vec::new(),
+            max_sub_agents: default_max_sub_agents(),
         }
     }
 }
@@ -114,6 +125,10 @@ impl AgentDefinition {
     }
     pub fn max_turns(&self) -> u32 {
         self.frontmatter.max_turns
+    }
+    /// Maximum sub-agents this agent can spawn per turn (0 = no limit).
+    pub fn max_sub_agents(&self) -> u32 {
+        self.frontmatter.max_sub_agents
     }
 
     /// Can this agent delegate to subagents?

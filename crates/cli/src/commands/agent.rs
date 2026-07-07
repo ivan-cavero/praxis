@@ -54,6 +54,7 @@ fn serialize_agent_md(
         tools: tools.to_vec(),
         max_turns,
         max_depth,
+        max_sub_agents: 3,
         can_spawn: can_spawn.to_vec(),
     };
 

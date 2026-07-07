@@ -107,7 +107,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 - [x] Add skeleton loading states for MetricCard, tables, agent grid
 - [x] Add micro-animations: hover states, button presses, status changes
 - [x] Add proper empty state illustration for each view
-- [ ] Add toast notifications for all async operations
+- [x] Add toast notifications for all async operations
 - [ ] Ensure consistent spacing, typography, color tokens everywhere
 
 ### 4B — Responsive & mobile

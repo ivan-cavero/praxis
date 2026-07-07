@@ -2,8 +2,10 @@
 import { ref, watch, onMounted } from 'vue'
 import { useApi, type Project } from '../../composables/useApi'
 import Icon from '../ui/Icon.vue'
+import { useToast } from '../../composables/useToast'
 
 const api = useApi()
+const toast = useToast()
 
 const projects = ref<Project[]>([])
 const selectedProjectId = ref<string | null>(null)
@@ -30,7 +32,6 @@ async function loadConfig() {
     configText.value = '# Failed to load config'
   }
 }
-
 async function saveConfig() {
   if (!selectedProjectId.value) return
   isSaving.value = true
@@ -39,8 +40,10 @@ async function saveConfig() {
     await api.updateProjectConfig(selectedProjectId.value, configText.value)
     originalConfig.value = configText.value
     saveMessage.value = 'Saved successfully'
+    toast.success('Project config saved')
   } catch (caughtError: any) {
     saveMessage.value = `Error: ${caughtError.message}`
+    toast.error(`Failed to save config: ${caughtError.message}`)
   } finally {
     isSaving.value = false
     setTimeout(() => { saveMessage.value = null }, 3000)
