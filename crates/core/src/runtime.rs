@@ -9,15 +9,14 @@ use crate::actor;
 use crate::bus::EventBus;
 use crate::completion::CompletionCriterion;
 use crate::config::ForgeConfig;
-use crate::{Result, InjectedMessage};
+use crate::{InjectedMessage, Result};
 
+use praxis_agent_traits::persistence::EventStore;
 use praxis_mcp_host::McpHost;
 use praxis_memory::embedding::EmbeddingService;
 use praxis_memory::episodic::{EpisodicMemory, SqliteBackend};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use praxis_agent_traits::persistence::EventStore;
-
 
 /// The central runtime that manages the entire system.
 pub struct CoreRuntime {

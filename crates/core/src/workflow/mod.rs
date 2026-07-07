@@ -1,8 +1,16 @@
 //! Workflow definitions: goal-to-phase mapping, agent assignment.
+//!
+//! - [`GoalEngine`]: resolves which workflow a goal uses.
+//! - [`WorkflowEngine`]: drives the phase loop for a named workflow.
+//! - [`GateOutcome`]: gate pass/fail result used for conditional branching.
 
 pub mod goal;
-#[allow(clippy::module_inception)]
 pub mod workflow;
 
-pub use goal::*;
-pub use workflow::*;
+pub use goal::GoalEngine;
+pub use workflow::{GateOutcome, WorkflowEngine, parse_phase};
+
+// Re-export shared config types for convenience.
+pub use praxis_shared::config::{
+    BranchCondition, WorkflowBranch, WorkflowDefinition, WorkflowPhase,
+};

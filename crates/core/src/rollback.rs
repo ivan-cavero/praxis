@@ -198,11 +198,7 @@ fn git_head(dir: &Path) -> Option<String> {
         return None;
     }
     let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if hash.is_empty() {
-        None
-    } else {
-        Some(hash)
-    }
+    if hash.is_empty() { None } else { Some(hash) }
 }
 
 /// Get the uncommitted working-tree diff (`git diff HEAD`), or `None` if not
@@ -284,7 +280,9 @@ mod tests {
 
         // Verify files are back to baseline state.
         assert_eq!(
-            std::fs::read_to_string(tmp.join("a.txt")).unwrap().trim_end(),
+            std::fs::read_to_string(tmp.join("a.txt"))
+                .unwrap()
+                .trim_end(),
             "original"
         );
         assert!(!tmp.join("b.txt").exists());
@@ -317,7 +315,9 @@ mod tests {
         // Restore should bring back v2-uncommitted.
         restore_baseline(&store, sid, &tmp).expect("restore");
         assert_eq!(
-            std::fs::read_to_string(tmp.join("a.txt")).unwrap().trim_end(),
+            std::fs::read_to_string(tmp.join("a.txt"))
+                .unwrap()
+                .trim_end(),
             "v2-uncommitted"
         );
 

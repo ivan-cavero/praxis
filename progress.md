@@ -105,7 +105,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 ### 4A — Visual polish
 - [x] Add smooth page transitions (Vue <Transition>) between all views
 - [x] Add skeleton loading states for MetricCard, tables, agent grid
-- [ ] Add micro-animations: hover states, button presses, status changes
+- [x] Add micro-animations: hover states, button presses, status changes
 - [ ] Add proper empty state illustration for each view
 - [ ] Add toast notifications for all async operations
 - [ ] Ensure consistent spacing, typography, color tokens everywhere

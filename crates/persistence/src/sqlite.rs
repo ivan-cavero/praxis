@@ -204,7 +204,10 @@ impl SqliteEventStore {
     /// Called at `run_goal` start so the session's file changes can be reverted.
     /// Overwrites any prior baseline for the same session (idempotent re-capture).
     pub fn save_session_baseline(&self, baseline: &SessionBaseline) -> Result<(), String> {
-        let _lock = self.write_lock.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let _lock = self
+            .write_lock
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let conn = self.conn()?;
         conn.execute(
             "INSERT OR REPLACE INTO session_baselines

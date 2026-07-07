@@ -253,7 +253,9 @@ impl ApiServer {
                             output,
                         } = event.kind
                         {
-                            let mut counters = token_counters_listener.write().unwrap();
+                            let mut counters = token_counters_listener
+                                .write()
+                                .expect("RwLock not poisoned");
                             counters.total_input += input as u64;
                             counters.total_output += output as u64;
                             *counters.by_provider.entry(provider).or_insert(0) +=
@@ -651,7 +653,7 @@ pub mod vault {
             .map(|provider| {
                 let has_key = state.vault.get(&provider).unwrap_or_default().is_some();
                 let key_masked = if has_key {
-                    let key = state.vault.get(&provider).unwrap().unwrap();
+                    let key = state.vault.get(&provider).expect("has_key verified above").expect("vault value present");
                     if key.len() > 8 {
                         format!("{}...{}", &key[..4], &key[key.len() - 4..])
                     } else {
@@ -1229,7 +1231,7 @@ pub mod sessions {
     pub async fn list(State(state): State<Arc<AppState>>) -> Json<Vec<SessionEntry>> {
         // Collect sessions from the in-memory registry (same-process active sessions)
         let mut all: Vec<SessionEntry> = {
-            let registry = state.session_registry.read().unwrap();
+            let registry = state.session_registry.read().expect("RwLock not poisoned");
             registry.clone()
         };
 
@@ -1279,7 +1281,7 @@ pub mod sessions {
     ) -> Result<Json<SessionEntry>, StatusCode> {
         // First check the in-memory registry
         {
-            let sessions = state.session_registry.read().unwrap();
+            let sessions = state.session_registry.read().expect("RwLock not poisoned");
             if let Some(session) = sessions.iter().find(|s| s.id == id) {
                 return Ok(Json(session.clone()));
             }
@@ -1394,7 +1396,7 @@ pub mod sessions {
 
         // Register the active run
         {
-            let mut runs = state.active_runs.write().unwrap();
+            let mut runs = state.active_runs.write().expect("RwLock not poisoned");
             runs.insert(
                 session_id_str.clone(),
                 ActiveRun {
@@ -1409,7 +1411,7 @@ pub mod sessions {
 
         // Register in the session registry
         {
-            let mut registry = state.session_registry.write().unwrap();
+            let mut registry = state.session_registry.write().expect("RwLock not poisoned");
             registry.push(SessionEntry {
                 id: session_id_str.clone(),
                 project: project_name.clone(),
@@ -1437,7 +1439,9 @@ pub mod sessions {
                     Ok(_event) => {
                         // Check if this session is still active; if not, stop listening.
                         let still_active = {
-                            let runs = active_runs_for_listener.read().expect("RwLock not poisoned");
+                            let runs = active_runs_for_listener
+                                .read()
+                                .expect("RwLock not poisoned");
                             runs.contains_key(&sid_for_listener)
                         };
                         if !still_active {
@@ -1680,11 +1684,9 @@ pub mod sessions {
             return Err(StatusCode::NOT_FOUND);
         };
 
-        let sid = uuid::Uuid::parse_str(&id)
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let sid = uuid::Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let working_dir =
-            std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let working_dir = std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         match crate::rollback::restore_baseline(store, sid, &working_dir) {
             Ok(message) => Ok(Json(serde_json::json!({
@@ -1710,11 +1712,9 @@ pub mod sessions {
             return Err(StatusCode::NOT_FOUND);
         };
 
-        let sid = uuid::Uuid::parse_str(&id)
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let sid = uuid::Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let working_dir =
-            std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let working_dir = std::env::current_dir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         match crate::rollback::diff_from_baseline(store, sid, &working_dir) {
             Ok(diff_text) => Ok(Json(serde_json::json!({
@@ -1934,7 +1934,11 @@ pub mod routes {
     pub async fn context_metrics(
         State(state): State<Arc<AppState>>,
     ) -> Json<ContextMetricsResponse> {
-        let session_count = state.session_registry.read().expect("RwLock not poisoned").len() as u32;
+        let session_count = state
+            .session_registry
+            .read()
+            .expect("RwLock not poisoned")
+            .len() as u32;
 
         // Read context pressure from the most recent checkpoint
         let (avg_pressure, max_pressure) = if let Some(store) = &state.event_store {
@@ -2038,7 +2042,11 @@ pub mod routes {
         let uptime = chrono::Utc::now()
             .signed_duration_since(state.started_at)
             .num_seconds() as u64;
-        let session_count = state.session_registry.read().expect("RwLock not poisoned").len() as u32;
+        let session_count = state
+            .session_registry
+            .read()
+            .expect("RwLock not poisoned")
+            .len() as u32;
         let total_tokens = {
             let counters = state.token_counters.read().expect("RwLock not poisoned");
             counters.total_input + counters.total_output

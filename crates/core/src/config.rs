@@ -5,8 +5,8 @@
 //! two are unified via [`ForgeConfig::from_project_config`], the single
 //! source of truth for the mapping.
 
-use crate::orchestrator;
 use crate::r#loop::Limits;
+use crate::orchestrator;
 use crate::{CoreError, Result};
 
 // ─── Config ───────────────────────────────────────────────────
@@ -20,6 +20,10 @@ pub struct ForgeConfig {
     pub providers: std::collections::HashMap<String, ProviderConfig>,
     /// Hard limits from [limits] section. Applied to LoopController in run_goal.
     pub limits: Option<Limits>,
+    /// Named workflow definitions from [[workflows]] sections.
+    /// Goals reference a workflow by name. When empty, the default linear
+    /// phase sequence is used.
+    pub workflows: Vec<praxis_shared::config::WorkflowDefinition>,
 }
 
 /// Provider configuration from forge.toml [providers.*].
@@ -55,6 +59,7 @@ impl ForgeConfig {
             mcp_servers: Vec::new(),
             providers: std::collections::HashMap::new(),
             limits: None,
+            workflows: Vec::new(),
         }
     }
 }
@@ -179,6 +184,7 @@ impl ForgeConfig {
             mcp_servers,
             providers,
             limits,
+            workflows: pc.workflows.unwrap_or_default(),
         }
     }
 }

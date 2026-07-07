@@ -240,7 +240,10 @@ pub async fn create_pairing(
     let host = "localhost"; // We'll try to be smarter in Fase B
 
     let (pair_code, path) = pairing_state.generate().await;
-    let pc = pairing_state.get(&pair_code).await.unwrap();
+    let pc = pairing_state
+        .get(&pair_code)
+        .await
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let qr_url = format!("http://{host}:{}{path}", state.port);
 

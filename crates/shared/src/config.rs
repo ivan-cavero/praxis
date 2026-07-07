@@ -13,6 +13,10 @@ pub struct ProjectConfig {
     pub limits: Option<LimitsConfig>,
     pub mcp_servers: Option<Vec<McpServerConfig>>,
     pub storage: Option<StorageConfig>,
+    /// Named workflow definitions. Goals reference a workflow by name via
+    /// the `workflow` field. When absent, the default linear phase sequence
+    /// (Planning → Designing → Implementing → Reviewing → Testing → …) is used.
+    pub workflows: Option<Vec<WorkflowDefinition>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,4 +101,74 @@ pub struct RemoteStorageConfig {
     pub postgres_url: Option<String>,
     pub redis_url: Option<String>,
     pub qdrant_url: Option<String>,
+}
+
+// ─── Workflow Definitions ──────────────────────────────────────
+
+/// A named workflow: an ordered list of phases with optional conditional
+/// branching based on gate results.
+///
+/// Example TOML:
+/// ```toml
+/// [[workflows]]
+/// name = "standard"
+/// phases = [
+///   { name = "Planning", agents = ["architect"] },
+///   { name = "Implementing", agents = ["coder"] },
+///   { name = "Reviewing", agents = ["reviewer"], gate = "review" },
+///   { name = "Testing", agents = ["tester"], gate = "tests" },
+/// ]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowDefinition {
+    /// Unique name referenced by `goal.workflow`.
+    pub name: String,
+    /// Ordered phase sequence. The first phase is the entry point.
+    pub phases: Vec<WorkflowPhase>,
+}
+
+/// A single phase within a workflow.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPhase {
+    /// Phase name — must match a `Phase` variant (e.g. "Planning", "Implementing").
+    pub name: String,
+    /// Agent role names to run in this phase.
+    #[serde(default)]
+    pub agents: Vec<String>,
+    /// Gate name guarding entry to this phase. The gate must pass before
+    /// the phase executes.
+    pub gate: Option<String>,
+    /// Branch rules evaluated after this phase completes. The first matching
+    /// branch determines the next phase. If none match, the next phase in the
+    /// list is used.
+    #[serde(default)]
+    pub branches: Vec<WorkflowBranch>,
+    /// Run this phase's agents in parallel (default: false = sequential).
+    #[serde(default)]
+    pub parallel: bool,
+}
+
+/// A conditional branch from one phase to another.
+///
+/// The `on` condition is evaluated against the gate result of the phase
+/// that owns this branch. If `on` is `GatePassed` and the phase's gate
+/// passed, the workflow transitions to `to`. If `on` is `GateFailed` and
+/// the gate failed, it transitions to `to`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowBranch {
+    /// Condition to evaluate.
+    pub on: BranchCondition,
+    /// Target phase name.
+    pub to: String,
+}
+
+/// Condition for a workflow branch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BranchCondition {
+    /// Branch taken when the phase's gate passed.
+    GatePassed,
+    /// Branch taken when the phase's gate failed.
+    GateFailed,
+    /// Branch taken unconditionally (always).
+    Always,
 }

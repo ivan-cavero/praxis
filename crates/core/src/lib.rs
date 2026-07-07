@@ -36,14 +36,14 @@ pub use completion::{
 };
 pub use config::{ForgeConfig, McpServerConfig, ProviderConfig, load_forge_config};
 pub use drift::*;
-pub use pipeline::GoalResult;
-#[cfg(test)]
-pub(crate) use pipeline::{consolidate_feedback, extract_review_results, parse_delegate_requests};
 pub use r#loop::*;
 pub use machine::*;
 pub use orchestrator::roles::ResolvedRole as AgentRoleResolved;
 pub use orchestrator::{GoalConfig, ResolvedRole, RoleConfig, RoleOverride};
 pub use orchestrator::{Task, TaskResult, TaskStatus};
+pub use pipeline::GoalResult;
+#[cfg(test)]
+pub(crate) use pipeline::{consolidate_feedback, extract_review_results, parse_delegate_requests};
 pub use runtime::CoreRuntime;
 pub use workflow::*;
 

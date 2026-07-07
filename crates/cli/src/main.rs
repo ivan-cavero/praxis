@@ -273,7 +273,9 @@ fn add_provider_to_project_config(
             .iter()
             .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
             .ok_or_else(|| format!("Project '{}' not found", name))?,
-        None => projects.last().ok_or("No projects configured".to_string())?,
+        None => projects
+            .last()
+            .ok_or("No projects configured".to_string())?,
     };
 
     let proj_name = project
@@ -2044,8 +2046,7 @@ async fn main() -> anyhow::Result<()> {
 
                 match client.post(&rollback_url).send().await {
                     Ok(resp) if resp.status().is_success() => {
-                        let body: serde_json::Value =
-                            resp.json().await.unwrap_or_default();
+                        let body: serde_json::Value = resp.json().await.unwrap_or_default();
                         println!(
                             "{} {}",
                             "✓".green(),
@@ -2085,20 +2086,12 @@ async fn main() -> anyhow::Result<()> {
 
                 match client.get(&diff_url).send().await {
                     Ok(resp) if resp.status().is_success() => {
-                        let body: serde_json::Value =
-                            resp.json().await.unwrap_or_default();
-                        let diff_text = body
-                            .get("diff")
-                            .and_then(|d| d.as_str())
-                            .unwrap_or("");
+                        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                        let diff_text = body.get("diff").and_then(|d| d.as_str()).unwrap_or("");
                         if diff_text.is_empty() {
                             println!("{} No changes since baseline.", "→".cyan());
                         } else {
-                            println!(
-                                "{} Diff from baseline for session {}",
-                                "→".cyan(),
-                                id
-                            );
+                            println!("{} Diff from baseline for session {}", "→".cyan(), id);
                             println!("{}", "─".repeat(80));
                             println!("{}", diff_text);
                         }
@@ -2902,7 +2895,10 @@ async fn main() -> anyhow::Result<()> {
                         agent
                     );
                     let path = injections_dir.join(&filename);
-                    match std::fs::write(&path, serde_json::to_string_pretty(&injection).map_err(|e| anyhow::anyhow!(e))?) {
+                    match std::fs::write(
+                        &path,
+                        serde_json::to_string_pretty(&injection).map_err(|e| anyhow::anyhow!(e))?,
+                    ) {
                         Ok(()) => {
                             println!(
                                 "{} Injection written for agent '{}'",
@@ -3128,8 +3124,10 @@ async fn main() -> anyhow::Result<()> {
 
             // For plan mode, we run the goal but with a manual completion criterion
             // so it stops after the first Planning + Designing iteration.
-            runtime = runtime
-                .with_completion(praxis_core::CompletionCriterion::from_string("manual").expect("manual is a valid completion criterion"));
+            runtime = runtime.with_completion(
+                praxis_core::CompletionCriterion::from_string("manual")
+                    .expect("manual is a valid completion criterion"),
+            );
 
             println!("  {} Running Planning + Designing phases...", "→".dimmed());
 
@@ -3406,7 +3404,9 @@ async fn main() -> anyhow::Result<()> {
             println!();
 
             // Pick the most recent session (last in list)
-            let session_id = session_ids.last().expect("session_ids non-empty (checked above)");
+            let session_id = session_ids
+                .last()
+                .expect("session_ids non-empty (checked above)");
             println!(
                 "{} Watching most recent session: {}",
                 "→".cyan(),

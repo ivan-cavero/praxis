@@ -360,6 +360,14 @@ onUnmounted(() => {
 .session-row:hover {
   background: var(--bg-hover);
 }
+.row-chevron {
+  transition: all var(--transition-fast);
+  opacity: 0.4;
+}
+.session-row:hover .row-chevron {
+  opacity: 0.8;
+  transform: translateX(3px);
+}
 
 .session-row-title {
   font-size: 14px;
@@ -385,10 +393,6 @@ onUnmounted(() => {
   gap: var(--space-3);
 }
 
-.row-chevron {
-  color: var(--text-muted);
-  opacity: 0.4;
-}
 .skeleton-row {
   position: relative;
   overflow: hidden;
@@ -433,6 +437,15 @@ onUnmounted(() => {
 
 .agent-card:hover {
   border-color: var(--border-default);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.agent-avatar {
+  transition: all var(--transition-fast);
+}
+.agent-card:hover .agent-avatar {
+  transform: scale(1.05);
+  background: var(--bg-hover);
 }
 
 .agent-card-header {

@@ -676,6 +676,7 @@ function handleLogin(token: string) {
 .sidebar-gear-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+  transform: rotate(45deg);
 }
 
 /* ─── Update Banner ──────────────────────────────────────────── */

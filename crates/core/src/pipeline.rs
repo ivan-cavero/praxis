@@ -10,10 +10,10 @@
 
 use crate::completion::{self, default_coding_criterion};
 use crate::config::{ForgeConfig, load_forge_config};
+use crate::r#loop;
 use crate::machine;
 use crate::orchestrator;
 use crate::orchestrator::TaskResult;
-use crate::r#loop;
 use crate::runtime::CoreRuntime;
 use crate::{CoreError, InjectedMessage, Result};
 
@@ -22,7 +22,6 @@ use praxis_vault::VaultService;
 use std::sync::Arc;
 
 use praxis_memory::embedding::EmbeddingService;
-
 
 /// Result of executing tool calls from agent output.
 struct ToolExecResult {
@@ -39,7 +38,6 @@ struct ToolCallInfo {
     duration_ms: u64,
     success: bool,
 }
-
 
 /// Result of running a goal through the pipeline.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1189,13 +1187,12 @@ impl CoreRuntime {
 
         // Assign a session ID
         self.session_id = Some(uuid::Uuid::new_v4());
-        self.propagate_session_to_memory(self.session_id.unwrap());
+        self.propagate_session_to_memory(self.session_id.expect("session_id set above"));
         // Capture a git rollback baseline (HEAD commit + uncommitted diff).
         // Best-effort: skipped silently if no event store or not in a git repo.
         if let Some(store) = &self.event_store
             && let Some(cwd) = std::env::current_dir().ok()
-            && let Err(e) =
-                crate::rollback::capture_baseline(store, self.session_id.unwrap(), &cwd)
+            && let Err(e) = crate::rollback::capture_baseline(store, self.session_id.unwrap(), &cwd)
         {
             tracing::warn!("Failed to capture rollback baseline: {}", e);
         }
@@ -2449,7 +2446,6 @@ impl CoreRuntime {
             Gate::new("test.pass", GateEvaluator::AllAgentsPass, 3),
         );
     }
-
 }
 
 /// Estimate the USD cost of a token usage based on provider and model.
@@ -2692,4 +2688,3 @@ pub(crate) fn consolidate_feedback(results: &[orchestrator::TaskResult]) -> Stri
         )
     }
 }
-

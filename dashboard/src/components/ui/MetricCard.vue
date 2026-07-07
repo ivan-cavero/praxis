@@ -54,6 +54,13 @@ const { label, value, sub, color = 'green', icon, skeleton = false } = definePro
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
+.metric-icon {
+  transition: all var(--transition-fast);
+}
+.metric-card:hover .metric-icon {
+  opacity: 1;
+  transform: scale(1.1);
+}
 
 .metric-top {
   display: flex;
@@ -67,15 +74,6 @@ const { label, value, sub, color = 'green', icon, skeleton = false } = definePro
   color: var(--text-muted);
 }
 
-.metric-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-}
 
 .metric-icon.green { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
 .metric-icon.emerald { color: #10b981; background: rgba(16, 185, 129, 0.1); }

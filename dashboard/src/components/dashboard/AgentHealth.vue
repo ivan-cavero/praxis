@@ -112,10 +112,12 @@ onUnmounted(() => {
   font-size: 12px;
   align-items: center;
   border-bottom: 1px solid var(--border-subtle);
+  transition: all var(--transition-fast);
+  cursor: default;
 }
-
-.health-row:last-child {
-  border-bottom: none;
+.health-row:hover {
+  background: var(--bg-hover);
+  transform: translateX(2px);
 }
 
 .health-row.header {
@@ -170,6 +172,12 @@ onUnmounted(() => {
   background: var(--bg-elevated);
   color: var(--text-muted);
   margin-right: var(--space-1);
+  transition: all var(--transition-fast);
+}
+.tool-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  transform: scale(1.05);
 }
 
 .health-empty {

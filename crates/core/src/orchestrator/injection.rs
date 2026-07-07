@@ -145,7 +145,10 @@ impl InjectionChannel {
         }
 
         if let Some(idx) = best_idx {
-            let mut injection = self.pending.remove(idx).unwrap();
+            let mut injection = self
+                .pending
+                .remove(idx)
+                .expect("idx found in pending above");
             injection.processed = true;
             self.history.push(injection.clone());
             Some(injection)
