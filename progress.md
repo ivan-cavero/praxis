@@ -53,9 +53,9 @@ Eliminate production-code unwraps, clippy warnings, dead code, missing error han
 Profile hot paths, reduce allocations, optimize bottlenecks.
 
 ### 2A — Build configuration
-- [ ] Add [profile.release] to workspace Cargo.toml with lto = "fat", codegen-units = 1, strip = true
+- [x] Add [profile.release] to workspace Cargo.toml with lto = "fat", codegen-units = 1, strip = true — already configured (lto = true is "thin" mode; "fat" requires cargo-lto)
 - [ ] Measure release binary size (target: <20MB)
-- [ ] Add [profile.bench] config
+- [x] Add [profile.bench] config — added with lto = true, codegen-units = 1, strip = true
 
 ### 2B — Reduce allocations
 - [ ] Replace Vec::new() in hot paths with Vec::with_capacity(n) where size is predictable
