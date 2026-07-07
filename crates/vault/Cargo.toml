@@ -17,6 +17,7 @@ uuid.workspace = true
 # Encryption for secure credential storage
 aes-gcm = "0.11.0"
 base64 = "0.22"
+rand.workspace = true
 sha2 = "0.10"
 
 [dev-dependencies]

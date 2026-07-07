@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use aes_gcm::{Aes256Gcm, Key, KeyInit, aead::Aead};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use rand::TryRng;
 use sha2::{Digest, Sha256};
 
 /// Master key derived from a password using SHA-256 KDF.
@@ -19,22 +20,24 @@ fn derive_key(password: &str) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Encrypt a value using AES-256-GCM with a random IV.
-#[allow(deprecated)]
+/// Encrypt a value using AES-256-GCM with a random 12-byte nonce.
 fn encrypt(value: &str, key: &[u8; 32]) -> Result<String, VaultError> {
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-    let nonce = aes_gcm::Nonce::from([0u8; 12]);
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(*key));
+    let mut nonce_arr = [0u8; 12];
+    rand::rng()
+        .try_fill_bytes(&mut nonce_arr)
+        .expect("rng fill failed");
+    let nonce = aes_gcm::Nonce::from(nonce_arr);
     let ciphertext = cipher
         .encrypt(&nonce, value.as_bytes())
         .map_err(|e| VaultError::EncryptionError(e.to_string()))?;
-    // Combine IV + ciphertext and base64 encode
+    // Combine nonce + ciphertext and base64 encode
     let mut data = nonce.to_vec();
     data.extend_from_slice(&ciphertext);
     Ok(STANDARD.encode(&data))
 }
 
 /// Decrypt a base64-encoded AES-256-GCM ciphertext.
-#[allow(deprecated)]
 fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let data = STANDARD
         .decode(encrypted)
@@ -42,11 +45,12 @@ fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     if data.len() < 12 {
         return Err(VaultError::DecryptionError("Data too short".to_string()));
     }
-    let nonce = aes_gcm::Nonce::from_slice(&data[..12]);
+    let nonce: [u8; 12] = data[..12].try_into().expect("checked length above");
+    let nonce = aes_gcm::Nonce::from(nonce);
     let ciphertext = &data[12..];
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(*key));
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|e| VaultError::DecryptionError(e.to_string()))?;
     String::from_utf8(plaintext).map_err(|e| VaultError::DecryptionError(e.to_string()))
 }
