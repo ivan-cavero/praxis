@@ -105,6 +105,9 @@ const navItems = [
   { name: 'pipeline', label: 'Pipeline', icon: 'chart-line', route: '/pipeline' },
   { name: 'sessions', label: 'Sessions', icon: 'server', route: '/sessions' },
   { name: 'agents', label: 'Agents', icon: 'robot', route: '/agents' },
+  { name: 'agent-debug', label: 'Debug', icon: 'code', route: '/agent-debug' },
+  { name: 'memory', label: 'Memory', icon: 'database', route: '/memory' },
+  { name: 'logs', label: 'Logs', icon: 'list', route: '/logs' },
   { name: 'cost-analysis', label: 'Cost', icon: 'chart', route: '/cost-analysis' },
 ]
 

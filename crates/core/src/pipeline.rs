@@ -1238,7 +1238,7 @@ impl CoreRuntime {
             .advance(machine::phase::Phase::Planning)
             .map_err(CoreError::StateMachine)?;
 
-        let mut results = Vec::new();
+        let mut results: Vec<_> = Vec::with_capacity(8);
         let mut feedback = String::new();
         let mut current_phase = machine::phase::Phase::Planning;
 
@@ -2209,7 +2209,7 @@ impl CoreRuntime {
 
         self.loop_controller.start();
 
-        let mut results = Vec::new();
+        let mut results: Vec<_> = Vec::with_capacity(8);
         let mut feedback = String::new();
         let mut current_phase = saved_phase;
 

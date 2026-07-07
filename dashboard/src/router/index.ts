@@ -38,7 +38,22 @@ const router = createRouter({
       name: 'project-chat',
       component: () => import('../views/ProjectChatView.vue'),
     },
+    {
+      path: '/agent-debug',
+      name: 'agent-debug',
+      component: () => import('../views/AgentDebugView.vue'),
+    },
     // 404 catch-all
+    {
+      path: '/memory',
+      name: 'memory',
+      component: () => import('../views/MemoryBrowserView.vue'),
+    },
+    {
+      path: '/logs',
+      name: 'logs',
+      component: () => import('../views/LogsView.vue'),
+    },
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',

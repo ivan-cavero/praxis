@@ -223,10 +223,10 @@ Complete CLI implementation and UX.
 New dashboard views.
 
 ### 8A — New views
-- [ ] Enhance CostAnalysisView with filtering + date ranges
-- [ ] AgentDebugView — raw messages, token breakdown
-- [ ] MemoryBrowserView — browse memory layers
-- [ ] LogsView — real-time log stream in browser
+- [x] Enhance CostAnalysisView with filtering + date ranges
+- [x] AgentDebugView — raw messages, token breakdown
+- [x] MemoryBrowserView — browse memory layers
+- [x] LogsView — real-time log stream in browser
 
 ### 8B — Dashboard enhancements
 - [ ] Session comparison (side-by-side)

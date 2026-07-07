@@ -7,6 +7,7 @@
  * - Per-session breakdown (tokens, cost, duration, $/iteration)
  * - Cost by project
  * - Efficiency metrics (tokens per iteration, cost per agent)
+ * - Filtering by project and date range
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi, type SessionEntry } from '../composables/useApi'
@@ -19,14 +20,42 @@ const sessions = ref<SessionEntry[]>([])
 const isLoading = ref(true)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-async function loadData() {
+// ─── Filters ────────────────────────────────────────────────────
+type DateRange = '24h' | '7d' | '30d' | 'all'
+const selectedProject = ref<string>('all')
+const selectedDateRange = ref<DateRange>('all')
+
+const projectOptions = computed(() => {
+  const projects = new Set(sessions.value.map(s => s.project).filter(Boolean))
+  return [...projects].sort()
+})
+
+const dateRangeMs: Record<DateRange, number> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+  'all': 0,
+}
+
+const filteredSessions = computed(() => {
+  const now = Date.now()
+  const cutoff = selectedDateRange.value === 'all' ? 0 : now - dateRangeMs[selectedDateRange.value]
+  return sessions.value.filter(s => {
+    if (selectedProject.value !== 'all' && s.project !== selectedProject.value) return false
+    if (cutoff > 0) {
+      const sessionTime = new Date(s.started_at).getTime()
+      if (sessionTime < cutoff) return false
+    }
+    return true
+  })
+})
+
+function loadData() {
   isLoading.value = true
-  try {
-    sessions.value = await api.getSessions()
-  } catch {
-    // Background polling — don't spam toasts
-  }
-  isLoading.value = false
+  api.getSessions()
+    .then(data => { sessions.value = data })
+    .catch(() => { /* Background polling — don't spam toasts */ })
+    .finally(() => { isLoading.value = false })
 }
 
 onMounted(() => {
@@ -38,18 +67,18 @@ onUnmounted(() => {
   if (refreshInterval) clearInterval(refreshInterval)
 })
 
-// ─── Computed metrics ────────────────────────────────────────────
+// ─── Computed metrics (from filtered sessions) ─────────────────
 
 const totalTokens = computed(() =>
-  sessions.value.reduce((sum, s) => sum + (s.tokens_used || 0), 0)
+  filteredSessions.value.reduce((sum, s) => sum + (s.tokens_used || 0), 0)
 )
 
 const totalCost = computed(() =>
-  sessions.value.reduce((sum, s) => sum + (s.cost_usd || 0), 0)
+  filteredSessions.value.reduce((sum, s) => sum + (s.cost_usd || 0), 0)
 )
 
 const completedSessions = computed(() =>
-  sessions.value.filter(s => s.status === 'completed' || s.status === 'failed')
+  filteredSessions.value.filter(s => s.status === 'completed' || s.status === 'failed')
 )
 
 const avgTokensPerSession = computed(() => {
@@ -90,7 +119,7 @@ interface ProjectCost {
 
 const projectCosts = computed((): ProjectCost[] => {
   const map = new Map<string, ProjectCost>()
-  for (const s of sessions.value) {
+  for (const s of filteredSessions.value) {
     const existing = map.get(s.project) || {
       project: s.project,
       sessions: 0,
@@ -113,7 +142,7 @@ const projectCosts = computed((): ProjectCost[] => {
 // ─── Per-session breakdown ──────────────────────────────────────
 
 const sessionBreakdown = computed(() => {
-  return sessions.value
+  return filteredSessions.value
     .map(s => ({
       id: s.id,
       project: s.project,
@@ -145,10 +174,22 @@ function formatTokens(tokens: number): string {
   <div class="cost-analysis-view">
     <div class="cost-header">
       <h1 class="cost-title">Cost & Efficiency Analysis</h1>
-      <button class="refresh-btn" @click="loadData" :disabled="isLoading" aria-label="Refresh data">
-        <Icon v-if="isLoading" name="refresh" :size="14" class="animate-spin" />
-        <Icon v-else name="refresh" :size="14" />
-      </button>
+      <div class="filter-bar">
+        <select v-model="selectedProject" class="filter-select" aria-label="Filter by project">
+          <option value="all">All Projects</option>
+          <option v-for="p in projectOptions" :key="p" :value="p">{{ p }}</option>
+        </select>
+        <select v-model="selectedDateRange" class="filter-select" aria-label="Filter by date range">
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="all">All time</option>
+        </select>
+        <button class="refresh-btn" @click="loadData" :disabled="isLoading" aria-label="Refresh data">
+          <Icon v-if="isLoading" name="refresh" :size="14" class="animate-spin" />
+          <Icon v-else name="refresh" :size="14" />
+        </button>
+      </div>
     </div>
 
     <!-- Summary metrics -->
@@ -255,6 +296,27 @@ function formatTokens(tokens: number): string {
   justify-content: space-between;
   margin-bottom: var(--space-4);
 }
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-select {
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.filter-select:hover { border-color: var(--text-muted); }
+.filter-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 
 .cost-title {
   font-size: 20px;
