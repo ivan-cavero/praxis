@@ -367,9 +367,11 @@ impl CoreRuntime {
         self
     }
 
-    /// Convenience: attach episodic memory with defaults (1000 chunks, no embedding).
+    /// Convenience: attach episodic memory with defaults (1000 chunks, no embedding)
+    /// and consolidated memory (100 summaries) with a SummarizerAgent.
     pub fn with_default_memory(self) -> Self {
         self.with_memory(EpisodicMemory::default_store(), None)
+            .with_consolidated_memory(100)
     }
 
     /// Attach consolidated memory and SummarizerAgent for long-term summarization.
