@@ -136,7 +136,7 @@ Beautiful, responsive, fast, delightful Vue 3 dashboard.
 - [x] Improve useWebSocket — connection health indicator
 - [ ] Add live agent status updates (pulsing dots)
 - [ ] Add real-time token counter animation
-- [ ] Add session event timeline (scrollable feed)
+- [x] Add session event timeline (scrollable feed)
 
 ---
 

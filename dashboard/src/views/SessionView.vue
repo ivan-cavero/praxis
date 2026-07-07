@@ -7,6 +7,7 @@ import { useToast } from '../composables/useToast'
 import Badge from '../components/ui/Badge.vue'
 import Icon from '../components/ui/Icon.vue'
 import LiveMonitorPanel from '../components/LiveMonitorPanel.vue'
+import SessionTimeline from '../components/SessionTimeline.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -240,6 +241,8 @@ onUnmounted(() => {
       </div>
 
       <!-- Live Monitor Panel (real-time WebSocket) -->
+      <!-- Session event timeline -->
+      <SessionTimeline :events="ws.events.value" :session-id="route.params.id as string" />
       <LiveMonitorPanel :session-id="route.params.id as string" />
 
       <!-- STATE.md viewer -->
