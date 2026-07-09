@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.7.0](https://github.com/ivan-cavero/praxis/compare/v0.6.0...v0.7.0) (2026-07-09)
+
+
+### Features
+
+* **ci:** add cargo audit, cargo deny, Playwright E2E, benchmark comparison ([5eb7ba7](https://github.com/ivan-cavero/praxis/commit/5eb7ba70860d32aa4beb992fd28f0f83507481d7))
+* **ci:** release automation — Docker GHCR + release-please changelog ([b66002b](https://github.com/ivan-cavero/praxis/commit/b66002bdcad5022929e2251a3ae37a5c8ddb710f))
+* **cli:** add --json output mode, progress bars, colored table output, fix stack overflow ([553c531](https://github.com/ivan-cavero/praxis/commit/553c531fc2a2c4526502c58579fe17c79e0c9b24))
+* **cli:** add completion, logs follow, and session export commands ([096cdee](https://github.com/ivan-cavero/praxis/commit/096cdeef4a041f7303932ebedc0ebadea295f939))
+* **cli:** implement provider test and context history commands ([17c5173](https://github.com/ivan-cavero/praxis/commit/17c51733027c0d5f7ae5a7134008278dcd76ad7a))
+* **cli:** make inject and session logs API-first with local fallback ([c0e226e](https://github.com/ivan-cavero/praxis/commit/c0e226eaaf5770267af2c56839c59f837e3be6e0))
+* **core:** add /api/health checks and /api/metrics unified endpoint ([7fbf789](https://github.com/ivan-cavero/praxis/commit/7fbf789594d4406fda7168781fb56e72842b1834))
+* **core:** add cross-model pathology verification ([c593085](https://github.com/ivan-cavero/praxis/commit/c5930854868468bd546cb14e598d95fef649ef0a))
+* **core:** connect model switching to ProviderRouter on drift recovery ([e4c8f6b](https://github.com/ivan-cavero/praxis/commit/e4c8f6b36f6ba9d59c5f80ccdea1ef91cc86cbce))
+* **core:** connect SlidingWindow + ContextManager to the loop ([9d82d92](https://github.com/ivan-cavero/praxis/commit/9d82d9223c1f949c175fd3bbc064eabdadaf9ca4))
+* **core:** generalize oscillation detection to cycles of any period ([525c40e](https://github.com/ivan-cavero/praxis/commit/525c40e73eb0d21801702fbc0e490ec9edb029bf))
+* **core:** session rollback via git baseline capture/restore ([f50a32e](https://github.com/ivan-cavero/praxis/commit/f50a32e1f842908252987b1ea668b07074a44bff))
+* **core:** TTL cleanup for episodic memory at session end ([dc8a033](https://github.com/ivan-cavero/praxis/commit/dc8a03315ad777f169deca487d9933779b01911f))
+* **core:** undo/redo for session file changes ([df2df91](https://github.com/ivan-cavero/praxis/commit/df2df91d54f7438050e87d528db61918c6b0be22))
+* **core:** workflow engine with conditional branching ([ad8bb06](https://github.com/ivan-cavero/praxis/commit/ad8bb06bbe99836374fd13f75b52ea3e04d2bb0d))
+* **dashboard:** add aria-label to all icon-only buttons for accessibility ([55cfd1d](https://github.com/ivan-cavero/praxis/commit/55cfd1d11959a9347584159d21d84b8647fbdced))
+* **dashboard:** add dual-dot WebSocket + API connection health indicator ([2c4e5f3](https://github.com/ivan-cavero/praxis/commit/2c4e5f3d3184522ad40c4a4259a7ca87e4e1819c))
+* **dashboard:** add focus-visible outlines for keyboard navigation accessibility ([2d02ebb](https://github.com/ivan-cavero/praxis/commit/2d02ebbf25bb4873d50b4e98dd09235312921c5b))
+* **dashboard:** add LogsView, MemoryBrowserView, AgentDebugView, enhance CostAnalysisView ([47584be](https://github.com/ivan-cavero/praxis/commit/47584bee99964997998dd3ef1686016634830162))
+* **dashboard:** add micro-animations for hover states, button presses, and status changes ([62b1f98](https://github.com/ivan-cavero/praxis/commit/62b1f98b673c5a2791fbf45b794fbdb4862b2843))
+* **dashboard:** add proper empty state illustrations with shared EmptyState component ([e41426f](https://github.com/ivan-cavero/praxis/commit/e41426f56e6d6e5dc0cf78bbf3724d75bcf6d97d))
+* **dashboard:** add pulsing dots to live agent log entries in SessionView ([40b9141](https://github.com/ivan-cavero/praxis/commit/40b9141f8e6fff48f89838a80512b8b5367dd534))
+* **dashboard:** add PWA support — service worker, manifest, push notifications ([b703b62](https://github.com/ivan-cavero/praxis/commit/b703b62d791d629e01526cb5bee606400e31ed82))
+* **dashboard:** add real-time token counter animation with green flash pulse ([076851f](https://github.com/ivan-cavero/praxis/commit/076851f336fe9e1335fae28a8ed6cff5b3e14e10))
+* **dashboard:** add session comparison, goal library, theme customization ([7a83ccb](https://github.com/ivan-cavero/praxis/commit/7a83ccbf9f1d4d0257744c3912aa0b2bef403af5))
+* **dashboard:** add session event timeline with grouped event feed ([fec6dfb](https://github.com/ivan-cavero/praxis/commit/fec6dfb8b67eb5663b313d9e714b80c4354fa643))
+* **dashboard:** add skeleton loading states for metric cards, tables, and agent grid ([ac0e4e9](https://github.com/ivan-cavero/praxis/commit/ac0e4e95b62f64723d57657f7ebf00edc21776c4))
+* **dashboard:** add smooth page transitions between all views ([48ace40](https://github.com/ivan-cavero/praxis/commit/48ace40aba21d024daad3cc99baf0230a69ab059))
+* **dashboard:** add toast notifications for all async operations ([4bd9bd7](https://github.com/ivan-cavero/praxis/commit/4bd9bd7ccd3337bf7a3cbe47bd79b90788f98886))
+* **dashboard:** fix streaming, redesign login, improve responsive ([f4aaea3](https://github.com/ivan-cavero/praxis/commit/f4aaea3d3e0a7bcd324ad6583edc9e534cab98b2))
+* **desktop:** add updater capability and session load tests ([fdb0244](https://github.com/ivan-cavero/praxis/commit/fdb02440a4543dcc7b21309fed4417682dd014e2))
+* **memory:** add SQLite backend for episodic memory persistence ([1f871bc](https://github.com/ivan-cavero/praxis/commit/1f871bceed0b38aab0bba9ff38d2028e5812595c))
+* **release-please:** enable auto-merge on release PRs ([bcec5b4](https://github.com/ivan-cavero/praxis/commit/bcec5b4066bf15b12dba14b055d2ac417228aa60))
+
+
+### Bug Fixes
+
+* **ci:** add bun setup step before dashboard build ([f63c248](https://github.com/ivan-cavero/praxis/commit/f63c248a6b6eda4467a512b2fbce3a74b407c7ce))
+* **ci:** build CLI binary before e2e tests ([471e9c3](https://github.com/ivan-cavero/praxis/commit/471e9c3c47bd37166dcee9615b9dbabf5e2d64e3))
+* **ci:** resolve all CI pipeline failures ([80312d2](https://github.com/ivan-cavero/praxis/commit/80312d2ea6ec19e82d99f8ca63fd71cf298fd3ff))
+* **cli:** use CARGO_PKG_VERSION for --version instead of hardcoded string ([20323a4](https://github.com/ivan-cavero/praxis/commit/20323a450cea9adaa972a0938d6566002283a411))
+* **core:** eliminate remaining production unwrap() calls — replace with expect() and ? error propagation ([aa3c569](https://github.com/ivan-cavero/praxis/commit/aa3c569ebdbd77d129c4e99f6313b6fc9ad995ea))
+* **core:** wire consolidated memory into with_default_memory ([d9688ef](https://github.com/ivan-cavero/praxis/commit/d9688efc55706e579a63db4d6bfd8539991751af))
+* **dashboard:** fix --text-muted contrast ratio to meet WCAG AA 4.5:1 ([f161b04](https://github.com/ivan-cavero/praxis/commit/f161b04d980bb561f205023d44f98cfb22cff5c0))
+* **desktop:** clippy lints for AppState Default and useless format ([50260e0](https://github.com/ivan-cavero/praxis/commit/50260e059c4eb55bdf0d8c18c08bf7a2ccf773a2))
+* **drift:** compute per-agent ASI scores in record_and_evaluate ([e7670fd](https://github.com/ivan-cavero/praxis/commit/e7670fd2fd014700dba5179d7c935232bb5a8058))
+* **mcp:** harden filesystem MCP server sandbox against symlink escape ([191255e](https://github.com/ivan-cavero/praxis/commit/191255ef106054fa2d4f3acbeb9a2235585acf10))
+* **release-please:** add checkout step before auto-merge ([b143d57](https://github.com/ivan-cavero/praxis/commit/b143d5730a07865d596ec17d004ad1c52ecb385e))
+* **release-please:** extract PR number from JSON output for auto-merge ([3d52ca4](https://github.com/ivan-cavero/praxis/commit/3d52ca4c54fa216c276b93f25235ad2d092d70e0))
+* **release-please:** remove UTF-8 BOM from config JSON (caused parse error) ([275f9f3](https://github.com/ivan-cavero/praxis/commit/275f9f34712154c7c5470974675ddb2e559fca3e))
+* resolve all CI failures — cargo fmt, Docker build, Release Please ([4e3c7e3](https://github.com/ivan-cavero/praxis/commit/4e3c7e3975b07dd841115cc058864595febd6732))
+* track Cargo.lock in git (needed by Docker build) ([c2d3351](https://github.com/ivan-cavero/praxis/commit/c2d33516031690c88ae541a033b8ee29e8478fba))
+* update Docker base image from rust:nightly-bookworm to rustlang/rust:nightly ([34b84f6](https://github.com/ivan-cavero/praxis/commit/34b84f619776ca49c085c355b65462b2a7a2f2e7))
+* update to master rust tool chain ([d83a1c3](https://github.com/ivan-cavero/praxis/commit/d83a1c3858325d5c3d1c464438f0b63504cf0c53))
+* **vault:** replace deprecated aes-gcm from_slice with TryFrom ([ecf9776](https://github.com/ivan-cavero/praxis/commit/ecf9776543d934c2b9e458c1fdbe80e72cc53fc5))
+
+
+### Performance Improvements
+
+* **core:** add [profile.bench] config with LTO and strip for benchmark builds ([ed3f06d](https://github.com/ivan-cavero/praxis/commit/ed3f06d3ac0a427f000006b85478ea774da42860))
+* **core:** add #[tracing::instrument] to run_goal, resume_goal, and drift recovery functions ([c4b919c](https://github.com/ivan-cavero/praxis/commit/c4b919c97836b775a6799b84c9f439a52a2c1722))
+* **core:** improve unsafe SAFETY comment in vault/env.rs, add #[instrument] to gate/phase fns ([8082748](https://github.com/ivan-cavero/praxis/commit/8082748786124d32d0faa74ed30c5a7b56c87e69))
+* **core:** optimize dimension_scores z-score computation, mark 2C complete ([17d7bac](https://github.com/ivan-cavero/praxis/commit/17d7bacedcfe54886aed3f8215370c4fa414a6c3))
+* **memory:** batch episodic memory eviction into single retain pass ([7c9a2a7](https://github.com/ivan-cavero/praxis/commit/7c9a2a7ce81bb5b0f21502119712ebdf11b99c9a))
+
 ## [0.6.0](https://github.com/ivan-cavero/praxis/compare/v0.5.1...v0.6.0) (2026-07-07)
 
 
