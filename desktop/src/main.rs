@@ -1,7 +1,7 @@
 //! praxis Desktop — Tauri v2 binary.
 //!
 //! Embeds the core runtime + API server and serves the dashboard via WebView.
-//! The Vue dashboard is served from `../dashboard/dist` (production)
+//! The Vue dashboard is served from `frontend/dist` (production)
 //! or `http://localhost:3000` (development via `bun run dev`).
 //!
 //! Features: system tray (show/hide, new session, settings, quit),
@@ -215,14 +215,24 @@ async fn init_backend(handle: &tauri::AppHandle) {
         }
     }
 
-    // 2. Start API server on a random port
-    // Bind to get the actual port
-    let addr = "127.0.0.1:0".to_string();
-    let listener = match tokio::net::TcpListener::bind(&addr).await {
-        Ok(l) => l,
+    // 2. Start API server on a fixed port (14700).
+    // A fixed port lets the frontend connect directly without IPC discovery.
+    // Falls back to a random port if 14700 is occupied.
+    let preferred = "127.0.0.1:14700";
+    let listener = match tokio::net::TcpListener::bind(preferred).await {
+        Ok(l) => {
+            tracing::info!("API server bound to preferred port 14700");
+            l
+        }
         Err(e) => {
-            tracing::error!("Failed to bind API server: {}", e);
-            return;
+            tracing::warn!("Port 14700 occupied ({}), falling back to random port", e);
+            match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(e2) => {
+                    tracing::error!("Failed to bind API server: {}", e2);
+                    return;
+                }
+            }
         }
     };
     let local_addr = match listener.local_addr() {

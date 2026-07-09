@@ -20,14 +20,19 @@ pub async fn ws_handler(
     State(state): axum::extract::State<Arc<AppState>>,
     request: axum::extract::Request,
 ) -> axum::response::Response {
-    let claims = match extract_bearer_token(&request) {
-        Some(token) => match state.auth.validate_token(&token) {
+    // Try Authorization header first, then ?token= query param (for browser WebSocket)
+    let token = extract_bearer_token(&request).or_else(|| extract_query_token(&request));
+
+    let claims = match token {
+        Some(t) => match state.auth.validate_token(&t) {
             Ok(c) => c,
             Err(_) => {
+                tracing::warn!("WS connection rejected: invalid token");
                 return ws.on_upgrade(|_| async {});
             }
         },
         None => {
+            tracing::warn!("WS connection rejected: no token");
             return ws.on_upgrade(|_| async {});
         }
     };
@@ -45,6 +50,20 @@ fn extract_bearer_token(request: &axum::extract::Request) -> Option<String> {
             s.strip_prefix("Bearer ")
                 .map(|stripped| stripped.to_string())
         })
+}
+
+/// Extract token from ?token= query param (browsers can't set WS headers).
+fn extract_query_token(request: &axum::extract::Request) -> Option<String> {
+    request.uri().query().and_then(|q| {
+        q.split('&').find_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            if key == "token" {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
+    })
 }
 
 async fn handle_socket(socket: WebSocket, claims: Claims, state: Arc<AppState>) {

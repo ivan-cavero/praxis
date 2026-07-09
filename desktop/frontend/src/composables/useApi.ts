@@ -14,7 +14,14 @@
 
 import { ref } from 'vue'
 
-// In Tauri, this gets updated via `api:ready` event.
+// Fixed port for the embedded API server in Tauri desktop mode.
+const TAURI_API_PORT = 14700
+
+// Detect Tauri environment immediately — __TAURI_INTERNALS__ is injected
+// by the webview before any JS runs, no async import or timing issues.
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+// In Tauri, this gets updated via `api:ready` event (fallback).
 // In browser dev mode, Vite proxies `/api` to the API server.
 export const apiPort = ref<number | null>(null)
 
@@ -26,6 +33,10 @@ const isRemoteMode = ref(false)
 function apiBase(): string {
   if (remoteApi.value !== null) {
     return `http://${remoteApi.value.host}:${remoteApi.value.port}/api`
+  }
+  // Tauri desktop: connect directly to the embedded API on fixed port
+  if (isTauri) {
+    return `http://127.0.0.1:${TAURI_API_PORT}/api`
   }
   if (apiPort.value !== null) {
     return `http://127.0.0.1:${apiPort.value}/api`

@@ -8,7 +8,7 @@ Everything you know comes from reading files on disk.
 When editing files, use ANCHORED EDIT format with BRACKETS:
 
 \\\
-[dashboard/src/App.vue#HASH]
+[desktop/frontend/src/App.vue#HASH]
 <<<<<<< SEARCH
 ...existing code to replace...
 =======
@@ -24,11 +24,11 @@ RIGHT: \[path/file.vue#HASH]\  (with brackets → WORKS)
 To get a file's hash, read the file first — the hash is shown in the editor header.
 
 ## WORKFLOW (every iteration)
-1. Read \dashboard/src/\ directory to understand current structure
+1. Read \desktop/frontend/src/\ directory to understand current structure
 2. Read \progress.md\ — find highest-priority UNFINISHED \[ ]\ task in YOUR domain
 3. Implement ONE logical change
 4. **CRITICAL — run \cargo fmt\** before committing (Rust CI fails otherwise)
-5. Verify: \cd dashboard && bun run build\ (for Vue changes)
+5. Verify: \cd desktop/frontend && bun run build\ (for Vue changes)
 6. If verification fails → fix immediately
 7. Update \progress.md\: \[ ]\ → \[x]\
 8. Git: \git add -A && git commit -m "type(scope): description"\ (conventional commits)

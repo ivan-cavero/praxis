@@ -125,12 +125,9 @@ function navigateTo(item: typeof navItems[number]) {
 }
 
 // ─── Tauri Events ─────────────────────────────────────────────────
-let isTauri = false
-
 async function listenTauriEvents() {
   try {
     const { listen } = await import('@tauri-apps/api/event')
-    isTauri = true
     await listen<number>('api:ready', (event) => {
       setApiPort(event.payload)
     })
@@ -183,9 +180,6 @@ async function checkSavedToken(): Promise<'valid' | 'invalid' | 'retry'> {
   const token = localStorage.getItem('praxis-token')
   if (!token) return 'invalid'
 
-  // In Tauri mode, wait for apiPort before making API calls
-  if (isTauri && apiPort.value === null) return 'retry'
-
   try {
     // A protected endpoint call validates the token
     await api.getProjects()
@@ -218,19 +212,6 @@ async function attemptAuth() {
 
 onMounted(async () => {
   await listenTauriEvents()
-
-  // Fallback: if in Tauri but api:ready event was already emitted before
-  // our listener was registered, query the port directly via IPC command.
-  if (isTauri && apiPort.value === null) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      const port = await invoke<number>('get_api_port')
-      setApiPort(port)
-    } catch {
-      // Backend not ready yet — watch(apiPort) or retry will catch it
-    }
-  }
-
   updater.checkForUpdates()
   attemptAuth()
 })
@@ -248,12 +229,16 @@ function handleLogin(token: string) {
 </script>
 
 <template>
-  <!-- Login screen (unauthenticated) -->
-  <LoginView v-if="!isAuthenticated" @login="handleLogin" />
+  <div class="app-shell">
+    <!-- Custom window chrome (always visible — even on login screen) -->
+    <TitleBar />
 
-  <!-- Main app (authenticated) -->
-  <template v-else>
-    <div class="layout-wrapper">
+    <!-- Login screen (unauthenticated) -->
+    <LoginView v-if="!isAuthenticated" @login="handleLogin" />
+
+    <!-- Main app (authenticated) -->
+    <template v-else>
+      <div class="layout-wrapper">
       <!-- Update Banner -->
       <div
         v-if="updater.updateAvailable.value && !updater.dismissed.value"
@@ -298,9 +283,6 @@ function handleLogin(token: string) {
           </button>
         </div>
       </div>
-
-      <!-- Title Bar (custom window chrome) -->
-      <TitleBar />
 
       <!-- Main Layout -->
       <div class="layout">
@@ -466,6 +448,7 @@ function handleLogin(token: string) {
       </div>
     </div>
   </template>
+  </div>
 </template>
 
 <style scoped>

@@ -4,10 +4,10 @@
   "identifier": "com.praxis.desktop",
   "version": "0.6.1",
   "build": {
-    "frontendDist": "../dashboard/dist",
+    "frontendDist": "frontend/dist",
     "devUrl": "http://localhost:3000",
-"beforeDevCommand": "cd dashboard && bun run dev",
-"beforeBuildCommand": "cd dashboard && bun run build"
+"beforeDevCommand": "bun run dev",
+"beforeBuildCommand": "bun run build"
   },
   "bundle": {
     "active": true,

@@ -108,7 +108,8 @@ function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   width: 100vw;
   background: var(--bg-base);
   position: relative;

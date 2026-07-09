@@ -118,13 +118,9 @@ impl ApiServer {
     }
 
     pub fn router(state: AppState) -> Router {
+        // Reflect the request Origin back — allows localhost (dev) and tauri:// (desktop)
         let cors = tower_http::cors::CorsLayer::new()
-            .allow_origin(axum::http::HeaderValue::from_static(
-                "http://localhost:3000",
-            ))
-            .allow_origin(axum::http::HeaderValue::from_static(
-                "http://localhost:5173",
-            ))
+            .allow_origin(tower_http::cors::AllowOrigin::mirror_request())
             .allow_methods([
                 axum::http::Method::GET,
                 axum::http::Method::POST,

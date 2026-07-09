@@ -188,8 +188,10 @@ praxis/
 │   ├── persistence/      # Event store: SQLite
 │   ├── vault/            # Credential management: keyring, tauri, env
 │   └── cli/              # CLI binary: clap + ratatui
-├── dashboard/            # Vue 3 frontend (Vite + TS + Tailwind)
-├── desktop/              # Tauri v2 binary
+├── desktop/              # Tauri v2 binary + Vue frontend (self-contained)
+│   ├── frontend/         # Vue 3 frontend (Vite + TS + Tailwind)
+│   ├── src/              # Tauri Rust source
+│   └── tauri.conf.json
 ├── mcp-servers/          # First-party MCP servers
 ├── tests/                # Integration tests
 └── docs/                 # ADRs + guides
@@ -252,10 +254,10 @@ cargo test --workspace
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 
-# Dashboard (bun)
-cd dashboard && bun install
-cd dashboard && bun dev          # :3000, proxy to :8080
-cd dashboard && bun run build
+# Frontend (bun)
+cd desktop/frontend && bun install
+cd desktop/frontend && bun dev          # :3000, proxy to :8080
+cd desktop/frontend && bun run build
 ```
 
 ---

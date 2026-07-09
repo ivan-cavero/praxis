@@ -73,9 +73,9 @@ jobs:
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Build dashboard
+      - name: Build frontend
         run: |
-          cd dashboard
+          cd desktop/frontend
           bun install
           bun run build
 
@@ -94,11 +94,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          # Dashboard is already built in the previous step.
-          # On CI, beforeBuildCommand runs from the repo root (not app_dir),
-          # so relative paths like ../dashboard would resolve incorrectly.
+          # Frontend is already built in the previous step.
           # Override beforeBuildCommand to empty via --config with inline JSON
-          # (Tauri skips empty beforeBuildCommand).
+          # (Tauri skips empty beforeBuildCommand) so it doesn't try to rebuild.
           # The first --config loads the main config; the second merges/overrides.
           tauri build \
             --config desktop/tauri.conf.json \

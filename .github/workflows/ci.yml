@@ -43,8 +43,8 @@ jobs:
       - name: Cache bun dependencies
         uses: actions/cache@v4
         with:
-          path: dashboard/node_modules
-          key: bun-${{ hashFiles('dashboard/bun.lock') }}
+          path: desktop/frontend/node_modules
+          key: bun-${{ hashFiles('desktop/frontend/bun.lock') }}
           restore-keys: |
             bun-
 
@@ -61,25 +61,25 @@ jobs:
           cargo install cargo-deny --locked 2>/dev/null || true
           cargo deny check || true
 
-      - name: Clippy (exclude desktop — needs dashboard/dist)
+      - name: Clippy (exclude desktop — needs frontend/dist)
         run: cargo clippy --workspace --exclude desktop -- -D warnings
 
       - name: Build CLI binary (for e2e tests)
         run: cargo build -p praxis-cli
 
-      - name: Unit tests (exclude desktop — needs dashboard/dist)
+      - name: Unit tests (exclude desktop — needs frontend/dist)
         run: cargo test --workspace --exclude desktop
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Build dashboard
+      - name: Build frontend
         run: |
-          cd dashboard
+          cd desktop/frontend
           bun install
           bun run build
 
-      - name: Clippy (desktop only — now that dashboard/dist exists)
+      - name: Clippy (desktop only — now that frontend/dist exists)
         run: cargo clippy -p desktop -- -D warnings
 
       - name: Desktop tests
@@ -98,19 +98,19 @@ jobs:
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dashboard dependencies
+      - name: Install frontend dependencies
         run: |
-          cd dashboard
+          cd desktop/frontend
           bun install
 
       - name: Install Playwright browsers
         run: |
-          cd dashboard
+          cd desktop/frontend
           bunx playwright install --with-deps chromium
 
       - name: Run Playwright E2E tests
         run: |
-          cd dashboard
+          cd desktop/frontend
           bunx playwright test --reporter=list
 
       - name: Upload test results
@@ -118,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results
-          path: dashboard/test-results/
+          path: desktop/frontend/test-results/
           retention-days: 7
 
   benchmark:

@@ -93,7 +93,8 @@ input[type="radio"]:focus-visible {
 ::selection { background: var(--primary-muted); color: var(--primary); }
 
 /* ═══ LAYOUT ═══ */
-.layout-wrapper { display: flex; flex-direction: column; height: 100vh; background: var(--bg-base); }
+.app-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.layout-wrapper { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-base); }
 .layout { display: flex; flex: 1; min-height: 0; background: var(--bg-base); }
 
 /* Sidebar */
@@ -375,7 +376,7 @@ input[type="radio"]:focus-visible {
 .badge-gray { background: var(--bg-elevated); color: var(--text-muted); }
 
 /* ═══ LOGIN ═══ */
-.login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; width: 100vw; background: var(--bg-base); position: relative; }
+.login-screen { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 0; width: 100vw; background: var(--bg-base); position: relative; }
 .login-card { width: 360px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); padding: var(--space-8); position: relative; z-index: 10; }
 .login-title { font-size: 24px; font-weight: 600; text-align: center; margin-bottom: var(--space-2); color: var(--text-primary); letter-spacing: -0.02em; }
 .login-subtitle { text-align: center; font-size: 13px; color: var(--text-muted); margin-bottom: var(--space-6); }

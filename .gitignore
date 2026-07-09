@@ -5,14 +5,14 @@
 # --- Rust ---
 target/
 
-# --- Node.js / Dashboard ---
+# --- Node.js / Frontend ---
 node_modules/
-dashboard/dist/
-dashboard/.vite/
+desktop/frontend/dist/
+desktop/frontend/.vite/
 
 # --- Tauri ---
-desktop/src-tauri/target/
-desktop/src-tauri/gen/
+desktop/target/
+desktop/gen/
 *.vsix
 
 # --- SQLite databases ---

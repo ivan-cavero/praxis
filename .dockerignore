@@ -8,13 +8,13 @@ target/
 dist/
 **/dist/
 
-# Dashboard (not needed in the CLI-only image — built separately)
-dashboard/node_modules/
-dashboard/.vite/
-dashboard/dist/
+# Frontend (not needed in the CLI-only image — built separately)
+desktop/frontend/node_modules/
+desktop/frontend/.vite/
+desktop/frontend/dist/
 
 # Desktop (Tauri — ships as native installer, not in this image)
-desktop/src-tauri/target/
+desktop/target/
 
 # Git
 .git/

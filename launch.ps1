@@ -23,9 +23,9 @@ Start-Sleep -Seconds 2
 # 2. Frontend
 Write-Host "  [2/3] Starting frontend dev server..." -ForegroundColor Yellow
 Write-Host "        Port: 3000" -ForegroundColor Gray
-$dashboard = Join-Path $root "dashboard"
-$frontend = Start-Process -FilePath "npm.cmd" -ArgumentList "run", "dev" -WorkingDirectory $dashboard -PassThru -WindowStyle Hidden
-Write-Host "  OK Frontend started (PID: $($frontend.Id))" -ForegroundColor Green
+$frontend = Join-Path $root "desktop\frontend"
+$frontendProc = Start-Process -FilePath "bun" -ArgumentList "run", "dev" -WorkingDirectory $frontend -PassThru -WindowStyle Hidden
+Write-Host "  OK Frontend started (PID: $($frontendProc.Id))" -ForegroundColor Green
 
 Start-Sleep -Seconds 2
 
@@ -45,8 +45,8 @@ Write-Host ""
 Wait-Process -Id $backend.Id -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host "  Backend stopped. Shutting down..." -ForegroundColor Yellow
-if ($frontend) {
-    Stop-Process -Id $frontend.Id -Force -ErrorAction SilentlyContinue
+if ($frontendProc) {
+    Stop-Process -Id $frontendProc.Id -Force -ErrorAction SilentlyContinue
     Write-Host "  Frontend stopped." -ForegroundColor Yellow
 }
 Write-Host ""

@@ -138,8 +138,11 @@ praxis/
 │   ├── persistence/      # Event store: SQLite (embedded, WAL mode)
 │   ├── vault/            # Credential management: keyring, tauri, env
 │   └── cli/              # CLI binary: clap + ratatui
-├── dashboard/            # Vue 3 frontend (Vite + TS + Tailwind)
-├── desktop/              # Tauri v2 binary
+├── desktop/              # Tauri v2 binary + Vue frontend (self-contained)
+│   ├── frontend/         # Vue 3 frontend (Vite + TS + Tailwind)
+│   ├── src/              # Tauri Rust source
+│   ├── Cargo.toml
+│   └── tauri.conf.json
 ├── mcp-servers/          # First-party MCP servers (separate processes)
 └── tests/                # Integration tests (separate crate)
 ```
@@ -218,27 +221,27 @@ praxis/
 # Rust
 cargo build                          # build workspace
 cargo build --release                # release build (LTO + strip)
-cargo test --workspace --exclude desktop   # unit tests (desktop needs dashboard/dist first)
+cargo test --workspace --exclude desktop   # unit tests (desktop needs frontend/dist first)
 cargo nextest run                    # faster test runner (if installed)
 cargo clippy --all-targets -- -D warnings   # lint, fail on warnings
 cargo fmt --check                    # format check
 cargo +nightly miri test             # UB detection for unsafe code
 cargo bench -p praxis-core           # run benchmarks
 
-# Desktop tests (requires dashboard build first)
-cd dashboard && bun run build && cargo test -p desktop
+# Desktop tests (requires frontend build first)
+cd desktop/frontend && bun run build && cargo test -p desktop
 
-# Dashboard (bun only)
-cd dashboard && bun install          # install deps
-cd dashboard && bun dev              # dev server (port 3000, proxies to :8080)
-cd dashboard && bun run build        # production build
-cd dashboard && bun run preview      # preview production build
+# Frontend (bun only)
+cd desktop/frontend && bun install          # install deps
+cd desktop/frontend && bun dev              # dev server (port 3000, proxies to :8080)
+cd desktop/frontend && bun run build        # production build
+cd desktop/frontend && bun run preview      # preview production build
 
 # Docker
 docker-compose up -d                 # full stack
 ```
 
-> **Note:** `cargo test --workspace` excludes `desktop` because `tauri::generate_context!()` requires `dashboard/dist` at compile time. Run desktop tests separately after building the dashboard.
+> **Note:** `cargo test --workspace` excludes `desktop` because `tauri::generate_context!()` requires `frontend/dist` at compile time. Run desktop tests separately after building the frontend.
 
 ---
 

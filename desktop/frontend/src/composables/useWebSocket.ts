@@ -13,6 +13,12 @@
 
 import { ref, onUnmounted } from 'vue'
 
+// Fixed port for the embedded API server in Tauri desktop mode.
+const TAURI_API_PORT = 14700
+
+// Detect Tauri environment immediately.
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
 export interface SystemEvent {
   id: string
   timestamp: string
@@ -132,14 +138,23 @@ let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let reconnectDelay = 1000
 let referenceCount = 0
 
+function getWsUrl(): string {
+  // Tauri desktop: connect directly to the embedded API on fixed port
+  const base = isTauri
+    ? `ws://127.0.0.1:${TAURI_API_PORT}/ws/global`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/global`
+
+  // Browsers can't set Authorization headers on WebSocket — pass token as query param
+  const token = localStorage.getItem('praxis-token')
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+}
+
 function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = window.location.host
-  const url = `${protocol}//${host}/ws/global`
+  const url = getWsUrl()
 
   ws = new WebSocket(url)
 
